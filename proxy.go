@@ -29,6 +29,7 @@ var hopHeaders = map[string]bool{
 type Proxy struct {
 	Config *Config
 	Client *http.Client
+	Logger CallLogger
 }
 
 func defaultHTTPClient() *http.Client {
@@ -56,6 +57,13 @@ func (p *Proxy) client() *http.Client {
 		return p.Client
 	}
 	return http.DefaultClient
+}
+
+func (p *Proxy) logCall(rec CallRecord) {
+	if p.Logger == nil {
+		return
+	}
+	p.Logger.Record(rec)
 }
 
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -112,14 +120,31 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMeta, provider Provider) (int, error) {
-	payload, err := rewriteRequest(meta.Body, provider.Model)
+	rec := CallRecord{
+		Model:         meta.Model,
+		Provider:      provider.Name,
+		ProviderModel: provider.Model,
+		APIKeyName:    apiKeyNameFrom(r.Context()),
+		RequestJSON:   meta.Body,
+	}
+	if rec.ProviderModel == "" {
+		rec.ProviderModel = meta.Model
+	}
+
+	payload, err := rewriteRequest(meta.Body, provider.Model, meta.Stream)
 	if err != nil {
+		rec.HTTPStatus = http.StatusBadRequest
+		rec.Error = err.Error()
+		p.logCall(rec)
 		writeAPIError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return http.StatusBadRequest, err
 	}
+	rec.RequestJSON = payload
 
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, provider.URL, bytes.NewReader(payload))
 	if err != nil {
+		rec.Error = err.Error()
+		p.logCall(rec)
 		return 0, err
 	}
 	copyRequestHeaders(req.Header, r.Header)
@@ -134,23 +159,47 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 
 	resp, err := p.client().Do(req)
 	if err != nil {
+		rec.Error = err.Error()
+		p.logCall(rec)
 		return 0, err
 	}
 	defer resp.Body.Close()
+	rec.HTTPStatus = resp.StatusCode
+	sse := meta.Stream || isSSE(resp.Header.Get("Content-Type"))
 
 	if isCatastrophic(nil, resp.StatusCode) {
-		_, _ = io.Copy(io.Discard, resp.Body)
+		body, _ := io.ReadAll(resp.Body)
+		rec.ResponseJSON = encodeResponseBlob(body, sse)
+		rec.Error = "upstream status " + resp.Status
+		p.logCall(rec)
 		return resp.StatusCode, nil
 	}
 
 	copyResponseHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 
+	var buf bytes.Buffer
 	dst := io.Writer(w)
-	if meta.Stream || isSSE(resp.Header.Get("Content-Type")) {
+	if sse {
 		dst = flushWriter{w}
 	}
-	_, err = io.Copy(dst, resp.Body)
+	_, err = io.Copy(dst, io.TeeReader(resp.Body, &buf))
+	body := buf.Bytes()
+	rec.ResponseJSON = encodeResponseBlob(body, sse)
+	var usage tokenUsage
+	if sse {
+		usage = parseUsageSSE(body)
+	} else {
+		usage = parseUsageJSON(body)
+	}
+	rec.InputTokens = usage.Input
+	rec.OutputTokens = usage.Output
+	rec.CacheTokens = usage.CacheRead
+	rec.UncachedTokens = usage.Uncached
+	if err != nil {
+		rec.Error = err.Error()
+	}
+	p.logCall(rec)
 	return resp.StatusCode, err
 }
 

@@ -20,7 +20,7 @@ func testProxy(t *testing.T, cfg *Config) http.Handler {
 	if len(cfg.APIKeys) == 0 {
 		cfg.APIKeys = []APIKey{{Name: "test", Value: testAPIKey}}
 	}
-	return NewServer(cfg).Handler()
+	return NewServer(cfg, nil).Handler()
 }
 
 func cfgFast(providers ...Provider) *Config {
@@ -343,4 +343,96 @@ func TestCopyResponseHeadersStripsHopByHop(t *testing.T) {
 func jsonBody(v any) io.Reader {
 	b, _ := json.Marshal(v)
 	return bytes.NewReader(b)
+}
+
+type memoryCallLogger struct {
+	calls []CallRecord
+}
+
+func (m *memoryCallLogger) Record(rec CallRecord) {
+	m.calls = append(m.calls, rec)
+}
+
+func TestProxyLogsSuccess(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"id":"1","choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":5,"completion_tokens":2,"prompt_tokens_details":{"cached_tokens":3}}}`)
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	cfg := cfgFast(Provider{Name: "primary", URL: up.URL, Model: "gpt-4o-mini"})
+	h := NewServer(cfg, logger).Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
+		"model":    "fast",
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, logger.calls, 1)
+	got := logger.calls[0]
+	require.Equal(t, "fast", got.Model)
+	require.Equal(t, "primary", got.Provider)
+	require.Equal(t, "gpt-4o-mini", got.ProviderModel)
+	require.Equal(t, "test", got.APIKeyName)
+	require.Equal(t, int64(5), got.InputTokens)
+	require.Equal(t, int64(2), got.OutputTokens)
+	require.Equal(t, int64(3), got.CacheTokens)
+	require.Equal(t, int64(2), got.UncachedTokens)
+	require.Equal(t, http.StatusOK, got.HTTPStatus)
+	require.Empty(t, got.Error)
+	require.Contains(t, string(got.RequestJSON), `"model":"gpt-4o-mini"`)
+	require.Contains(t, string(got.ResponseJSON), `"ok"`)
+}
+
+func TestProxyLogsFailoverAttempts(t *testing.T) {
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		io.WriteString(w, `{"error":"bad gateway"}`)
+	}))
+	t.Cleanup(first.Close)
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`)
+	}))
+	t.Cleanup(second.Close)
+
+	logger := &memoryCallLogger{}
+	cfg := cfgFast(
+		Provider{Name: "a", URL: first.URL, Model: "a"},
+		Provider{Name: "b", URL: second.URL, Model: "b"},
+	)
+	h := NewServer(cfg, logger).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, logger.calls, 2)
+	require.Equal(t, "a", logger.calls[0].Provider)
+	require.Equal(t, http.StatusBadGateway, logger.calls[0].HTTPStatus)
+	require.Contains(t, logger.calls[0].Error, "502")
+	require.Contains(t, string(logger.calls[0].ResponseJSON), "bad gateway")
+	require.Equal(t, "b", logger.calls[1].Provider)
+	require.Equal(t, http.StatusOK, logger.calls[1].HTTPStatus)
+	require.Empty(t, logger.calls[1].Error)
+}
+
+func TestProxyLogsDialFailure(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	deadURL := "http://" + ln.Addr().String() + "/v1/chat/completions"
+	require.NoError(t, ln.Close())
+
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(Provider{Name: "a", URL: deadURL, Model: "a"}), logger).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.Len(t, logger.calls, 1)
+	require.Equal(t, 0, logger.calls[0].HTTPStatus)
+	require.NotEmpty(t, logger.calls[0].Error)
+	require.Contains(t, string(logger.calls[0].RequestJSON), `"model":"a"`)
 }
