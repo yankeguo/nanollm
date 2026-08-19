@@ -37,4 +37,16 @@ func TestParseRequest(t *testing.T) {
 
 	_, err = parseRequest([]byte(`{"messages":[]}`))
 	require.Error(t, err)
+
+	_, err = parseRequest([]byte(`{"model":"fast"}{"x":1}`))
+	require.Error(t, err)
+}
+
+func TestRewriteRequestPreservesLargeIntegersAndHTML(t *testing.T) {
+	body := []byte(`{"model":"fast","seed":9007199254740993,"messages":[{"content":"<hi>"}]}`)
+	out, err := rewriteRequest(body, "gpt", false)
+	require.NoError(t, err)
+	require.Contains(t, string(out), "9007199254740993")
+	require.Contains(t, string(out), `"<hi>"`)
+	require.NotContains(t, string(out), `\u003c`)
 }

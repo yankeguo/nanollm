@@ -2,4 +2,7 @@
 .github
 .gitignore
 *.md
+*_test.go
 config.yaml
+AGENTS.md
+LICENSE

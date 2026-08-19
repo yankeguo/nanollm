@@ -28,7 +28,7 @@ func (s *Server) Handler() http.Handler {
 
 	auth := func(h http.Handler) http.Handler { return s.requireAPIKey(h) }
 	mux.Handle("GET /v1/models", auth(http.HandlerFunc(s.handleModels)))
-	mux.Handle("GET /v1/models/{model}", auth(http.HandlerFunc(s.handleModel)))
+	mux.Handle("GET /v1/models/{model...}", auth(http.HandlerFunc(s.handleModel)))
 	proxy := auth(&Proxy{Config: s.Config, Metrics: s.Metrics, Client: s.Client})
 	mux.Handle("POST /v1/chat/completions", proxy)
 	mux.Handle("POST /chat/completions", proxy)
@@ -42,7 +42,7 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Write([]byte("OK"))
+	_, _ = w.Write([]byte("OK"))
 }
 
 type openaiModel struct {

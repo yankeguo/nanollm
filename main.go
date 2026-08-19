@@ -49,6 +49,7 @@ func main() {
 		Addr:              listen,
 		Handler:           NewServer(cfg, metrics).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	errCh := make(chan error, 1)

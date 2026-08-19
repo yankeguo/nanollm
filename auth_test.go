@@ -45,7 +45,19 @@ func TestAPIKeyAcceptsBearerAndXApiKey(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	req = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req.Header.Set("Authorization", "bearer "+testAPIKey)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	req = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	req.Header.Set("X-Api-Key", testAPIKey)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	req = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req.Header.Set("Api-Key", testAPIKey)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -55,4 +67,22 @@ func TestExtractAPIKey(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer  sk-abc ")
 	require.Equal(t, "sk-abc", extractAPIKey(req))
+
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "BEARER sk-abc")
+	require.Equal(t, "sk-abc", extractAPIKey(req))
+
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Api-Key", " sk-abc ")
+	require.Equal(t, "sk-abc", extractAPIKey(req))
+}
+
+func TestLookupAPIKeyScansAllKeys(t *testing.T) {
+	cfg := &Config{APIKeys: []APIKey{
+		{Name: "short", Value: "ab"},
+		{Name: "long", Value: "sk-test-long"},
+	}}
+	require.Equal(t, "long", cfg.lookupAPIKey("sk-test-long").Name)
+	require.Equal(t, "short", cfg.lookupAPIKey("ab").Name)
+	require.Nil(t, cfg.lookupAPIKey("nope"))
 }

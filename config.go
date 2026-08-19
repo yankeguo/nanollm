@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -92,6 +93,13 @@ func (c *Config) validate() error {
 			seenProvider[p.Name] = struct{}{}
 			if p.URL == "" {
 				return fmt.Errorf("config: model %q provider %q url is required", m.Name, p.Name)
+			}
+			u, err := url.Parse(p.URL)
+			if err != nil {
+				return fmt.Errorf("config: model %q provider %q url is invalid: %w", m.Name, p.Name, err)
+			}
+			if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				return fmt.Errorf("config: model %q provider %q url must be http or https with a host", m.Name, p.Name)
 			}
 		}
 	}

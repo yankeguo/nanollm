@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 )
 
 type requestMeta struct {
@@ -12,8 +14,8 @@ type requestMeta struct {
 }
 
 func parseRequest(body []byte) (*requestMeta, error) {
-	var raw map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
+	raw, err := decodeJSONObject(body)
+	if err != nil {
 		return nil, fmt.Errorf("invalid json body: %w", err)
 	}
 	model, _ := raw["model"].(string)
@@ -25,8 +27,8 @@ func parseRequest(body []byte) (*requestMeta, error) {
 }
 
 func rewriteRequest(body []byte, upstreamModel string, stream bool) ([]byte, error) {
-	var raw map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
+	raw, err := decodeJSONObject(body)
+	if err != nil {
 		return nil, err
 	}
 	if upstreamModel != "" {
@@ -42,9 +44,38 @@ func rewriteRequest(body []byte, upstreamModel string, stream bool) ([]byte, err
 			raw["stream_options"] = opts
 		}
 	}
-	out, err := json.Marshal(raw)
-	if err != nil {
+	return encodeJSONObject(raw)
+}
+
+func decodeJSONObject(body []byte) (map[string]any, error) {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var raw map[string]any
+	if err := dec.Decode(&raw); err != nil {
 		return nil, err
+	}
+	if raw == nil {
+		return nil, fmt.Errorf("json object required")
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("trailing data")
+		}
+		return nil, err
+	}
+	return raw, nil
+}
+
+func encodeJSONObject(raw map[string]any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(raw); err != nil {
+		return nil, err
+	}
+	out := buf.Bytes()
+	if n := len(out); n > 0 && out[n-1] == '\n' {
+		out = out[:n-1]
 	}
 	return out, nil
 }

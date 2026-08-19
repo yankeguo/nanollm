@@ -28,7 +28,7 @@ Tests live next to the code (`*_test.go`). Use `github.com/stretchr/testify`. Pr
 - **Do not use OpenTelemetry GenAI semantic conventions** (`gen_ai.*`). Token stats are `nanollm.token.usage` with `nanollm.model`, `nanollm.provider`, `nanollm.api_key`, `nanollm.upstream.model`, `nanollm.token.type`.
 - `nanollm.token.type` values: `input`, `output`, `cache_read`, `cache_creation`, `uncached`. `input` **includes** cache; overlapping types are intentional so dashboards can show totals and cache hit rate.
 - **Failover is cache-preserving.** Next provider only on catastrophic unavailability: dial/DNS/TLS/other transport failure, or HTTP 502/503/504. Do **not** fail over on 429, 4xx, 500, or timeouts after the provider was reached.
-- Config shape is `api_keys[].{name,value}` and `models[].{name,providers[]}` with `providers[].{name,url,model,headers}`. `url` is the full upstream endpoint, not a base URL. Auth to upstream belongs in `headers`.
+- Config shape is `api_keys[].{name,value}` and `models[].{name,providers[]}` with `providers[].{name,url,model,headers}`. `url` is the full `http`/`https` upstream endpoint, not a base URL. Auth to upstream belongs in `headers`.
 - Incoming `Authorization` / `X-Api-Key` / `Api-Key` authenticate against `api_keys` and must not be copied upstream.
 - At least one API key is required; missing/invalid keys → 401 except `GET /healthz`.
 - Do not commit `config.yaml` (secrets). Change `config.example.yaml` and README when the config schema changes.

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"net/http"
 	"strings"
@@ -22,8 +23,8 @@ func apiKeyNameFrom(ctx context.Context) string {
 
 func extractAPIKey(r *http.Request) string {
 	if v := r.Header.Get("Authorization"); v != "" {
-		if token, ok := strings.CutPrefix(v, "Bearer "); ok {
-			return strings.TrimSpace(token)
+		if token, ok := cutBearer(v); ok {
+			return token
 		}
 		return strings.TrimSpace(v)
 	}
@@ -36,18 +37,34 @@ func extractAPIKey(r *http.Request) string {
 	return ""
 }
 
+func cutBearer(v string) (string, bool) {
+	const prefix = "bearer"
+	if len(v) < len(prefix) || !strings.EqualFold(v[:len(prefix)], prefix) {
+		return "", false
+	}
+	rest := v[len(prefix):]
+	if rest == "" {
+		return "", true
+	}
+	if rest[0] != ' ' && rest[0] != '\t' {
+		return "", false
+	}
+	return strings.TrimSpace(rest), true
+}
+
 func (c *Config) lookupAPIKey(value string) *APIKey {
 	if c == nil || value == "" {
 		return nil
 	}
-	got := []byte(value)
+	sum := sha256.Sum256([]byte(value))
+	var found *APIKey
 	for i := range c.APIKeys {
-		want := []byte(c.APIKeys[i].Value)
-		if subtle.ConstantTimeCompare(got, want) == 1 {
-			return &c.APIKeys[i]
+		want := sha256.Sum256([]byte(c.APIKeys[i].Value))
+		if subtle.ConstantTimeCompare(sum[:], want[:]) == 1 {
+			found = &c.APIKeys[i]
 		}
 	}
-	return nil
+	return found
 }
 
 func (s *Server) requireAPIKey(next http.Handler) http.Handler {

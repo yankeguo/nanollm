@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const maxRequestBody = 64 << 20
+var maxRequestBody int64 = 64 << 20
 
 var hopHeaders = map[string]bool{
 	"Connection":          true,
@@ -62,6 +62,11 @@ func (p *Proxy) client() *http.Client {
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBody))
 	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeAPIError(w, http.StatusRequestEntityTooLarge, "invalid_request_error", "request body too large")
+			return
+		}
 		writeAPIError(w, http.StatusBadRequest, "invalid_request_error", "failed to read request body")
 		return
 	}
@@ -136,7 +141,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	defer resp.Body.Close()
 
 	if isCatastrophic(nil, resp.StatusCode) {
-		io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return resp.StatusCode, tokenUsage{}, nil
 	}
 
@@ -167,13 +172,33 @@ func (w flushWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func copyRequestHeaders(dst, src http.Header) {
-	for k, vs := range src {
-		if hopHeaders[http.CanonicalHeaderKey(k)] {
-			continue
+func hopByHop(h http.Header) map[string]bool {
+	skip := make(map[string]bool, len(hopHeaders)+8)
+	for k, v := range hopHeaders {
+		if v {
+			skip[k] = v
 		}
-		switch http.CanonicalHeaderKey(k) {
-		case "Authorization", "Host", "Content-Length", "Accept-Encoding":
+	}
+	for _, f := range h.Values("Connection") {
+		for _, tok := range strings.Split(f, ",") {
+			if name := http.CanonicalHeaderKey(strings.TrimSpace(tok)); name != "" {
+				skip[name] = true
+			}
+		}
+	}
+	return skip
+}
+
+func copyRequestHeaders(dst, src http.Header) {
+	skip := hopByHop(src)
+	skip["Authorization"] = true
+	skip["X-Api-Key"] = true
+	skip["Api-Key"] = true
+	skip["Host"] = true
+	skip["Content-Length"] = true
+	skip["Accept-Encoding"] = true
+	for k, vs := range src {
+		if skip[http.CanonicalHeaderKey(k)] {
 			continue
 		}
 		dst[k] = append([]string(nil), vs...)
@@ -181,8 +206,9 @@ func copyRequestHeaders(dst, src http.Header) {
 }
 
 func copyResponseHeaders(dst, src http.Header) {
+	skip := hopByHop(src)
 	for k, vs := range src {
-		if hopHeaders[http.CanonicalHeaderKey(k)] {
+		if skip[http.CanonicalHeaderKey(k)] {
 			continue
 		}
 		dst[k] = append([]string(nil), vs...)

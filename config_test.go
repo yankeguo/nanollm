@@ -74,6 +74,42 @@ models:
 	require.Error(t, err)
 }
 
+func TestLoadConfigRejectsDuplicateKeyValues(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+api_keys:
+  - name: alice
+    value: sk-same
+  - name: bob
+    value: sk-same
+models:
+  - name: fast
+    providers:
+      - name: a
+        url: http://a.example
+`), 0o644))
+	_, err := loadConfig(path)
+	require.Error(t, err)
+}
+
+func TestLoadConfigRejectsNonHTTPURL(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+api_keys:
+  - name: alice
+    value: sk-alice
+models:
+  - name: fast
+    providers:
+      - name: a
+        url: ftp://files.example/model
+`), 0o644))
+	_, err := loadConfig(path)
+	require.ErrorContains(t, err, "http or https")
+}
+
 func TestLoadConfigRequiresAPIKeys(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

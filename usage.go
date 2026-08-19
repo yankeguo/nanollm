@@ -1,12 +1,14 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 )
+
+var maxSSEScan = 1 << 20
 
 type tokenUsage struct {
 	Input         int64
@@ -36,9 +38,6 @@ func mergeUsage(dst *tokenUsage, src tokenUsage) {
 	}
 	if src.CacheCreation != 0 {
 		dst.CacheCreation = src.CacheCreation
-	}
-	if src.Uncached != 0 {
-		dst.Uncached = src.Uncached
 	}
 	if src.ResponseModel != "" {
 		dst.ResponseModel = src.ResponseModel
@@ -161,11 +160,10 @@ func parseUsageSSELine(line string) tokenUsage {
 
 func copyAndScanSSE(dst io.Writer, src io.Reader) (tokenUsage, error) {
 	var usage tokenUsage
-	br := bufio.NewReader(src)
-	var carry []byte
 	buf := make([]byte, 32*1024)
+	var carry []byte
 	for {
-		n, err := br.Read(buf)
+		n, err := src.Read(buf)
 		if n > 0 {
 			chunk := buf[:n]
 			if _, werr := dst.Write(chunk); werr != nil {
@@ -181,9 +179,12 @@ func copyAndScanSSE(dst io.Writer, src io.Reader) (tokenUsage, error) {
 				carry = carry[i+1:]
 				mergeUsage(&usage, parseUsageSSELine(line))
 			}
+			if len(carry) > maxSSEScan {
+				carry = carry[:0]
+			}
 		}
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				if len(carry) > 0 {
 					mergeUsage(&usage, parseUsageSSELine(string(carry)))
 				}

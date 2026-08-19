@@ -70,7 +70,7 @@ models:
 | `models[].name` | yes | Client-facing model id |
 | `models[].providers` | yes | Ordered upstream list |
 | `providers[].name` | yes | Label stored on metrics as `nanollm.provider` |
-| `providers[].url` | yes | Full upstream URL (not a base URL) |
+| `providers[].url` | yes | Full `http`/`https` upstream URL (not a base URL) |
 | `providers[].model` | no | Model string sent upstream; if empty, the client model is kept |
 | `providers[].headers` | no | Extra request headers, including upstream auth |
 
@@ -79,7 +79,8 @@ Rules:
 - At least one API key and one model
 - Model names unique; provider names unique **within** a model
 - API key names unique; API key values unique
-- Incoming `Authorization` / API key headers are **not** forwarded
+- Incoming `Authorization` / `X-Api-Key` / `Api-Key` are **not** forwarded
+- Request bodies larger than 64 MiB return `413`
 - `config.yaml` is gitignored; commit `config.example.yaml` only
 
 See `config.example.yaml`.
@@ -88,7 +89,7 @@ See `config.example.yaml`.
 
 Every route except `GET /healthz` requires a configured key:
 
-- `Authorization: Bearer <value>` (OpenAI clients)
+- `Authorization: Bearer <value>` (OpenAI clients; `Bearer` is case-insensitive)
 - `X-Api-Key: <value>`
 - `Api-Key: <value>`
 
@@ -119,7 +120,7 @@ This keeps prefix / prompt cache on the first healthy provider.
 |---|---|---|---|
 | `GET` | `/healthz` | no | `OK` |
 | `GET` | `/v1/models` | yes | Lists configured `models[].name` |
-| `GET` | `/v1/models/{model}` | yes | Single configured model |
+| `GET` | `/v1/models/{model}` | yes | Single configured model (ids may contain `/`) |
 | `POST` | `/v1/chat/completions` | yes | Also `/chat/completions` |
 | `POST` | `/v1/completions` | yes | Also `/completions` |
 | `POST` | `/v1/embeddings` | yes | Also `/embeddings` |

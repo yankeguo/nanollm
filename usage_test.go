@@ -58,3 +58,16 @@ func TestCopyAndScanSSE(t *testing.T) {
 	require.Equal(t, "gpt-4o", u.ResponseModel)
 	require.Contains(t, dst.String(), "[DONE]")
 }
+
+func TestCopyAndScanSSECapsScanBuffer(t *testing.T) {
+	orig := maxSSEScan
+	maxSSEScan = 16
+	t.Cleanup(func() { maxSSEScan = orig })
+
+	src := bytes.NewBuffer(bytes.Repeat([]byte("x"), 1000))
+	var dst bytes.Buffer
+	u, err := copyAndScanSSE(&dst, src)
+	require.NoError(t, err)
+	require.True(t, u.empty())
+	require.Equal(t, 1000, dst.Len())
+}

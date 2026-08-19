@@ -39,10 +39,14 @@ func TestProxyRewritesModelAndHeaders(t *testing.T) {
 	var gotBody []byte
 	var gotAuth string
 	var gotExtra string
+	var gotXAPIKey string
+	var gotAPIKey string
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotBody, _ = io.ReadAll(r.Body)
 		gotAuth = r.Header.Get("Authorization")
 		gotExtra = r.Header.Get("X-Extra")
+		gotXAPIKey = r.Header.Get("X-Api-Key")
+		gotAPIKey = r.Header.Get("Api-Key")
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"id":"1","model":"gpt-4o-mini","choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":5,"completion_tokens":1}}`)
 	}))
@@ -64,6 +68,8 @@ func TestProxyRewritesModelAndHeaders(t *testing.T) {
 	}))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer client-token")
+	req.Header.Set("X-Api-Key", "client-x")
+	req.Header.Set("Api-Key", "client-api")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, authed(req))
 
@@ -73,6 +79,8 @@ func TestProxyRewritesModelAndHeaders(t *testing.T) {
 	require.Equal(t, "gpt-4o-mini", sent["model"])
 	require.Equal(t, "Bearer sk-up", gotAuth)
 	require.Equal(t, "yes", gotExtra)
+	require.Empty(t, gotXAPIKey)
+	require.Empty(t, gotAPIKey)
 }
 
 func TestProxyFailoversOnCatastrophicThenSucceeds(t *testing.T) {
@@ -199,6 +207,31 @@ func TestModelsEndpoint(t *testing.T) {
 	require.Contains(t, rec.Body.String(), `"code"`)
 }
 
+func TestProxyDoesNotFailoverOn500(t *testing.T) {
+	var secondHits atomic.Int32
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		io.WriteString(w, `{"error":{"message":"boom"}}`)
+	}))
+	t.Cleanup(first.Close)
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		secondHits.Add(1)
+	}))
+	t.Cleanup(second.Close)
+
+	h := testProxy(t, cfgFast(
+		Provider{Name: "a", URL: first.URL, Model: "a"},
+		Provider{Name: "b", URL: second.URL, Model: "b"},
+	))
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Equal(t, int32(0), secondHits.Load())
+	require.Contains(t, rec.Body.String(), "boom")
+}
+
 func TestProxyDoesNotFailoverOn429(t *testing.T) {
 	var secondHits atomic.Int32
 	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -221,6 +254,90 @@ func TestProxyDoesNotFailoverOn429(t *testing.T) {
 	h.ServeHTTP(rec, authed(req))
 	require.Equal(t, http.StatusTooManyRequests, rec.Code)
 	require.Equal(t, int32(0), secondHits.Load())
+}
+
+func TestProxyAllUpstreamsUnavailable(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	deadURL := "http://" + ln.Addr().String() + "/v1/chat/completions"
+	require.NoError(t, ln.Close())
+
+	h := testProxy(t, cfgFast(Provider{Name: "a", URL: deadURL, Model: "a"}))
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.Contains(t, rec.Body.String(), "all upstreams unavailable")
+}
+
+func TestProxyBodyTooLarge(t *testing.T) {
+	orig := maxRequestBody
+	maxRequestBody = 8
+	t.Cleanup(func() { maxRequestBody = orig })
+
+	h := testProxy(t, cfgFast(Provider{Name: "x", URL: "http://example.invalid", Model: "x"}))
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(bytes.Repeat([]byte("x"), 64)))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+	require.Contains(t, rec.Body.String(), "request body too large")
+}
+
+func TestModelEndpoint(t *testing.T) {
+	h := testProxy(t, &Config{Models: []ModelConfig{
+		{Name: "fast", Providers: []Provider{{Name: "x", URL: "http://example.invalid", Model: "x"}}},
+		{Name: "org/code", Providers: []Provider{{Name: "y", URL: "http://example.invalid", Model: "y"}}},
+	}})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models/fast", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"fast"`)
+
+	req = httptest.NewRequest(http.MethodGet, "/v1/models/org/code", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"org/code"`)
+
+	req = httptest.NewRequest(http.MethodGet, "/v1/models/missing", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestCopyRequestHeadersStripsSecretsAndHopByHop(t *testing.T) {
+	src := make(http.Header)
+	src.Set("Authorization", "Bearer client")
+	src.Set("X-Api-Key", "client-x")
+	src.Set("Api-Key", "client-api")
+	src.Set("X-Extra", "keep")
+	src.Set("Connection", "X-Tmp")
+	src.Set("X-Tmp", "drop")
+	src.Set("Accept-Encoding", "gzip")
+	dst := make(http.Header)
+	copyRequestHeaders(dst, src)
+	require.Empty(t, dst.Get("Authorization"))
+	require.Empty(t, dst.Get("X-Api-Key"))
+	require.Empty(t, dst.Get("Api-Key"))
+	require.Empty(t, dst.Get("X-Tmp"))
+	require.Empty(t, dst.Get("Accept-Encoding"))
+	require.Equal(t, "keep", dst.Get("X-Extra"))
+}
+
+func TestCopyResponseHeadersStripsHopByHop(t *testing.T) {
+	src := make(http.Header)
+	src.Set("Content-Type", "application/json")
+	src.Set("Connection", "close, X-Tmp")
+	src.Set("X-Tmp", "drop")
+	src.Set("Keep-Alive", "timeout=5")
+	dst := make(http.Header)
+	copyResponseHeaders(dst, src)
+	require.Equal(t, "application/json", dst.Get("Content-Type"))
+	require.Empty(t, dst.Get("Connection"))
+	require.Empty(t, dst.Get("X-Tmp"))
+	require.Empty(t, dst.Get("Keep-Alive"))
 }
 
 func jsonBody(v any) io.Reader {
