@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>nanollm admin — calls</title>
+  {{template "css" .}}
+</head>
+<body>
+  {{template "nav" .}}
+  <div class="wrap">
+    <form class="filters" method="get" action="/admin/calls">
+      <label>Model <input name="model" value="{{.Filter.Model}}"></label>
+      <label>Provider <input name="provider" value="{{.Filter.Provider}}"></label>
+      <label>API key <input name="api_key" value="{{.Filter.APIKey}}"></label>
+      <button type="submit">Filter</button>
+    </form>
+    <div class="panel">
+      <h2>Calls <span class="muted">({{.Total}})</span></h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Time (UTC)</th><th>Model</th><th>Provider</th><th>API key</th>
+            <th class="num">Status</th><th class="num">In</th><th class="num">Out</th><th class="num">Cache</th>
+            <th>Error</th><th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+        {{range .Rows}}
+          <tr>
+            <td>{{.CreatedAt.UTC.Format "2006-01-02 15:04:05"}}</td>
+            <td>{{.Model}}</td>
+            <td>{{.Provider}}</td>
+            <td>{{.APIKeyName}}</td>
+            <td class="num">{{.HTTPStatus}}</td>
+            <td class="num">{{.InputTokens}}</td>
+            <td class="num">{{.OutputTokens}}</td>
+            <td class="num">{{.CacheTokens}}</td>
+            <td class="err">{{.Error}}</td>
+            <td>{{if .HasDetail}}<a href="/admin/calls/{{.ID}}">view</a>{{else}}<span class="muted">—</span>{{end}}</td>
+          </tr>
+        {{else}}
+          <tr><td colspan="10" class="muted">No calls</td></tr>
+        {{end}}
+        </tbody>
+      </table>
+      <div class="pager">
+        {{if .Prev}}<a href="{{.Prev}}">Newer</a>{{end}}
+        {{if .Next}}<a href="{{.Next}}">Older</a>{{end}}
+      </div>
+    </div>
+  </div>
+</body>
+</html>

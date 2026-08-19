@@ -14,6 +14,9 @@ func TestLoadConfig(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(`
 mysql:
   dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+admin:
+  username: admin
+  password: REPLACE_ME
 api_keys:
   - name: alice
     value: sk-alice
@@ -49,6 +52,8 @@ models:
 	require.Len(t, cfg.providers("fast"), 2)
 	require.Equal(t, "nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm", cfg.MySQL.DSN)
 	require.Equal(t, 1000, cfg.MySQL.detailRetain())
+	require.Equal(t, "admin", cfg.Admin.Username)
+	require.Equal(t, "REPLACE_ME", cfg.Admin.Password)
 }
 
 func TestLoadConfigRejectsEmpty(t *testing.T) {
@@ -152,6 +157,9 @@ func TestLoadConfigDetailRetain(t *testing.T) {
 mysql:
   dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
   detail_retain: 0
+admin:
+  username: admin
+  password: REPLACE_ME
 api_keys:
   - name: alice
     value: sk-alice
@@ -180,4 +188,40 @@ models:
 `), 0o644))
 	_, err = loadConfig(path)
 	require.ErrorContains(t, err, "detail_retain")
+}
+
+func TestLoadConfigRequiresAdmin(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+api_keys:
+  - name: alice
+    value: sk-alice
+models:
+  - name: fast
+    providers:
+      - name: a
+        url: http://a.example
+`), 0o644))
+	_, err := loadConfig(path)
+	require.ErrorContains(t, err, "admin.username")
+
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+admin:
+  username: admin
+api_keys:
+  - name: alice
+    value: sk-alice
+models:
+  - name: fast
+    providers:
+      - name: a
+        url: http://a.example
+`), 0o644))
+	_, err = loadConfig(path)
+	require.ErrorContains(t, err, "admin.password")
 }

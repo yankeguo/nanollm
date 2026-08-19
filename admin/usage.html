@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>nanollm admin — usage</title>
+  {{template "css" .}}
+</head>
+<body>
+  {{template "nav" .}}
+  <div class="wrap">
+    <div class="filters">
+      <span class="muted">Range</span>
+      <div class="group">
+        {{range .Ranges}}<a class="chip{{if eq $.Window.Range .}} on{{end}}" href="/admin?range={{.}}&bucket={{$.Window.Bucket}}">{{.}}</a>{{end}}
+      </div>
+      <span class="muted">Bucket</span>
+      <div class="group">
+        {{range .Buckets}}<a class="chip{{if eq $.Window.Bucket .}} on{{end}}" href="/admin?range={{$.Window.Range}}&bucket={{.}}">{{.}}</a>{{end}}
+      </div>
+      <span class="muted">UTC {{.Window.From.Format "2006-01-02 15:04"}} → {{.Window.To.Format "2006-01-02 15:04"}}</span>
+    </div>
+    <div class="stats">
+      <div class="stat"><span>Calls</span><b>{{.Totals.Calls}}</b></div>
+      <div class="stat"><span>Input</span><b>{{.Totals.Input}}</b></div>
+      <div class="stat"><span>Output</span><b>{{.Totals.Output}}</b></div>
+      <div class="stat"><span>Cache</span><b>{{.Totals.Cache}}</b></div>
+      <div class="stat"><span>Uncached</span><b>{{.Totals.Uncached}}</b></div>
+    </div>
+    <div class="charts">
+      <div class="panel"><h2>Tokens by period</h2><canvas id="tokensChart"></canvas></div>
+      <div class="panel"><h2>Calls by period</h2><canvas id="callsChart"></canvas></div>
+    </div>
+    <div class="panel" style="margin-bottom:1rem">
+      <h2>Time series (UTC)</h2>
+      <table>
+        <thead><tr><th>Bucket</th><th class="num">Calls</th><th class="num">Input</th><th class="num">Output</th><th class="num">Cache</th><th class="num">Uncached</th></tr></thead>
+        <tbody>
+        {{range .Series}}<tr><td>{{.Bucket}}</td><td class="num">{{.Calls}}</td><td class="num">{{.Input}}</td><td class="num">{{.Output}}</td><td class="num">{{.Cache}}</td><td class="num">{{.Uncached}}</td></tr>{{else}}<tr><td colspan="6" class="muted">No calls in this window</td></tr>{{end}}
+        </tbody>
+      </table>
+    </div>
+    {{range .Breakdowns}}
+    <div class="panel" style="margin-bottom:1rem">
+      <h2>By {{.Title}}</h2>
+      <table>
+        <thead><tr><th>{{.Title}}</th><th class="num">Calls</th><th class="num">Input</th><th class="num">Output</th><th class="num">Cache</th><th class="num">Uncached</th></tr></thead>
+        <tbody>
+        {{range .Rows}}<tr><td>{{.Name}}</td><td class="num">{{.Calls}}</td><td class="num">{{.Input}}</td><td class="num">{{.Output}}</td><td class="num">{{.Cache}}</td><td class="num">{{.Uncached}}</td></tr>{{else}}<tr><td colspan="6" class="muted">None</td></tr>{{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script>
+    const data = {{.ChartJSON}};
+    const tick = { color: '#8b9aab' };
+    const grid = { color: '#2a3644' };
+    Chart.defaults.color = '#8b9aab';
+    Chart.defaults.borderColor = '#2a3644';
+    new Chart(document.getElementById('tokensChart'), {
+      type: 'bar',
+      data: {
+        labels: data.labels,
+        datasets: [
+          { label: 'input', data: data.input, backgroundColor: '#5b9fd4', stack: 't' },
+          { label: 'output', data: data.output, backgroundColor: '#6dbe8a', stack: 't' },
+          { label: 'cache', data: data.cache, backgroundColor: '#c9a45c', stack: 't' },
+          { label: 'uncached', data: data.uncached, backgroundColor: '#8b9aab', stack: 't' }
+        ]
+      },
+      options: { responsive: true, scales: { x: { stacked: true, ticks: tick, grid: grid }, y: { stacked: true, ticks: tick, grid: grid } } }
+    });
+    new Chart(document.getElementById('callsChart'), {
+      type: 'line',
+      data: { labels: data.labels, datasets: [{ label: 'calls', data: data.calls, borderColor: '#5b9fd4', tension: 0.2, fill: false }] },
+      options: { responsive: true, scales: { x: { ticks: tick, grid: grid }, y: { ticks: tick, grid: grid, beginAtZero: true } } }
+    });
+  </script>
+</body>
+</html>

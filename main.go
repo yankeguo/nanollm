@@ -45,7 +45,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              listen,
-		Handler:           NewServer(cfg, newGormCallLogger(db, cfg.MySQL.detailRetain())).Handler(),
+		Handler:           NewServer(cfg, newGormCallLogger(db, cfg.MySQL.detailRetain()), db).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}

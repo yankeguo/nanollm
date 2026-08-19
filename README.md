@@ -12,12 +12,13 @@ Providers for a model are tried **in order**. The next provider is used only whe
 - Streaming SSE pass-through
 - Failover only on dial/DNS/TLS failure or HTTP 502/503/504
 - Every upstream attempt (including failures) is stored in MySQL
+- Admin UI at `/admin` (cookie login) for usage charts and call details
 
 ## Quick start
 
 ```bash
 cp config.example.yaml config.yaml
-# edit mysql.dsn, api_keys, models, and upstream headers
+# edit mysql.dsn, admin password, api_keys, models, and upstream headers
 go run . -config config.yaml -listen :8080
 ```
 
@@ -30,6 +31,8 @@ docker run --rm -p 8080:8080 \
 ```
 
 Point the client at `http://127.0.0.1:8080/v1` with `Authorization: Bearer <api_keys.value>` and `"model": "<models[].name>"`.
+
+Open `http://127.0.0.1:8080/admin` to review token usage and call logs.
 
 ## Flags and environment
 
@@ -46,6 +49,9 @@ The container image sets `NANOLLM_CONFIG=/config.yaml`.
 mysql:
   dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
   detail_retain: 1000
+admin:
+  username: admin
+  password: REPLACE_ME
 api_keys:
   - name: alice
     value: sk-alice
@@ -68,6 +74,8 @@ models:
 |---|---|---|
 | `mysql.dsn` | yes | MySQL DSN (`user:pass@tcp(host:3306)/dbname`). Connection params are forced: `charset=utf8mb4`, `parseTime=true`, `loc=UTC`, `time_zone='UTC'` |
 | `mysql.detail_retain` | no | Keep request/response JSON for the latest N rows (default `1000`; `0` keeps no blobs) |
+| `admin.username` | yes | Admin UI login name |
+| `admin.password` | yes | Admin UI login password |
 | `api_keys[].name` | yes | Identifier for this key (must be unique) |
 | `api_keys[].value` | yes | Secret the client must send |
 | `models[].name` | yes | Client-facing model id |
@@ -79,6 +87,7 @@ models:
 
 Rules:
 
+- Admin username and password are required
 - MySQL DSN is required; timestamps are stored in UTC
 - At least one API key and one model
 - Model names unique; provider names unique **within** a model
@@ -91,13 +100,15 @@ See `config.example.yaml`.
 
 ## Authentication
 
-Every route except `GET /healthz` requires a configured key:
+LLM API routes except `GET /healthz` require a configured key:
 
 - `Authorization: Bearer <value>` (OpenAI clients; `Bearer` is case-insensitive)
 - `X-Api-Key: <value>`
 - `Api-Key: <value>`
 
 Unknown or missing keys return `401` with `{"error":{"type":"invalid_request_error","message":"invalid api key"}}`.
+
+The admin UI (`/admin`) uses `admin.username` / `admin.password` and an HttpOnly cookie (`nanollm_admin`, 12h, SameSite=Lax). `Secure` is set when the request is TLS or `X-Forwarded-Proto: https`. `/admin/login` is unauthenticated.
 
 ## Failover
 
@@ -129,6 +140,11 @@ This keeps prefix / prompt cache on the first healthy provider.
 | `POST` | `/v1/completions` | yes | Also `/completions` |
 | `POST` | `/v1/embeddings` | yes | Also `/embeddings` |
 | `POST` | `/v1/responses` | yes | |
+| `GET` | `/admin` | cookie | Usage tables and Chart.js graphs |
+| `GET` | `/admin/calls` | cookie | Paginated call log |
+| `GET` | `/admin/calls/{id}` | cookie | Request/response JSON when retained |
+| `GET`/`POST` | `/admin/login` | no | Admin sign-in |
+| `POST` | `/admin/logout` | cookie | Clear admin cookie |
 
 The JSON body `model` field selects `models[].name`. nanollm rewrites it to `providers[].model` and POSTs to `providers[].url`.
 
@@ -149,6 +165,8 @@ Failures and failover hops are recorded so you can see which hop died. The synth
 After each insert, blobs older than the latest `mysql.detail_retain` rows are set to `NULL`. Metadata is kept. Bodies larger than 16 MiB skip the blob columns.
 
 Insert/prune errors are logged and do not change the client response.
+
+Browse the same data at `/admin` after signing in with `admin.username` / `admin.password`. Usage can be grouped by hour, day, week, or month.
 
 ## Docker / GHCR
 

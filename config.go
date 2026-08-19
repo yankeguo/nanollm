@@ -13,8 +13,14 @@ const defaultDetailRetain = 1000
 
 type Config struct {
 	MySQL   MySQLConfig   `yaml:"mysql"`
+	Admin   AdminConfig   `yaml:"admin"`
 	APIKeys []APIKey      `yaml:"api_keys"`
 	Models  []ModelConfig `yaml:"models"`
+}
+
+type AdminConfig struct {
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
 }
 
 type MySQLConfig struct {
@@ -127,6 +133,12 @@ func (c *Config) validate() error {
 	}
 	if c.MySQL.DetailRetain != nil && *c.MySQL.DetailRetain < 0 {
 		return fmt.Errorf("config: mysql.detail_retain must be >= 0")
+	}
+	if strings.TrimSpace(c.Admin.Username) == "" {
+		return fmt.Errorf("config: admin.username is required")
+	}
+	if c.Admin.Password == "" {
+		return fmt.Errorf("config: admin.password is required")
 	}
 	return nil
 }

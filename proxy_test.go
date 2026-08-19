@@ -20,7 +20,7 @@ func testProxy(t *testing.T, cfg *Config) http.Handler {
 	if len(cfg.APIKeys) == 0 {
 		cfg.APIKeys = []APIKey{{Name: "test", Value: testAPIKey}}
 	}
-	return NewServer(cfg, nil).Handler()
+	return NewServer(cfg, nil, nil).Handler()
 }
 
 func cfgFast(providers ...Provider) *Config {
@@ -362,7 +362,7 @@ func TestProxyLogsSuccess(t *testing.T) {
 
 	logger := &memoryCallLogger{}
 	cfg := cfgFast(Provider{Name: "primary", URL: up.URL, Model: "gpt-4o-mini"})
-	h := NewServer(cfg, logger).Handler()
+	h := NewServer(cfg, logger, nil).Handler()
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
 		"model":    "fast",
@@ -404,7 +404,7 @@ func TestProxyLogsFailoverAttempts(t *testing.T) {
 		Provider{Name: "a", URL: first.URL, Model: "a"},
 		Provider{Name: "b", URL: second.URL, Model: "b"},
 	)
-	h := NewServer(cfg, logger).Handler()
+	h := NewServer(cfg, logger, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, authed(req))
@@ -426,7 +426,7 @@ func TestProxyLogsDialFailure(t *testing.T) {
 	require.NoError(t, ln.Close())
 
 	logger := &memoryCallLogger{}
-	h := NewServer(cfgFast(Provider{Name: "a", URL: deadURL, Model: "a"}), logger).Handler()
+	h := NewServer(cfgFast(Provider{Name: "a", URL: deadURL, Model: "a"}), logger, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, authed(req))

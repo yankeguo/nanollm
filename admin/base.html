@@ -1,0 +1,51 @@
+{{define "css"}}
+<style>
+  :root { --bg:#0f1419; --card:#1a222c; --fg:#e8eef4; --muted:#8b9aab; --line:#2a3644; --acc:#5b9fd4; --err:#e07070; --ok:#6dbe8a; }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  a { color:var(--acc); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  header { display:flex; align-items:center; gap:1.25rem; padding:.85rem 1.5rem; border-bottom:1px solid var(--line); background:var(--card); }
+  header h1 { font-size:1rem; margin:0; font-weight:600; letter-spacing:.02em; }
+  header nav { display:flex; gap:1rem; flex:1; }
+  header form { margin-left:auto; }
+  .wrap { max-width:1100px; margin:0 auto; padding:1.5rem; }
+  .filters { display:flex; flex-wrap:wrap; gap:.5rem 1rem; margin-bottom:1.25rem; align-items:center; }
+  .filters .group { display:flex; gap:.35rem; flex-wrap:wrap; }
+  .chip { display:inline-block; padding:.2rem .65rem; border:1px solid var(--line); border-radius:999px; color:var(--muted); }
+  .chip.on { background:var(--acc); color:#0f1419; border-color:var(--acc); }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:.75rem; margin-bottom:1.5rem; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:.85rem 1rem; }
+  .stat b { display:block; font-size:1.25rem; font-variant-numeric:tabular-nums; }
+  .stat span { color:var(--muted); font-size:.8rem; }
+  .charts { display:grid; grid-template-columns:1fr; gap:1rem; margin-bottom:1.5rem; }
+  @media (min-width:900px) { .charts { grid-template-columns:1fr 1fr; } }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:1rem; }
+  .panel h2 { margin:0 0 .75rem; font-size:.95rem; font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-size:.9rem; }
+  th, td { text-align:left; padding:.4rem .5rem; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  th { color:var(--muted); font-weight:500; }
+  .err { color:var(--err); }
+  .muted { color:var(--muted); }
+  .num { text-align:right !important; }
+  button, .btn { background:var(--acc); color:#0f1419; border:0; border-radius:8px; padding:.45rem .9rem; font-weight:600; cursor:pointer; }
+  body.login { min-height:100vh; display:flex; align-items:center; justify-content:center; }
+  form.card { width:min(360px,92vw); background:var(--card); border:1px solid var(--line); border-radius:12px; padding:1.5rem; display:flex; flex-direction:column; gap:.75rem; }
+  form.card h1 { margin:0; }
+  label { display:flex; flex-direction:column; gap:.3rem; font-size:.85rem; color:var(--muted); }
+  input, select { background:#0f1419; border:1px solid var(--line); color:var(--fg); border-radius:8px; padding:.5rem .65rem; font:inherit; }
+  pre { background:#0f1419; border:1px solid var(--line); border-radius:8px; padding:1rem; overflow:auto; white-space:pre-wrap; word-break:break-word; font-size:.8rem; }
+  .pager { display:flex; gap:1rem; margin-top:1rem; }
+</style>
+{{end}}
+
+{{define "nav"}}
+<header>
+  <h1>nanollm</h1>
+  <nav>
+    <a href="/admin">Usage</a>
+    <a href="/admin/calls">Calls</a>
+  </nav>
+  <form method="post" action="/admin/logout"><button type="submit">Sign out</button></form>
+</header>
+{{end}}

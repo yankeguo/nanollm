@@ -14,6 +14,8 @@ Single `package main`. No `internal/` split unless the tree clearly outgrows one
 | `config.go` | YAML load/validate |
 | `auth.go` | Incoming API keys; do not forward client credentials |
 | `server.go` | `net/http` mux (`GET /healthz` unauthenticated) |
+| `admin.go` / `admin_auth.go` | Admin cookie login, usage dashboard, call viewer |
+| `admin/*.html` | Embedded HTML for `/admin` |
 | `proxy.go` | Body rewrite, ordered provider attempts, response copy, call logging |
 | `failover.go` | `isCatastrophic` — only then try the next provider |
 | `rewrite.go` | Replace `model`; inject `stream_options.include_usage` when streaming |
@@ -26,11 +28,12 @@ Tests live next to the code (`*_test.go`). Use `github.com/stretchr/testify`. Pr
 
 - **std `net/http` only** for the server. No Fiber/Gin/Echo.
 - **Failover is cache-preserving.** Next provider only on catastrophic unavailability: dial/DNS/TLS/other transport failure, or HTTP 502/503/504. Do **not** fail over on 429, 4xx, 500, or timeouts after the provider was reached.
-- Config shape is `mysql.{dsn,detail_retain}`, `api_keys[].{name,value}` and `models[].{name,providers[]}` with `providers[].{name,url,model,headers}`. `url` is the full `http`/`https` upstream endpoint, not a base URL. Auth to upstream belongs in `headers`.
+- Config shape is `mysql.{dsn,detail_retain}`, `admin.{username,password}`, `api_keys[].{name,value}` and `models[].{name,providers[]}` with `providers[].{name,url,model,headers}`. `url` is the full `http`/`https` upstream endpoint, not a base URL. Auth to upstream belongs in `headers`.
 - MySQL is required. DSN params `charset=utf8mb4`, `parseTime=true`, `loc=UTC`, `time_zone='UTC'` are forced. All DB timestamps are UTC.
+- `/admin` is a cookie-authenticated dashboard (HMAC, HttpOnly, SameSite=Lax; Secure when TLS or `X-Forwarded-Proto: https`). It is not API-key auth. `admin.username` and `admin.password` are required.
 - Every provider attempt (success, 4xx/5xx, failover, dial failure, rewrite error, client cancel) is inserted into `llm_calls`. Detail JSON blobs are kept only for the latest `mysql.detail_retain` rows (default 1000).
 - Incoming `Authorization` / `X-Api-Key` / `Api-Key` authenticate against `api_keys` and must not be copied upstream.
-- At least one API key is required; missing/invalid keys → 401 except `GET /healthz`.
+- At least one API key is required; missing/invalid keys → 401 except `GET /healthz` and `/admin*`.
 - Do not commit `config.yaml` (secrets). Change `config.example.yaml` and README when the config schema changes.
 - Images: `ghcr.io/${{ github.repository }}`. Push `main` → `latest`; push a git tag → that tag. Workflow: `.github/workflows/release.yml`.
 

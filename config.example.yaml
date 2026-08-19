@@ -1,6 +1,9 @@
 mysql:
   dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
   # detail_retain: 1000
+admin:
+  username: admin
+  password: REPLACE_ME
 api_keys:
   - name: default
     value: sk-REPLACE_ME

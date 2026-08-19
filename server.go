@@ -4,27 +4,43 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type Server struct {
-	Config  *Config
-	Client  *http.Client
-	Logger  CallLogger
-	started int64
+	Config   *Config
+	Client   *http.Client
+	Logger   CallLogger
+	DB       *gorm.DB
+	adminKey []byte
+	started  int64
 }
 
-func NewServer(cfg *Config, logger CallLogger) *Server {
-	return &Server{
+func NewServer(cfg *Config, logger CallLogger, db *gorm.DB) *Server {
+	s := &Server{
 		Config:  cfg,
 		Client:  defaultHTTPClient(),
 		Logger:  logger,
+		DB:      db,
 		started: time.Now().Unix(),
 	}
+	if cfg != nil {
+		s.adminKey = adminCookieKey(cfg.Admin.Username, cfg.Admin.Password)
+	}
+	return s
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
+
+	mux.HandleFunc("GET /admin/login", s.handleAdminLogin)
+	mux.HandleFunc("POST /admin/login", s.handleAdminLogin)
+	mux.Handle("POST /admin/logout", s.requireAdmin(http.HandlerFunc(s.handleAdminLogout)))
+	mux.Handle("GET /admin", s.requireAdmin(http.HandlerFunc(s.handleAdminUsage)))
+	mux.Handle("GET /admin/calls", s.requireAdmin(http.HandlerFunc(s.handleAdminCalls)))
+	mux.Handle("GET /admin/calls/{id}", s.requireAdmin(http.HandlerFunc(s.handleAdminCall)))
 
 	auth := func(h http.Handler) http.Handler { return s.requireAPIKey(h) }
 	mux.Handle("GET /v1/models", auth(http.HandlerFunc(s.handleModels)))

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>nanollm admin — call {{.Call.ID}}</title>
+  {{template "css" .}}
+</head>
+<body>
+  {{template "nav" .}}
+  <div class="wrap">
+    <p><a href="/admin/calls">← Calls</a></p>
+    <div class="stats">
+      <div class="stat"><span>ID</span><b>{{.Call.ID}}</b></div>
+      <div class="stat"><span>Time UTC</span><b>{{.Call.CreatedAt.UTC.Format "2006-01-02 15:04:05"}}</b></div>
+      <div class="stat"><span>Model</span><b>{{.Call.Model}}</b></div>
+      <div class="stat"><span>Provider</span><b>{{.Call.Provider}}</b></div>
+      <div class="stat"><span>Upstream</span><b>{{.Call.ProviderModel}}</b></div>
+      <div class="stat"><span>API key</span><b>{{.Call.APIKeyName}}</b></div>
+      <div class="stat"><span>Status</span><b>{{.Call.HTTPStatus}}</b></div>
+      <div class="stat"><span>Input / output</span><b>{{.Call.InputTokens}} / {{.Call.OutputTokens}}</b></div>
+      <div class="stat"><span>Cache / uncached</span><b>{{.Call.CacheTokens}} / {{.Call.UncachedTokens}}</b></div>
+    </div>
+    {{if .Call.Error}}<p class="err">{{.Call.Error}}</p>{{end}}
+    <div class="panel" style="margin-bottom:1rem">
+      <h2>Request JSON</h2>
+      {{if .RequestPretty}}<pre>{{.RequestPretty}}</pre>{{else}}<p class="muted">detail not retained</p>{{end}}
+    </div>
+    <div class="panel">
+      <h2>Response JSON</h2>
+      {{if .ResponsePretty}}<pre>{{.ResponsePretty}}</pre>{{else}}<p class="muted">detail not retained</p>{{end}}
+    </div>
+  </div>
+</body>
+</html>
