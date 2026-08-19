@@ -27,3 +27,12 @@ models:
         model: llama3.1
         headers:
           Authorization: Bearer ollama
+  - name: claude
+    providers:
+      - name: anthropic
+        format: anthropic
+        url: https://api.anthropic.com/v1/messages
+        model: claude-sonnet-4-5
+        headers:
+          x-api-key: REPLACE_ME
+          anthropic-version: "2023-06-01"

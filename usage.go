@@ -125,8 +125,12 @@ func (u openaiUsage) asTokenUsage() tokenUsage {
 }
 
 type openaiResponse struct {
-	Model string       `json:"model"`
-	Usage *openaiUsage `json:"usage"`
+	Model   string       `json:"model"`
+	Usage   *openaiUsage `json:"usage"`
+	Message *struct {
+		Model string       `json:"model"`
+		Usage *openaiUsage `json:"usage"`
+	} `json:"message"`
 }
 
 func parseUsageJSON(body []byte) tokenUsage {
@@ -134,14 +138,23 @@ func parseUsageJSON(body []byte) tokenUsage {
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return tokenUsage{}
 	}
-	out := tokenUsage{ResponseModel: resp.Model}
+	var out tokenUsage
+	if resp.Message != nil {
+		out.ResponseModel = resp.Message.Model
+		if resp.Message.Usage != nil {
+			u := resp.Message.Usage.asTokenUsage()
+			out.Input = u.Input
+			out.Output = u.Output
+			out.CacheRead = u.CacheRead
+			out.CacheCreation = u.CacheCreation
+			out.Uncached = u.Uncached
+		}
+	}
+	if resp.Model != "" {
+		out.ResponseModel = resp.Model
+	}
 	if resp.Usage != nil {
-		u := resp.Usage.asTokenUsage()
-		out.Input = u.Input
-		out.Output = u.Output
-		out.CacheRead = u.CacheRead
-		out.CacheCreation = u.CacheCreation
-		out.Uncached = u.Uncached
+		mergeUsage(&out, resp.Usage.asTokenUsage())
 	}
 	return out
 }

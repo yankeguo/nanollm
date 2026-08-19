@@ -1,13 +1,14 @@
 # nanollm
 
-OpenAI-compatible reverse proxy for LLM APIs. Point coding tools at nanollm and map one client-facing model name to one or more upstream providers.
+OpenAI- and Anthropic-compatible reverse proxy for LLM APIs. Point coding tools at nanollm and map one client-facing model name to one or more upstream providers.
 
-Providers for a model are tried **in order**. The next provider is used only when the current one is catastrophically unavailable. Rate limits, 4xx, and ordinary 5xx stay on the same provider so prompt cache is not thrown away.
+Providers for a model are tried **in order**, but only those whose `format` matches the inbound API. The next provider is used only when the current one is catastrophically unavailable. Rate limits, 4xx, and ordinary 5xx stay on the same provider so prompt cache is not thrown away.
 
 ## Features
 
-- Standard `net/http` server, OpenAI-compatible `/v1/chat/completions` (plus completions, embeddings, responses)
-- YAML config: named models, named providers, auth merged into provider `headers`
+- Standard `net/http` server: OpenAI `/v1/chat/completions` (plus completions, embeddings, responses) and Anthropic `/v1/messages`
+- YAML config: named models, named providers, `format` (`openai` or `anthropic`), auth merged into provider `headers`
+- No OpenAI ↔ Anthropic body conversion; each inbound API only uses matching providers
 - Incoming API keys (`api_keys[].{name,value}`)
 - Streaming SSE pass-through
 - Failover only on dial/DNS/TLS failure or HTTP 502/503/504
@@ -30,7 +31,9 @@ docker run --rm -p 8080:8080 \
   ghcr.io/yankeguo/nanollm:latest
 ```
 
-Point the client at `http://127.0.0.1:8080/v1` with `Authorization: Bearer <api_keys.value>` and `"model": "<models[].name>"`.
+Point OpenAI clients at `http://127.0.0.1:8080/v1` with `Authorization: Bearer <api_keys.value>` and `"model": "<models[].name>"`.
+
+Point Anthropic clients at `http://127.0.0.1:8080` with `x-api-key: <api_keys.value>` and the same `"model"` field. The model must have at least one `format: anthropic` provider.
 
 Open `http://127.0.0.1:8080/admin` to review token usage and call logs.
 
@@ -68,6 +71,15 @@ models:
         model: openai/gpt-4o
         headers:
           Authorization: Bearer sk-or-REPLACE_ME
+  - name: claude
+    providers:
+      - name: anthropic
+        format: anthropic
+        url: https://api.anthropic.com/v1/messages
+        model: claude-sonnet-4-5
+        headers:
+          x-api-key: REPLACE_ME
+          anthropic-version: "2023-06-01"
 ```
 
 | Field | Required | Meaning |
@@ -81,6 +93,7 @@ models:
 | `models[].name` | yes | Client-facing model id |
 | `models[].providers` | yes | Ordered upstream list |
 | `providers[].name` | yes | Identifier for this provider within a model (must be unique) |
+| `providers[].format` | no | `openai` (default) or `anthropic`. OpenAI routes only use `openai` providers; `POST /v1/messages` only uses `anthropic` providers |
 | `providers[].url` | yes | Full `http`/`https` upstream URL (not a base URL) |
 | `providers[].model` | no | Model string sent upstream; if empty, the client model is kept |
 | `providers[].headers` | no | Extra request headers, including upstream auth |
@@ -94,6 +107,7 @@ Rules:
 - API key names unique; API key values unique
 - Incoming `Authorization` / `X-Api-Key` / `Api-Key` are **not** forwarded
 - Request bodies larger than 64 MiB return `413`
+- nanollm does **not** convert OpenAI and Anthropic bodies. If a model has no provider for the inbound format, the request fails with `404`
 - `config.yaml` is gitignored; commit `config.example.yaml` only
 
 See `config.example.yaml`.
@@ -106,13 +120,13 @@ LLM API routes except `GET /healthz` require a configured key:
 - `X-Api-Key: <value>`
 - `Api-Key: <value>`
 
-Unknown or missing keys return `401` with `{"error":{"type":"invalid_request_error","message":"invalid api key"}}`.
+Unknown or missing keys return `401`. OpenAI routes use `{"error":{"type":"invalid_request_error","message":"invalid api key"}}`. Anthropic `POST /v1/messages` uses `{"type":"error","error":{"type":"authentication_error","message":"invalid api key"}}`.
 
 The admin UI (`/admin`) uses `admin.username` / `admin.password` and an HttpOnly cookie (`nanollm_admin`, 12h, SameSite=Lax). `Secure` is set when the request is TLS or `X-Forwarded-Proto: https`. `/admin/login` is unauthenticated.
 
 ## Failover
 
-For each request, providers are attempted from first to last.
+For each request, providers with a matching `format` are attempted from first to last.
 
 **Switch to the next provider only when the current one is catastrophically unavailable:**
 
@@ -141,15 +155,16 @@ This keeps prefix / prompt cache on the first healthy provider.
 | `POST` | `/v1/completions` | yes | Also `/completions` |
 | `POST` | `/v1/embeddings` | yes | Also `/embeddings` |
 | `POST` | `/v1/responses` | yes | |
+| `POST` | `/v1/messages` | yes | Anthropic Messages; only `format: anthropic` providers |
 | `GET` | `/admin` | cookie | Usage tables and Chart.js graphs |
 | `GET` | `/admin/calls` | cookie | Paginated call log |
 | `GET` | `/admin/calls/{id}` | cookie | Request/response JSON when retained |
 | `GET`/`POST` | `/admin/login` | no | Admin sign-in |
 | `POST` | `/admin/logout` | cookie | Clear admin cookie |
 
-The JSON body `model` field selects `models[].name`. nanollm rewrites it to `providers[].model` and POSTs to `providers[].url`.
+The JSON body `model` field selects `models[].name`. nanollm rewrites it to `providers[].model` and POSTs to `providers[].url`. OpenAI routes never call `format: anthropic` providers, and `/v1/messages` never calls `format: openai` providers.
 
-Streaming (`"stream": true`) is copied through as SSE. If `stream_options.include_usage` is missing, it is set to `true` so the last chunk can carry token counts.
+Streaming (`"stream": true`) is copied through as SSE. On OpenAI streaming, if `stream_options.include_usage` is missing, it is set to `true` so the last chunk can carry token counts. Anthropic bodies are not rewritten beyond `model`.
 
 ## Call log (MySQL)
 

@@ -26,7 +26,7 @@ func parseRequest(body []byte) (*requestMeta, error) {
 	return &requestMeta{Model: model, Stream: stream, Body: body}, nil
 }
 
-func rewriteRequest(body []byte, upstreamModel string, stream bool) ([]byte, error) {
+func rewriteRequest(body []byte, upstreamModel string, stream bool, format string) ([]byte, error) {
 	raw, err := decodeJSONObject(body)
 	if err != nil {
 		return nil, err
@@ -34,7 +34,7 @@ func rewriteRequest(body []byte, upstreamModel string, stream bool) ([]byte, err
 	if upstreamModel != "" {
 		raw["model"] = upstreamModel
 	}
-	if stream {
+	if stream && format != formatAnthropic {
 		opts, _ := raw["stream_options"].(map[string]any)
 		if opts == nil {
 			opts = map[string]any{}

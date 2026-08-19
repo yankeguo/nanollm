@@ -89,3 +89,27 @@ func TestEncodeResponseBlob(t *testing.T) {
 	enc := encodeResponseBlob(sse, true)
 	require.Equal(t, `"data: hi\n\n"`, string(enc))
 }
+
+func TestParseUsageJSONAnthropicMessageStart(t *testing.T) {
+	u := parseUsageJSON([]byte(`{"type":"message_start","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":12,"cache_read_input_tokens":4,"cache_creation_input_tokens":1}}}`))
+	require.Equal(t, int64(12), u.Input)
+	require.Equal(t, int64(4), u.CacheRead)
+	require.Equal(t, int64(1), u.CacheCreation)
+	require.Equal(t, int64(7), u.Uncached)
+	require.Equal(t, "claude-sonnet-4-5", u.ResponseModel)
+}
+
+func TestParseUsageSSEAnthropic(t *testing.T) {
+	body := []byte("event: message_start\n" +
+		"data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-sonnet-4-5\",\"usage\":{\"input_tokens\":10,\"cache_read_input_tokens\":2}}}\n\n" +
+		"event: content_block_delta\n" +
+		"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n" +
+		"event: message_delta\n" +
+		"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":3}}\n\n")
+	u := parseUsageSSE(body)
+	require.Equal(t, int64(10), u.Input)
+	require.Equal(t, int64(3), u.Output)
+	require.Equal(t, int64(2), u.CacheRead)
+	require.Equal(t, int64(8), u.Uncached)
+	require.Equal(t, "claude-sonnet-4-5", u.ResponseModel)
+}

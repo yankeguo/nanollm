@@ -9,7 +9,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const defaultDetailRetain = 1000
+const (
+	defaultDetailRetain = 1000
+	formatOpenAI        = "openai"
+	formatAnthropic     = "anthropic"
+)
 
 type Config struct {
 	MySQL   MySQLConfig   `yaml:"mysql"`
@@ -47,9 +51,17 @@ type ModelConfig struct {
 
 type Provider struct {
 	Name    string            `yaml:"name"`
+	Format  string            `yaml:"format"`
 	URL     string            `yaml:"url"`
 	Model   string            `yaml:"model"`
 	Headers map[string]string `yaml:"headers"`
+}
+
+func (p Provider) format() string {
+	if p.Format == "" {
+		return formatOpenAI
+	}
+	return p.Format
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -123,6 +135,14 @@ func (c *Config) validate() error {
 			if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 				return fmt.Errorf("config: model %q provider %q url must be http or https with a host", m.Name, p.Name)
 			}
+			format := strings.ToLower(strings.TrimSpace(p.Format))
+			if format == "" {
+				format = formatOpenAI
+			}
+			if format != formatOpenAI && format != formatAnthropic {
+				return fmt.Errorf("config: model %q provider %q format must be openai or anthropic", m.Name, p.Name)
+			}
+			c.Models[i].Providers[j].Format = format
 		}
 	}
 	if strings.TrimSpace(c.MySQL.DSN) == "" {
@@ -162,6 +182,20 @@ func (c *Config) providers(model string) []Provider {
 		return nil
 	}
 	return m.Providers
+}
+
+func (c *Config) providersFor(model, format string) []Provider {
+	all := c.providers(model)
+	if format == "" {
+		format = formatOpenAI
+	}
+	out := make([]Provider, 0, len(all))
+	for _, p := range all {
+		if p.format() == format {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func (c *Config) modelNames() []string {

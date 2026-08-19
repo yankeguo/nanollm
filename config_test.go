@@ -54,6 +54,7 @@ models:
 	require.Equal(t, 1000, cfg.MySQL.detailRetain())
 	require.Equal(t, "admin", cfg.Admin.Username)
 	require.Equal(t, "REPLACE_ME", cfg.Admin.Password)
+	require.Equal(t, formatOpenAI, cfg.providers("fast")[0].Format)
 }
 
 func TestLoadConfigRejectsEmpty(t *testing.T) {
@@ -247,4 +248,56 @@ models:
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
 	require.Equal(t, "admin", cfg.Admin.Username)
+}
+
+func TestLoadConfigProviderFormat(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+admin:
+  username: admin
+  password: REPLACE_ME
+api_keys:
+  - name: alice
+    value: sk-alice
+models:
+  - name: claude
+    providers:
+      - name: anthropic
+        format: anthropic
+        url: https://api.anthropic.com/v1/messages
+        model: claude-sonnet-4-5
+      - name: openrouter
+        url: https://openrouter.ai/api/v1/chat/completions
+        model: anthropic/claude-sonnet-4-5
+`), 0o644))
+	cfg, err := loadConfig(path)
+	require.NoError(t, err)
+	require.Equal(t, formatAnthropic, cfg.providers("claude")[0].Format)
+	require.Equal(t, formatOpenAI, cfg.providers("claude")[1].Format)
+	require.Len(t, cfg.providersFor("claude", formatAnthropic), 1)
+	require.Equal(t, "anthropic", cfg.providersFor("claude", formatAnthropic)[0].Name)
+	require.Len(t, cfg.providersFor("claude", formatOpenAI), 1)
+	require.Equal(t, "openrouter", cfg.providersFor("claude", formatOpenAI)[0].Name)
+
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+admin:
+  username: admin
+  password: REPLACE_ME
+api_keys:
+  - name: alice
+    value: sk-alice
+models:
+  - name: claude
+    providers:
+      - name: a
+        format: grpc
+        url: http://a.example
+`), 0o644))
+	_, err = loadConfig(path)
+	require.ErrorContains(t, err, "format must be openai or anthropic")
 }

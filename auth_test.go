@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -85,4 +86,31 @@ func TestLookupAPIKeyScansAllKeys(t *testing.T) {
 	require.Equal(t, "long", cfg.lookupAPIKey("sk-test-long").Name)
 	require.Equal(t, "short", cfg.lookupAPIKey("ab").Name)
 	require.Nil(t, cfg.lookupAPIKey("nope"))
+}
+
+func TestAnthropicAPIKeyUnauthorized(t *testing.T) {
+	h := testProxy(t, cfgFast(Provider{Name: "x", Format: formatAnthropic, URL: "http://example.invalid", Model: "x"}))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", jsonBody(map[string]any{"model": "x"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.Empty(t, rec.Header().Get("WWW-Authenticate"))
+	require.Contains(t, rec.Body.String(), `"type":"error"`)
+	require.Contains(t, rec.Body.String(), "authentication_error")
+}
+
+func TestAnthropicAPIKeyAcceptsXApiKey(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"type":"message","content":[]}`)
+	}))
+	t.Cleanup(up.Close)
+	cfg := cfgFast(Provider{Name: "x", Format: formatAnthropic, URL: up.URL, Model: "x"})
+	cfg.Models[0].Name = "claude"
+	h := NewServer(cfg, nil, nil).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", jsonBody(map[string]any{"model": "claude"}))
+	req.Header.Set("X-Api-Key", testAPIKey)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
 }

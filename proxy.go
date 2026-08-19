@@ -30,6 +30,35 @@ type Proxy struct {
 	Config *Config
 	Client *http.Client
 	Logger CallLogger
+	Format string
+}
+
+func (p *Proxy) format() string {
+	if p.Format == "" {
+		return formatOpenAI
+	}
+	return p.Format
+}
+
+func (p *Proxy) writeError(w http.ResponseWriter, status int, typ, message string) {
+	writeFormatError(w, p.format(), status, typ, message)
+}
+
+func (p *Proxy) clientErrorType(notFound bool) string {
+	if p.format() != formatAnthropic {
+		return "invalid_request_error"
+	}
+	if notFound {
+		return "not_found_error"
+	}
+	return "invalid_request_error"
+}
+
+func (p *Proxy) upstreamErrorType() string {
+	if p.format() == formatAnthropic {
+		return "api_error"
+	}
+	return "upstream_error"
 }
 
 func defaultHTTPClient() *http.Client {
@@ -71,22 +100,26 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
-			writeAPIError(w, http.StatusRequestEntityTooLarge, "invalid_request_error", "request body too large")
+			p.writeError(w, http.StatusRequestEntityTooLarge, p.clientErrorType(false), "request body too large")
 			return
 		}
-		writeAPIError(w, http.StatusBadRequest, "invalid_request_error", "failed to read request body")
+		p.writeError(w, http.StatusBadRequest, p.clientErrorType(false), "failed to read request body")
 		return
 	}
 
 	meta, err := parseRequest(body)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
+		p.writeError(w, http.StatusBadRequest, p.clientErrorType(false), err.Error())
 		return
 	}
 
-	providers := p.Config.providers(meta.Model)
+	if p.Config.model(meta.Model) == nil {
+		p.writeError(w, http.StatusNotFound, p.clientErrorType(true), "the model `"+meta.Model+"` does not exist")
+		return
+	}
+	providers := p.Config.providersFor(meta.Model, p.format())
 	if len(providers) == 0 {
-		writeAPIError(w, http.StatusNotFound, "invalid_request_error", "the model `"+meta.Model+"` does not exist")
+		p.writeError(w, http.StatusNotFound, p.clientErrorType(true), "the model `"+meta.Model+"` has no "+p.format()+" providers")
 		return
 	}
 
@@ -107,20 +140,20 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if status == 0 && err != nil {
 			if !errors.Is(err, context.Canceled) {
-				writeAPIError(w, statusFromErr(err), "upstream_error", err.Error())
+				p.writeError(w, statusFromErr(err), p.upstreamErrorType(), err.Error())
 			}
 		}
 		return
 	}
 
 	if lastErr != nil && lastStatus == 0 {
-		writeAPIError(w, http.StatusBadGateway, "upstream_error", "all upstreams unavailable: "+lastErr.Error())
+		p.writeError(w, http.StatusBadGateway, p.upstreamErrorType(), "all upstreams unavailable: "+lastErr.Error())
 		return
 	}
 	if lastStatus == 0 {
 		lastStatus = http.StatusBadGateway
 	}
-	writeAPIError(w, lastStatus, "upstream_error", "all upstreams unavailable")
+	p.writeError(w, lastStatus, p.upstreamErrorType(), "all upstreams unavailable")
 }
 
 func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMeta, provider Provider) (int, error) {
@@ -135,12 +168,12 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 		rec.ProviderModel = meta.Model
 	}
 
-	payload, err := rewriteRequest(meta.Body, provider.Model, meta.Stream)
+	payload, err := rewriteRequest(meta.Body, provider.Model, meta.Stream, p.format())
 	if err != nil {
 		rec.HTTPStatus = http.StatusBadRequest
 		rec.Error = err.Error()
 		p.logCall(rec)
-		writeAPIError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
+		p.writeError(w, http.StatusBadRequest, p.clientErrorType(false), err.Error())
 		return http.StatusBadRequest, err
 	}
 	rec.RequestJSON = payload

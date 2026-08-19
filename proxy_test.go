@@ -513,3 +513,159 @@ func TestCapBuffer(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "hello world", dst.String())
 }
+
+func TestProxySkipsOtherFormatProviders(t *testing.T) {
+	var openaiHits, anthHits atomic.Int32
+	openaiUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		openaiHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"choices":[{"message":{"content":"oai"}}]}`)
+	}))
+	t.Cleanup(openaiUp.Close)
+	anthUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		anthHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"type":"message","content":[{"type":"text","text":"anth"}]}`)
+	}))
+	t.Cleanup(anthUp.Close)
+
+	cfg := &Config{
+		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
+		Models: []ModelConfig{{Name: "claude", Providers: []Provider{
+			{Name: "anthropic", Format: formatAnthropic, URL: anthUp.URL, Model: "claude-sonnet-4-5"},
+			{Name: "openrouter", Format: formatOpenAI, URL: openaiUp.URL, Model: "anthropic/claude-sonnet-4-5"},
+		}}},
+	}
+	h := NewServer(cfg, nil, nil).Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "claude"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "oai")
+	require.Equal(t, int32(1), openaiHits.Load())
+	require.Equal(t, int32(0), anthHits.Load())
+
+	req = httptest.NewRequest(http.MethodPost, "/v1/messages", jsonBody(map[string]any{
+		"model": "claude",
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hi"},
+		},
+	}))
+	req.Header.Set("X-Api-Key", testAPIKey)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "anth")
+	require.Equal(t, int32(1), openaiHits.Load())
+	require.Equal(t, int32(1), anthHits.Load())
+}
+
+func TestProxyAnthropicMissingProviders(t *testing.T) {
+	h := testProxy(t, cfgFast(Provider{Name: "x", URL: "http://example.invalid", Model: "x"}))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", jsonBody(map[string]any{"model": "fast"}))
+	req.Header.Set("X-Api-Key", testAPIKey)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Contains(t, rec.Body.String(), `"type":"error"`)
+	require.Contains(t, rec.Body.String(), "has no anthropic providers")
+	require.NotContains(t, rec.Body.String(), "invalid_request_error")
+}
+
+func TestProxyOpenAIMissingProviders(t *testing.T) {
+	h := testProxy(t, &Config{
+		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
+		Models: []ModelConfig{{Name: "claude", Providers: []Provider{
+			{Name: "anthropic", Format: formatAnthropic, URL: "http://example.invalid", Model: "claude-sonnet-4-5"},
+		}}},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "claude"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Contains(t, rec.Body.String(), "has no openai providers")
+}
+
+func TestProxyAnthropicRewritesModelAndStripsClientKey(t *testing.T) {
+	var gotBody []byte
+	var gotKey string
+	var gotVersion string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		gotKey = r.Header.Get("X-Api-Key")
+		gotVersion = r.Header.Get("Anthropic-Version")
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"id":"msg_1","type":"message","model":"claude-sonnet-4-5","usage":{"input_tokens":4,"output_tokens":2}}`)
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	cfg := &Config{
+		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
+		Models: []ModelConfig{{Name: "claude", Providers: []Provider{{
+			Name:   "anthropic",
+			Format: formatAnthropic,
+			URL:    up.URL,
+			Model:  "claude-sonnet-4-5",
+			Headers: map[string]string{
+				"x-api-key":         "sk-up",
+				"anthropic-version": "2023-06-01",
+			},
+		}}}},
+	}
+	h := NewServer(cfg, logger, nil).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", jsonBody(map[string]any{
+		"model":  "claude",
+		"stream": true,
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hi"},
+		},
+	}))
+	req.Header.Set("X-Api-Key", testAPIKey)
+	req.Header.Set("Anthropic-Version", "2023-01-01")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var sent map[string]any
+	require.NoError(t, json.Unmarshal(gotBody, &sent))
+	require.Equal(t, "claude-sonnet-4-5", sent["model"])
+	_, hasStreamOpts := sent["stream_options"]
+	require.False(t, hasStreamOpts)
+	require.Equal(t, "sk-up", gotKey)
+	require.Equal(t, "2023-06-01", gotVersion)
+	require.Len(t, logger.calls, 1)
+}
+
+func TestProxyAnthropicStreamUsage(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":6}}}\n\n")
+		io.WriteString(w, "event: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":2}}\n\n")
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	cfg := &Config{
+		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
+		Models: []ModelConfig{{Name: "claude", Providers: []Provider{{
+			Name: "anthropic", Format: formatAnthropic, URL: up.URL, Model: "claude-sonnet-4-5",
+		}}}},
+	}
+	h := NewServer(cfg, logger, nil).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", jsonBody(map[string]any{
+		"model":  "claude",
+		"stream": true,
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hi"},
+		},
+	}))
+	req.Header.Set("X-Api-Key", testAPIKey)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, logger.calls, 1)
+	require.Equal(t, int64(6), logger.calls[0].InputTokens)
+	require.Equal(t, int64(2), logger.calls[0].OutputTokens)
+}

@@ -46,10 +46,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /admin/calls", s.requireAdmin(http.HandlerFunc(s.handleAdminCalls)))
 	mux.Handle("GET /admin/calls/{id}", s.requireAdmin(http.HandlerFunc(s.handleAdminCall)))
 
-	auth := func(h http.Handler) http.Handler { return s.requireAPIKey(h) }
+	auth := func(h http.Handler) http.Handler { return s.requireAPIKey(h, formatOpenAI) }
 	mux.Handle("GET /v1/models", auth(http.HandlerFunc(s.handleModels)))
 	mux.Handle("GET /v1/models/{model...}", auth(http.HandlerFunc(s.handleModel)))
-	proxy := auth(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger})
+	proxy := auth(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Format: formatOpenAI})
 	mux.Handle("POST /v1/chat/completions", proxy)
 	mux.Handle("POST /chat/completions", proxy)
 	mux.Handle("POST /v1/completions", proxy)
@@ -57,6 +57,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /v1/embeddings", proxy)
 	mux.Handle("POST /embeddings", proxy)
 	mux.Handle("POST /v1/responses", proxy)
+	anth := s.requireAPIKey(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Format: formatAnthropic}, formatAnthropic)
+	mux.Handle("POST /v1/messages", anth)
 	return withSecurityHeaders(mux)
 }
 
@@ -141,4 +143,18 @@ func writeAPIError(w http.ResponseWriter, status int, typ, message string) {
 			"type":    typ,
 		},
 	})
+}
+
+func writeFormatError(w http.ResponseWriter, format string, status int, typ, message string) {
+	if format == formatAnthropic {
+		writeJSON(w, status, map[string]any{
+			"type": "error",
+			"error": map[string]any{
+				"type":    typ,
+				"message": message,
+			},
+		})
+		return
+	}
+	writeAPIError(w, status, typ, message)
 }
