@@ -7,21 +7,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRewriteRequestReplacesModel(t *testing.T) {
+func TestRewriteRequestReplacesModelAndInjectsUsage(t *testing.T) {
 	body := []byte(`{"model":"fast","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
-	out, err := rewriteRequest(body, "gpt-4o-mini")
+	out, err := rewriteRequest(body, "gpt-4o-mini", true)
 	require.NoError(t, err)
 
 	var raw map[string]any
 	require.NoError(t, json.Unmarshal(out, &raw))
 	require.Equal(t, "gpt-4o-mini", raw["model"])
-	_, hasOpts := raw["stream_options"]
-	require.False(t, hasOpts)
+	opts := raw["stream_options"].(map[string]any)
+	require.Equal(t, true, opts["include_usage"])
 }
 
 func TestRewriteRequestKeepsExistingStreamOptions(t *testing.T) {
 	body := []byte(`{"model":"fast","stream":true,"stream_options":{"include_usage":false}}`)
-	out, err := rewriteRequest(body, "other")
+	out, err := rewriteRequest(body, "other", true)
 	require.NoError(t, err)
 	var raw map[string]any
 	require.NoError(t, json.Unmarshal(out, &raw))
@@ -44,7 +44,7 @@ func TestParseRequest(t *testing.T) {
 
 func TestRewriteRequestPreservesLargeIntegersAndHTML(t *testing.T) {
 	body := []byte(`{"model":"fast","seed":9007199254740993,"messages":[{"content":"<hi>"}]}`)
-	out, err := rewriteRequest(body, "gpt")
+	out, err := rewriteRequest(body, "gpt", false)
 	require.NoError(t, err)
 	require.Contains(t, string(out), "9007199254740993")
 	require.Contains(t, string(out), `"<hi>"`)

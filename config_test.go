@@ -12,6 +12,8 @@ func TestLoadConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
 api_keys:
   - name: alice
     value: sk-alice
@@ -45,6 +47,8 @@ models:
 	require.Equal(t, "primary", cfg.providers("fast")[0].Name)
 	require.Equal(t, "Bearer sk-primary", cfg.providers("fast")[0].Headers["Authorization"])
 	require.Len(t, cfg.providers("fast"), 2)
+	require.Equal(t, "nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm", cfg.MySQL.DSN)
+	require.Equal(t, 1000, cfg.MySQL.detailRetain())
 }
 
 func TestLoadConfigRejectsEmpty(t *testing.T) {
@@ -122,4 +126,58 @@ models:
 `), 0o644))
 	_, err := loadConfig(path)
 	require.ErrorContains(t, err, "api_key")
+}
+
+func TestLoadConfigRequiresMySQLDSN(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+api_keys:
+  - name: alice
+    value: sk-alice
+models:
+  - name: fast
+    providers:
+      - name: a
+        url: http://a.example
+`), 0o644))
+	_, err := loadConfig(path)
+	require.ErrorContains(t, err, "mysql.dsn")
+}
+
+func TestLoadConfigDetailRetain(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+  detail_retain: 0
+api_keys:
+  - name: alice
+    value: sk-alice
+models:
+  - name: fast
+    providers:
+      - name: a
+        url: http://a.example
+`), 0o644))
+	cfg, err := loadConfig(path)
+	require.NoError(t, err)
+	require.Equal(t, 0, cfg.MySQL.detailRetain())
+
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+  detail_retain: -1
+api_keys:
+  - name: alice
+    value: sk-alice
+models:
+  - name: fast
+    providers:
+      - name: a
+        url: http://a.example
+`), 0o644))
+	_, err = loadConfig(path)
+	require.ErrorContains(t, err, "detail_retain")
 }

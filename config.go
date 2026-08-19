@@ -4,13 +4,29 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
+const defaultDetailRetain = 1000
+
 type Config struct {
+	MySQL   MySQLConfig   `yaml:"mysql"`
 	APIKeys []APIKey      `yaml:"api_keys"`
 	Models  []ModelConfig `yaml:"models"`
+}
+
+type MySQLConfig struct {
+	DSN          string `yaml:"dsn"`
+	DetailRetain *int   `yaml:"detail_retain"`
+}
+
+func (m MySQLConfig) detailRetain() int {
+	if m.DetailRetain == nil {
+		return defaultDetailRetain
+	}
+	return *m.DetailRetain
 }
 
 type APIKey struct {
@@ -102,6 +118,15 @@ func (c *Config) validate() error {
 				return fmt.Errorf("config: model %q provider %q url must be http or https with a host", m.Name, p.Name)
 			}
 		}
+	}
+	if strings.TrimSpace(c.MySQL.DSN) == "" {
+		return fmt.Errorf("config: mysql.dsn is required")
+	}
+	if _, err := normalizeMySQLDSN(c.MySQL.DSN); err != nil {
+		return fmt.Errorf("config: mysql.dsn is invalid: %w", err)
+	}
+	if c.MySQL.DetailRetain != nil && *c.MySQL.DetailRetain < 0 {
+		return fmt.Errorf("config: mysql.detail_retain must be >= 0")
 	}
 	return nil
 }

@@ -36,9 +36,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	db, closeDB := rg.Must2(openDB(cfg.MySQL))
+	defer func() {
+		if err := closeDB(); err != nil {
+			log.Println("mysql close:", err)
+		}
+	}()
+
 	srv := &http.Server{
 		Addr:              listen,
-		Handler:           NewServer(cfg).Handler(),
+		Handler:           NewServer(cfg, newGormCallLogger(db, cfg.MySQL.detailRetain())).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}

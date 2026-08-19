@@ -11,12 +11,13 @@ Providers for a model are tried **in order**. The next provider is used only whe
 - Incoming API keys (`api_keys[].{name,value}`)
 - Streaming SSE pass-through
 - Failover only on dial/DNS/TLS failure or HTTP 502/503/504
+- Every upstream attempt (including failures) is stored in MySQL
 
 ## Quick start
 
 ```bash
 cp config.example.yaml config.yaml
-# edit api_keys, models, and upstream headers
+# edit mysql.dsn, api_keys, models, and upstream headers
 go run . -config config.yaml -listen :8080
 ```
 
@@ -42,6 +43,9 @@ The container image sets `NANOLLM_CONFIG=/config.yaml`.
 ## Config
 
 ```yaml
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+  detail_retain: 1000
 api_keys:
   - name: alice
     value: sk-alice
@@ -62,6 +66,8 @@ models:
 
 | Field | Required | Meaning |
 |---|---|---|
+| `mysql.dsn` | yes | MySQL DSN (`user:pass@tcp(host:3306)/dbname`). Connection params are forced: `charset=utf8mb4`, `parseTime=true`, `loc=UTC`, `time_zone='UTC'` |
+| `mysql.detail_retain` | no | Keep request/response JSON for the latest N rows (default `1000`; `0` keeps no blobs) |
 | `api_keys[].name` | yes | Identifier for this key (must be unique) |
 | `api_keys[].value` | yes | Secret the client must send |
 | `models[].name` | yes | Client-facing model id |
@@ -73,6 +79,7 @@ models:
 
 Rules:
 
+- MySQL DSN is required; timestamps are stored in UTC
 - At least one API key and one model
 - Model names unique; provider names unique **within** a model
 - API key names unique; API key values unique
@@ -125,7 +132,23 @@ This keeps prefix / prompt cache on the first healthy provider.
 
 The JSON body `model` field selects `models[].name`. nanollm rewrites it to `providers[].model` and POSTs to `providers[].url`.
 
-Streaming (`"stream": true`) is copied through as SSE. Request fields such as `stream_options` are forwarded as-is.
+Streaming (`"stream": true`) is copied through as SSE. If `stream_options.include_usage` is missing, it is set to `true` so the last chunk can carry token counts.
+
+## Call log (MySQL)
+
+Each provider attempt writes one row to `llm_calls`:
+
+- client model, provider name, upstream model, API key name
+- `input_tokens` / `output_tokens` / `cache_tokens` / `uncached_tokens` (0 when usage is missing)
+- `http_status` (0 if no HTTP response, e.g. dial failure)
+- `error` (transport / rewrite / canceled / catastrophic status; empty on a completed copy)
+- `request_json` / `response_json` (`MEDIUMBLOB`; SSE responses stored as a JSON string)
+
+Failures and failover hops are recorded so you can see which hop died. The synthetic “all upstreams unavailable” client error is not an extra row.
+
+After each insert, blobs older than the latest `mysql.detail_retain` rows are set to `NULL`. Metadata is kept. Bodies larger than 16 MiB skip the blob columns.
+
+Insert/prune errors are logged and do not change the client response.
 
 ## Docker / GHCR
 
