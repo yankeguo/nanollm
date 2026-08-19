@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# local config with secrets
+/config.yaml
+
 # Editor/IDE
 # .idea/
 # .vscode/

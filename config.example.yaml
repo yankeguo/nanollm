@@ -1,0 +1,20 @@
+models:
+  - name: gpt-4o
+    providers:
+      - name: openai
+        url: https://api.openai.com/v1/chat/completions
+        model: gpt-4o
+        headers:
+          Authorization: Bearer sk-REPLACE_ME
+      - name: openrouter
+        url: https://openrouter.ai/api/v1/chat/completions
+        model: openai/gpt-4o
+        headers:
+          Authorization: Bearer sk-or-REPLACE_ME
+  - name: fast
+    providers:
+      - name: ollama
+        url: http://127.0.0.1:11434/v1/chat/completions
+        model: llama3.1
+        headers:
+          Authorization: Bearer ollama
