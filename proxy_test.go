@@ -669,3 +669,48 @@ func TestProxyAnthropicStreamUsage(t *testing.T) {
 	require.Equal(t, int64(6), logger.calls[0].InputTokens)
 	require.Equal(t, int64(2), logger.calls[0].OutputTokens)
 }
+
+func TestProxyPassesResponseBytesUnchanged(t *testing.T) {
+	upstream := []byte(`{"id":"1","choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":5,"completion_tokens":2},"extra":{"n":9007199254740993,"html":"<x>"}}`)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(upstream)
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(Provider{Name: "primary", URL: up.URL, Model: "gpt-4o-mini"}), logger, nil).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, upstream, rec.Body.Bytes())
+	require.Len(t, logger.calls, 1)
+	require.Equal(t, int64(5), logger.calls[0].InputTokens)
+	require.Equal(t, int64(2), logger.calls[0].OutputTokens)
+}
+
+func TestProxyPassesSSEBytesUnchanged(t *testing.T) {
+	upstream := []byte("data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}],\"extra\":1}\n\n" +
+		"data: {\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":1},\"html\":\"<x>\"}\n\n" +
+		"data: [DONE]\n\n")
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write(upstream)
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(Provider{Name: "m", URL: up.URL, Model: "m"}), logger, nil).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
+		"model":  "fast",
+		"stream": true,
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, upstream, rec.Body.Bytes())
+	require.Len(t, logger.calls, 1)
+	require.Equal(t, int64(3), logger.calls[0].InputTokens)
+	require.Equal(t, int64(1), logger.calls[0].OutputTokens)
+}

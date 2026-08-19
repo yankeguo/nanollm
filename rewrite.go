@@ -14,43 +14,58 @@ type requestMeta struct {
 }
 
 func parseRequest(body []byte) (*requestMeta, error) {
-	raw, err := decodeJSONObject(body)
+	raw, err := decodeJSONRawObject(body)
 	if err != nil {
 		return nil, fmt.Errorf("invalid json body: %w", err)
 	}
-	model, _ := raw["model"].(string)
-	if model == "" {
+	model, err := rawJSONString(raw["model"])
+	if err != nil || model == "" {
 		return nil, fmt.Errorf("request body missing model")
 	}
-	stream, _ := raw["stream"].(bool)
+	stream, _ := rawJSONBool(raw["stream"])
 	return &requestMeta{Model: model, Stream: stream, Body: body}, nil
 }
 
 func rewriteRequest(body []byte, upstreamModel string, stream bool, format string) ([]byte, error) {
-	raw, err := decodeJSONObject(body)
+	raw, err := decodeJSONRawObject(body)
 	if err != nil {
 		return nil, err
 	}
 	if upstreamModel != "" {
-		raw["model"] = upstreamModel
+		b, err := encodeJSONValue(upstreamModel)
+		if err != nil {
+			return nil, err
+		}
+		raw["model"] = b
 	}
 	if stream && format != formatAnthropic {
-		opts, _ := raw["stream_options"].(map[string]any)
-		if opts == nil {
-			opts = map[string]any{}
+		opts, err := ensureIncludeUsage(raw["stream_options"])
+		if err != nil {
+			return nil, err
 		}
-		if _, ok := opts["include_usage"]; !ok {
-			opts["include_usage"] = true
-			raw["stream_options"] = opts
-		}
+		raw["stream_options"] = opts
 	}
-	return encodeJSONObject(raw)
+	return encodeJSONRawObject(raw)
 }
 
-func decodeJSONObject(body []byte) (map[string]any, error) {
+func ensureIncludeUsage(opts json.RawMessage) (json.RawMessage, error) {
+	if len(bytes.TrimSpace(opts)) == 0 || bytes.Equal(bytes.TrimSpace(opts), []byte("null")) {
+		return json.RawMessage(`{"include_usage":true}`), nil
+	}
+	nested, err := decodeJSONRawObject(opts)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := nested["include_usage"]; ok {
+		return opts, nil
+	}
+	nested["include_usage"] = json.RawMessage("true")
+	return encodeJSONRawObject(nested)
+}
+
+func decodeJSONRawObject(body []byte) (map[string]json.RawMessage, error) {
 	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.UseNumber()
-	var raw map[string]any
+	var raw map[string]json.RawMessage
 	if err := dec.Decode(&raw); err != nil {
 		return nil, err
 	}
@@ -66,11 +81,15 @@ func decodeJSONObject(body []byte) (map[string]any, error) {
 	return raw, nil
 }
 
-func encodeJSONObject(raw map[string]any) ([]byte, error) {
+func encodeJSONRawObject(raw map[string]json.RawMessage) ([]byte, error) {
+	return encodeJSONValue(raw)
+}
+
+func encodeJSONValue(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
-	if err := enc.Encode(raw); err != nil {
+	if err := enc.Encode(v); err != nil {
 		return nil, err
 	}
 	out := buf.Bytes()
@@ -78,4 +97,26 @@ func encodeJSONObject(raw map[string]any) ([]byte, error) {
 		out = out[:n-1]
 	}
 	return out, nil
+}
+
+func rawJSONString(raw json.RawMessage) (string, error) {
+	if len(bytes.TrimSpace(raw)) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return "", nil
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return "", err
+	}
+	return s, nil
+}
+
+func rawJSONBool(raw json.RawMessage) (bool, error) {
+	if len(bytes.TrimSpace(raw)) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return false, nil
+	}
+	var b bool
+	if err := json.Unmarshal(raw, &b); err != nil {
+		return false, err
+	}
+	return b, nil
 }

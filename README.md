@@ -162,9 +162,9 @@ This keeps prefix / prompt cache on the first healthy provider.
 | `GET`/`POST` | `/admin/login` | no | Admin sign-in |
 | `POST` | `/admin/logout` | cookie | Clear admin cookie |
 
-The JSON body `model` field selects `models[].name`. nanollm rewrites it to `providers[].model` and POSTs to `providers[].url`. OpenAI routes never call `format: anthropic` providers, and `/v1/messages` never calls `format: openai` providers.
+The JSON body `model` field selects `models[].name`. nanollm rewrites only the top-level `model` (and, for OpenAI streaming, injects `stream_options.include_usage` when missing). Other JSON fields are copied as raw values and are not decoded into a typed tree. OpenAI routes never call `format: anthropic` providers, and `/v1/messages` never calls `format: openai` providers.
 
-Streaming (`"stream": true`) is copied through as SSE. On OpenAI streaming, if `stream_options.include_usage` is missing, it is set to `true` so the last chunk can carry token counts. Anthropic bodies are not rewritten beyond `model`.
+Streaming (`"stream": true`) is copied through as SSE. Usage is parsed from a copy of the upstream body; the client still receives the original bytes. Anthropic bodies are not rewritten beyond `model`.
 
 ## Call log (MySQL)
 

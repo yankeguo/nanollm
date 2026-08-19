@@ -18,7 +18,7 @@ Single `package main`. No `internal/` split unless the tree clearly outgrows one
 | `admin/*.html` | Embedded HTML for `/admin` |
 | `proxy.go` | Body rewrite, ordered provider attempts, response copy, call logging |
 | `failover.go` | `isCatastrophic` — only then try the next provider |
-| `rewrite.go` | Replace `model`; for OpenAI streaming inject `stream_options.include_usage` |
+| `rewrite.go` | Patch top-level `model` (and OpenAI streaming `stream_options.include_usage`); copy other JSON fields as `json.RawMessage` |
 | `usage.go` | Parse OpenAI- and Anthropic-compatible `usage` (including cache fields) from JSON/SSE |
 | `db.go` | GORM MySQL: `llm_calls` AutoMigrate, Record, prune detail blobs |
 
@@ -30,6 +30,7 @@ Tests live next to the code (`*_test.go`). Use `github.com/stretchr/testify`. Pr
 - **Failover is cache-preserving.** Next provider only on catastrophic unavailability: dial/DNS/TLS/other transport failure, or HTTP 502/503/504. Do **not** fail over on 429, 4xx, 500, or timeouts after the provider was reached. Once the client response has started, never try another provider.
 - Config shape is `mysql.{dsn,detail_retain}`, `admin.{username,password}`, `api_keys[].{name,value}` and `models[].{name,providers[]}` with `providers[].{name,format,url,model,headers}`. `format` is `openai` (default) or `anthropic`. `url` is the full `http`/`https` upstream endpoint, not a base URL. Auth to upstream belongs in `headers`.
 - OpenAI inbound routes only attempt `format: openai` providers; `POST /v1/messages` only attempts `format: anthropic` providers. Do **not** convert request or response bodies between formats. Missing matching providers → 404.
+- Request rewrite only patches `model` and, for OpenAI streaming, `stream_options.include_usage`. Other JSON fields must be copied as raw values (`json.RawMessage`), not `map[string]any` round-tripped. Upstream responses are copied byte-for-byte; usage parsing is inspect-only.
 - MySQL is required. DSN params `charset=utf8mb4`, `parseTime=true`, `loc=UTC`, `time_zone='UTC'` are forced. All DB timestamps are UTC.
 - `/admin` is a cookie-authenticated dashboard (HMAC, HttpOnly, SameSite=Lax; Secure when TLS or `X-Forwarded-Proto: https`). It is not API-key auth. `admin.username` and `admin.password` are required.
 - Every provider attempt (success, 4xx/5xx, failover, dial failure, rewrite error, client cancel) is inserted into `llm_calls`. Detail JSON blobs are kept only for the latest `mysql.detail_retain` rows (default 1000).
