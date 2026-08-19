@@ -25,7 +25,7 @@ func TestMetricsRecordTokenUsage(t *testing.T) {
 	m, err := newMetrics(mp.Meter("test"))
 	require.NoError(t, err)
 
-	m.record(context.Background(), "fast", Provider{Name: "primary", Model: "gpt-4o-mini"}, tokenUsage{
+	m.record(withAPIKeyName(context.Background(), "alice"), "fast", Provider{Name: "primary", Model: "gpt-4o-mini"}, tokenUsage{
 		Input:     100,
 		Output:    20,
 		CacheRead: 80,
@@ -42,7 +42,7 @@ func TestMetricsRecordTokenUsage(t *testing.T) {
 			require.Equal(t, metricTokenUsage, mm.Name)
 			sum := mm.Data.(metricdata.Sum[int64])
 			for _, dp := range sum.DataPoints {
-				var tokenType, model, provider string
+				var tokenType, model, provider, apiKey string
 				for _, kv := range dp.Attributes.ToSlice() {
 					switch string(kv.Key) {
 					case attrTokenType:
@@ -51,12 +51,15 @@ func TestMetricsRecordTokenUsage(t *testing.T) {
 						model = kv.Value.AsString()
 					case attrProvider:
 						provider = kv.Value.AsString()
+					case attrAPIKey:
+						apiKey = kv.Value.AsString()
 					case attrUpstreamModel:
 						require.Equal(t, "gpt-4o-mini", kv.Value.AsString())
 					}
 				}
 				require.Equal(t, "fast", model)
 				require.Equal(t, "primary", provider)
+				require.Equal(t, "alice", apiKey)
 				got[tokenType] = dp.Value
 			}
 		}

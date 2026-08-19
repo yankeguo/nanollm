@@ -1,3 +1,6 @@
+api_keys:
+  - name: default
+    value: sk-REPLACE_ME
 models:
   - name: gpt-4o
     providers:

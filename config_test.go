@@ -12,6 +12,9 @@ func TestLoadConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(`
+api_keys:
+  - name: alice
+    value: sk-alice
 models:
   - name: fast
     providers:
@@ -37,6 +40,8 @@ models:
 	require.NoError(t, err)
 	require.Len(t, cfg.Models, 2)
 	require.Equal(t, "gpt-4o-mini", cfg.providers("fast")[0].Model)
+	require.Equal(t, "alice", cfg.APIKeys[0].Name)
+	require.Equal(t, "sk-alice", cfg.APIKeys[0].Value)
 	require.Equal(t, "primary", cfg.providers("fast")[0].Name)
 	require.Equal(t, "Bearer sk-primary", cfg.providers("fast")[0].Headers["Authorization"])
 	require.Len(t, cfg.providers("fast"), 2)
@@ -54,14 +59,31 @@ func TestLoadConfigRejectsDuplicateNames(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(`
+api_keys:
+  - name: alice
+    value: sk-alice
 models:
   - name: fast
     providers:
       - name: a
         url: http://a.example
       - name: a
-        url: http://b.example
+		url: http://b.example
 `), 0o644))
 	_, err := loadConfig(path)
 	require.Error(t, err)
+}
+
+func TestLoadConfigRequiresAPIKeys(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+models:
+  - name: fast
+    providers:
+      - name: a
+        url: http://a.example
+`), 0o644))
+	_, err := loadConfig(path)
+	require.ErrorContains(t, err, "api_key")
 }

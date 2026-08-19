@@ -8,7 +8,13 @@ import (
 )
 
 type Config struct {
-	Models []ModelConfig `yaml:"models"`
+	APIKeys []APIKey      `yaml:"api_keys"`
+	Models  []ModelConfig `yaml:"models"`
+}
+
+type APIKey struct {
+	Name  string `yaml:"name"`
+	Value string `yaml:"value"`
 }
 
 type ModelConfig struct {
@@ -39,7 +45,28 @@ func loadConfig(path string) (*Config, error) {
 }
 
 func (c *Config) validate() error {
-	if c == nil || len(c.Models) == 0 {
+	if c == nil || len(c.APIKeys) == 0 {
+		return fmt.Errorf("config: at least one api_key is required")
+	}
+	seenKeyName := make(map[string]struct{}, len(c.APIKeys))
+	seenKeyValue := make(map[string]struct{}, len(c.APIKeys))
+	for i, k := range c.APIKeys {
+		if k.Name == "" {
+			return fmt.Errorf("config: api_keys[%d] name is required", i)
+		}
+		if k.Value == "" {
+			return fmt.Errorf("config: api_keys[%d] value is required", i)
+		}
+		if _, dup := seenKeyName[k.Name]; dup {
+			return fmt.Errorf("config: duplicate api_key name %q", k.Name)
+		}
+		if _, dup := seenKeyValue[k.Value]; dup {
+			return fmt.Errorf("config: duplicate api_key value for %q", k.Name)
+		}
+		seenKeyName[k.Name] = struct{}{}
+		seenKeyValue[k.Value] = struct{}{}
+	}
+	if len(c.Models) == 0 {
 		return fmt.Errorf("config: at least one model is required")
 	}
 	seenModel := make(map[string]struct{}, len(c.Models))

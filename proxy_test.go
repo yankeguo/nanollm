@@ -13,13 +13,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testAPIKey = "sk-test"
+
 func testProxy(t *testing.T, cfg *Config) http.Handler {
 	t.Helper()
+	if len(cfg.APIKeys) == 0 {
+		cfg.APIKeys = []APIKey{{Name: "test", Value: testAPIKey}}
+	}
 	return NewServer(cfg, nil).Handler()
 }
 
 func cfgFast(providers ...Provider) *Config {
-	return &Config{Models: []ModelConfig{{Name: "fast", Providers: providers}}}
+	return &Config{
+		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
+		Models:  []ModelConfig{{Name: "fast", Providers: providers}},
+	}
+}
+
+func authed(req *http.Request) *http.Request {
+	req.Header.Set("Authorization", "Bearer "+testAPIKey)
+	return req
 }
 
 func TestProxyRewritesModelAndHeaders(t *testing.T) {
@@ -52,7 +65,7 @@ func TestProxyRewritesModelAndHeaders(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer client-token")
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, authed(req))
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	var sent map[string]any
@@ -86,7 +99,7 @@ func TestProxyFailoversOnCatastrophicThenSucceeds(t *testing.T) {
 	}))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, authed(req))
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, int32(1), hits.Load())
@@ -115,7 +128,7 @@ func TestProxyDoesNotFailoverOnClientError(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, authed(req))
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Equal(t, int32(0), secondHits.Load())
@@ -140,7 +153,7 @@ func TestProxyFailoversOn503(t *testing.T) {
 	))
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, authed(req))
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), `"ok"`)
 }
@@ -149,7 +162,7 @@ func TestProxyUnknownModel(t *testing.T) {
 	h := testProxy(t, cfgFast(Provider{Name: "x", URL: "http://example.invalid", Model: "x"}))
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "missing"}))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, authed(req))
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
 
@@ -168,7 +181,7 @@ func TestProxyStreamUsage(t *testing.T) {
 		"stream": true,
 	}))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, authed(req))
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), "[DONE]")
 }
@@ -180,7 +193,7 @@ func TestModelsEndpoint(t *testing.T) {
 	}})
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, authed(req))
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), `"fast"`)
 	require.Contains(t, rec.Body.String(), `"code"`)
@@ -205,7 +218,7 @@ func TestProxyDoesNotFailoverOn429(t *testing.T) {
 	))
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, authed(req))
 	require.Equal(t, http.StatusTooManyRequests, rec.Code)
 	require.Equal(t, int32(0), secondHits.Load())
 }

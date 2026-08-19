@@ -16,6 +16,9 @@ Environment variables `NANOLLM_CONFIG` and `NANOLLM_LISTEN` can be used instead 
 ## Config
 
 ```yaml
+api_keys:
+  - name: default
+    value: sk-your-key
 models:
   - name: gpt-4o
     providers:
@@ -32,7 +35,7 @@ models:
           Authorization: Bearer YYYYYY
 ```
 
-Auth is just another header. Incoming `Authorization` is not forwarded.
+Clients authenticate with `Authorization: Bearer <api_keys.value>` (or `X-Api-Key` / `Api-Key`). Incoming credentials are not forwarded; upstream auth stays in provider `headers`.
 
 Clients call `POST /v1/chat/completions` with `"model": "<name>"`. nanollm rewrites `model` to the provider's upstream model and POSTs to that `url`.
 
@@ -68,6 +71,7 @@ Attributes:
 
 - `nanollm.model` — client-facing model `name`
 - `nanollm.provider` — provider `name`
+- `nanollm.api_key` — matching `api_keys.name`
 - `nanollm.upstream.model` — model string sent upstream
 - `nanollm.token.type` — one of the values above
 

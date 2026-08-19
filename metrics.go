@@ -19,6 +19,7 @@ const (
 
 	attrModel         = "nanollm.model"
 	attrProvider      = "nanollm.provider"
+	attrAPIKey        = "nanollm.api_key"
 	attrTokenType     = "nanollm.token.type"
 	attrUpstreamModel = "nanollm.upstream.model"
 
@@ -68,7 +69,7 @@ func setupMetrics(ctx context.Context) (*Metrics, func(context.Context) error, e
 
 func newMetrics(meter metric.Meter) (*Metrics, error) {
 	tokens, err := meter.Int64Counter(metricTokenUsage,
-		metric.WithDescription("Tokens consumed by forwarded LLM requests, split by model, provider, and token type."),
+		metric.WithDescription("Tokens consumed by forwarded LLM requests, split by model, provider, api key, and token type."),
 		metric.WithUnit("{token}"),
 	)
 	if err != nil {
@@ -85,6 +86,9 @@ func (m *Metrics) record(ctx context.Context, model string, provider Provider, u
 	base := []attribute.KeyValue{
 		attribute.String(attrModel, model),
 		attribute.String(attrProvider, provider.Name),
+	}
+	if name := apiKeyNameFrom(ctx); name != "" {
+		base = append(base, attribute.String(attrAPIKey, name))
 	}
 	if provider.Model != "" {
 		base = append(base, attribute.String(attrUpstreamModel, provider.Model))

@@ -25,9 +25,11 @@ func NewServer(cfg *Config, metrics *Metrics) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
-	mux.HandleFunc("GET /v1/models", s.handleModels)
-	mux.HandleFunc("GET /v1/models/{model}", s.handleModel)
-	proxy := &Proxy{Config: s.Config, Metrics: s.Metrics, Client: s.Client}
+
+	auth := func(h http.Handler) http.Handler { return s.requireAPIKey(h) }
+	mux.Handle("GET /v1/models", auth(http.HandlerFunc(s.handleModels)))
+	mux.Handle("GET /v1/models/{model}", auth(http.HandlerFunc(s.handleModel)))
+	proxy := auth(&Proxy{Config: s.Config, Metrics: s.Metrics, Client: s.Client})
 	mux.Handle("POST /v1/chat/completions", proxy)
 	mux.Handle("POST /chat/completions", proxy)
 	mux.Handle("POST /v1/completions", proxy)
