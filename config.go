@@ -134,7 +134,8 @@ func (c *Config) validate() error {
 	if c.MySQL.DetailRetain != nil && *c.MySQL.DetailRetain < 0 {
 		return fmt.Errorf("config: mysql.detail_retain must be >= 0")
 	}
-	if strings.TrimSpace(c.Admin.Username) == "" {
+	c.Admin.Username = strings.TrimSpace(c.Admin.Username)
+	if c.Admin.Username == "" {
 		return fmt.Errorf("config: admin.username is required")
 	}
 	if c.Admin.Password == "" {

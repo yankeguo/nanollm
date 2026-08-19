@@ -15,6 +15,7 @@ import (
 )
 
 const adminPageSize = 50
+const maxAdminPage = 1_000_000
 
 type usageTotals struct {
 	Calls    int64
@@ -40,6 +41,15 @@ type usageNamed struct {
 	Output   int64
 	Cache    int64
 	Uncached int64
+}
+
+type usageChart struct {
+	Labels   []string `json:"labels"`
+	Calls    []int64  `json:"calls"`
+	Input    []int64  `json:"input"`
+	Output   []int64  `json:"output"`
+	Cache    []int64  `json:"cache"`
+	Uncached []int64  `json:"uncached"`
 }
 
 type adminWindow struct {
@@ -168,40 +178,34 @@ func (s *Server) handleAdminUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	totals := usageTotals{}
-	chart := map[string]any{
-		"labels":   make([]string, 0, len(series)),
-		"calls":    make([]int64, 0, len(series)),
-		"input":    make([]int64, 0, len(series)),
-		"output":   make([]int64, 0, len(series)),
-		"cache":    make([]int64, 0, len(series)),
-		"uncached": make([]int64, 0, len(series)),
+	chart := usageChart{
+		Labels:   make([]string, 0, len(series)),
+		Calls:    make([]int64, 0, len(series)),
+		Input:    make([]int64, 0, len(series)),
+		Output:   make([]int64, 0, len(series)),
+		Cache:    make([]int64, 0, len(series)),
+		Uncached: make([]int64, 0, len(series)),
 	}
-	labels := chart["labels"].([]string)
-	calls := chart["calls"].([]int64)
-	input := chart["input"].([]int64)
-	output := chart["output"].([]int64)
-	cache := chart["cache"].([]int64)
-	uncached := chart["uncached"].([]int64)
 	for _, b := range series {
-		labels = append(labels, b.Bucket)
-		calls = append(calls, b.Calls)
-		input = append(input, b.Input)
-		output = append(output, b.Output)
-		cache = append(cache, b.Cache)
-		uncached = append(uncached, b.Uncached)
+		chart.Labels = append(chart.Labels, b.Bucket)
+		chart.Calls = append(chart.Calls, b.Calls)
+		chart.Input = append(chart.Input, b.Input)
+		chart.Output = append(chart.Output, b.Output)
+		chart.Cache = append(chart.Cache, b.Cache)
+		chart.Uncached = append(chart.Uncached, b.Uncached)
 		totals.Calls += b.Calls
 		totals.Input += b.Input
 		totals.Output += b.Output
 		totals.Cache += b.Cache
 		totals.Uncached += b.Uncached
 	}
-	chart["labels"], chart["calls"], chart["input"], chart["output"], chart["cache"], chart["uncached"] = labels, calls, input, output, cache, uncached
 	raw, err := json.Marshal(chart)
 	if err != nil {
 		http.Error(w, "encode failed", http.StatusInternalServerError)
 		return
 	}
 	s.renderAdmin(w, "usage.html", map[string]any{
+		"Nav":       "usage",
 		"Window":    win,
 		"Ranges":    []string{"24h", "7d", "30d", "90d"},
 		"Buckets":   []string{"hour", "day", "week", "month"},
@@ -234,6 +238,9 @@ func (s *Server) handleAdminCalls(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(q.Get("page"))
 	if page < 1 {
 		page = 1
+	}
+	if page > maxAdminPage {
+		page = maxAdminPage
 	}
 	offset := (page - 1) * adminPageSize
 	rows, total, err := listCalls(s.DB, filter.Model, filter.Provider, filter.APIKey, offset, adminPageSize)
@@ -269,6 +276,7 @@ func (s *Server) handleAdminCalls(w http.ResponseWriter, r *http.Request) {
 		next = "/admin/calls?" + v.Encode()
 	}
 	s.renderAdmin(w, "calls.html", map[string]any{
+		"Nav":    "calls",
 		"Filter": filter,
 		"Rows":   rows,
 		"Total":  total,
@@ -293,6 +301,7 @@ func (s *Server) handleAdminCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.renderAdmin(w, "detail.html", map[string]any{
+		"Nav":            "calls",
 		"Call":           call,
 		"RequestPretty":  prettyJSON(call.RequestJSON),
 		"ResponsePretty": prettyJSON(call.ResponseJSON),
@@ -326,6 +335,46 @@ func prettyJSON(raw []byte) string {
 		return string(raw)
 	}
 	return strings.TrimSuffix(buf.String(), "\n")
+}
+
+func formatNum(n any) string {
+	switch t := n.(type) {
+	case int:
+		return formatInt64(int64(t))
+	case int64:
+		return formatInt64(t)
+	case uint64:
+		return commaDigits(strconv.FormatUint(t, 10))
+	default:
+		return ""
+	}
+}
+
+func formatInt64(v int64) string {
+	s := strconv.FormatInt(v, 10)
+	if s[0] == '-' {
+		return "-" + commaDigits(s[1:])
+	}
+	return commaDigits(s)
+}
+
+func commaDigits(s string) string {
+	n := len(s)
+	if n <= 3 {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(n + n/3)
+	rem := n % 3
+	if rem == 0 {
+		rem = 3
+	}
+	b.WriteString(s[:rem])
+	for i := rem; i < n; i += 3 {
+		b.WriteByte(',')
+		b.WriteString(s[i : i+3])
+	}
+	return b.String()
 }
 
 func queryUsageSeries(db *gorm.DB, win adminWindow) ([]usageBucket, error) {

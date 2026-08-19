@@ -8,4 +8,6 @@ import (
 //go:embed admin/*.html
 var adminFS embed.FS
 
-var adminTmpl = template.Must(template.ParseFS(adminFS, "admin/*.html"))
+var adminTmpl = template.Must(template.New("").Funcs(template.FuncMap{
+	"formatNum": formatNum,
+}).ParseFS(adminFS, "admin/*.html"))

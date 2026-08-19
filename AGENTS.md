@@ -27,7 +27,7 @@ Tests live next to the code (`*_test.go`). Use `github.com/stretchr/testify`. Pr
 ## Hard constraints
 
 - **std `net/http` only** for the server. No Fiber/Gin/Echo.
-- **Failover is cache-preserving.** Next provider only on catastrophic unavailability: dial/DNS/TLS/other transport failure, or HTTP 502/503/504. Do **not** fail over on 429, 4xx, 500, or timeouts after the provider was reached.
+- **Failover is cache-preserving.** Next provider only on catastrophic unavailability: dial/DNS/TLS/other transport failure, or HTTP 502/503/504. Do **not** fail over on 429, 4xx, 500, or timeouts after the provider was reached. Once the client response has started, never try another provider.
 - Config shape is `mysql.{dsn,detail_retain}`, `admin.{username,password}`, `api_keys[].{name,value}` and `models[].{name,providers[]}` with `providers[].{name,url,model,headers}`. `url` is the full `http`/`https` upstream endpoint, not a base URL. Auth to upstream belongs in `headers`.
 - MySQL is required. DSN params `charset=utf8mb4`, `parseTime=true`, `loc=UTC`, `time_zone='UTC'` are forced. All DB timestamps are UTC.
 - `/admin` is a cookie-authenticated dashboard (HMAC, HttpOnly, SameSite=Lax; Secure when TLS or `X-Forwarded-Proto: https`). It is not API-key auth. `admin.username` and `admin.password` are required.

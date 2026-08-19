@@ -21,11 +21,11 @@
       <span class="muted">UTC {{.Window.From.Format "2006-01-02 15:04"}} → {{.Window.To.Format "2006-01-02 15:04"}}</span>
     </div>
     <div class="stats">
-      <div class="stat"><span>Calls</span><b>{{.Totals.Calls}}</b></div>
-      <div class="stat"><span>Input</span><b>{{.Totals.Input}}</b></div>
-      <div class="stat"><span>Output</span><b>{{.Totals.Output}}</b></div>
-      <div class="stat"><span>Cache</span><b>{{.Totals.Cache}}</b></div>
-      <div class="stat"><span>Uncached</span><b>{{.Totals.Uncached}}</b></div>
+      <div class="stat"><span>Calls</span><b>{{formatNum .Totals.Calls}}</b></div>
+      <div class="stat"><span>Input</span><b>{{formatNum .Totals.Input}}</b></div>
+      <div class="stat"><span>Output</span><b>{{formatNum .Totals.Output}}</b></div>
+      <div class="stat"><span>Cache</span><b>{{formatNum .Totals.Cache}}</b></div>
+      <div class="stat"><span>Uncached</span><b>{{formatNum .Totals.Uncached}}</b></div>
     </div>
     <div class="charts">
       <div class="panel"><h2>Tokens by period</h2><canvas id="tokensChart"></canvas></div>
@@ -36,7 +36,7 @@
       <table>
         <thead><tr><th>Bucket</th><th class="num">Calls</th><th class="num">Input</th><th class="num">Output</th><th class="num">Cache</th><th class="num">Uncached</th></tr></thead>
         <tbody>
-        {{range .Series}}<tr><td>{{.Bucket}}</td><td class="num">{{.Calls}}</td><td class="num">{{.Input}}</td><td class="num">{{.Output}}</td><td class="num">{{.Cache}}</td><td class="num">{{.Uncached}}</td></tr>{{else}}<tr><td colspan="6" class="muted">No calls in this window</td></tr>{{end}}
+        {{range .Series}}<tr><td>{{.Bucket}}</td><td class="num">{{formatNum .Calls}}</td><td class="num">{{formatNum .Input}}</td><td class="num">{{formatNum .Output}}</td><td class="num">{{formatNum .Cache}}</td><td class="num">{{formatNum .Uncached}}</td></tr>{{else}}<tr><td colspan="6" class="muted">No calls in this window</td></tr>{{end}}
         </tbody>
       </table>
     </div>
@@ -46,13 +46,13 @@
       <table>
         <thead><tr><th>{{.Title}}</th><th class="num">Calls</th><th class="num">Input</th><th class="num">Output</th><th class="num">Cache</th><th class="num">Uncached</th></tr></thead>
         <tbody>
-        {{range .Rows}}<tr><td>{{.Name}}</td><td class="num">{{.Calls}}</td><td class="num">{{.Input}}</td><td class="num">{{.Output}}</td><td class="num">{{.Cache}}</td><td class="num">{{.Uncached}}</td></tr>{{else}}<tr><td colspan="6" class="muted">None</td></tr>{{end}}
+        {{range .Rows}}<tr><td>{{.Name}}</td><td class="num">{{formatNum .Calls}}</td><td class="num">{{formatNum .Input}}</td><td class="num">{{formatNum .Output}}</td><td class="num">{{formatNum .Cache}}</td><td class="num">{{formatNum .Uncached}}</td></tr>{{else}}<tr><td colspan="6" class="muted">None</td></tr>{{end}}
         </tbody>
       </table>
     </div>
     {{end}}
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
   <script>
     const data = {{.ChartJSON}};
     const tick = { color: '#8b9aab' };
@@ -64,13 +64,12 @@
       data: {
         labels: data.labels,
         datasets: [
-          { label: 'input', data: data.input, backgroundColor: '#5b9fd4', stack: 't' },
-          { label: 'output', data: data.output, backgroundColor: '#6dbe8a', stack: 't' },
-          { label: 'cache', data: data.cache, backgroundColor: '#c9a45c', stack: 't' },
-          { label: 'uncached', data: data.uncached, backgroundColor: '#8b9aab', stack: 't' }
+          { label: 'input', data: data.input, backgroundColor: '#5b9fd4' },
+          { label: 'output', data: data.output, backgroundColor: '#6dbe8a' },
+          { label: 'cache', data: data.cache, backgroundColor: '#c9a45c' }
         ]
       },
-      options: { responsive: true, scales: { x: { stacked: true, ticks: tick, grid: grid }, y: { stacked: true, ticks: tick, grid: grid } } }
+      options: { responsive: true, scales: { x: { ticks: tick, grid: grid }, y: { ticks: tick, grid: grid, beginAtZero: true } } }
     });
     new Chart(document.getElementById('callsChart'), {
       type: 'line',

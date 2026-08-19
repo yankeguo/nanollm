@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"log"
+	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-sql-driver/mysql"
 	gormmysql "gorm.io/driver/mysql"
@@ -36,10 +38,10 @@ type CallRecord struct {
 type LLMCall struct {
 	ID             uint64    `gorm:"primaryKey"`
 	CreatedAt      time.Time `gorm:"type:datetime(3);index"`
-	Model          string    `gorm:"size:255;not null"`
-	Provider       string    `gorm:"size:255;not null"`
+	Model          string    `gorm:"size:255;not null;index"`
+	Provider       string    `gorm:"size:255;not null;index"`
 	ProviderModel  string    `gorm:"size:255"`
-	APIKeyName     string    `gorm:"size:255"`
+	APIKeyName     string    `gorm:"size:255;index"`
 	InputTokens    int64
 	OutputTokens   int64
 	CacheTokens    int64
@@ -84,23 +86,24 @@ func openDB(cfg MySQLConfig) (*gorm.DB, func() error, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := db.AutoMigrate(&LLMCall{}); err != nil {
-		sqlDB, _ := db.DB()
-		if sqlDB != nil {
-			_ = sqlDB.Close()
-		}
-		return nil, nil, err
-	}
 	sqlDB, err := db.DB()
 	if err != nil {
+		return nil, nil, err
+	}
+	sqlDB.SetMaxOpenConns(32)
+	sqlDB.SetMaxIdleConns(8)
+	sqlDB.SetConnMaxLifetime(30 * time.Minute)
+	if err := db.AutoMigrate(&LLMCall{}); err != nil {
+		_ = sqlDB.Close()
 		return nil, nil, err
 	}
 	return db, sqlDB.Close, nil
 }
 
 type gormCallLogger struct {
-	db     *gorm.DB
-	retain int
+	db      *gorm.DB
+	retain  int
+	pruning sync.Mutex
 }
 
 func newGormCallLogger(db *gorm.DB, retain int) *gormCallLogger {
@@ -133,6 +136,14 @@ func (l *gormCallLogger) Record(rec CallRecord) {
 		log.Println("llm_calls insert:", err)
 		return
 	}
+	go l.pruneAsync()
+}
+
+func (l *gormCallLogger) pruneAsync() {
+	if !l.pruning.TryLock() {
+		return
+	}
+	defer l.pruning.Unlock()
 	if err := l.prune(); err != nil {
 		log.Println("llm_calls prune:", err)
 	}
@@ -173,5 +184,9 @@ func clipError(s string) string {
 	if len(s) <= maxErrorLen {
 		return s
 	}
-	return s[:maxErrorLen]
+	s = s[:maxErrorLen]
+	for !utf8.ValidString(s) && len(s) > 0 {
+		s = s[:len(s)-1]
+	}
+	return s
 }

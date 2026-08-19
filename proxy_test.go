@@ -436,3 +436,80 @@ func TestProxyLogsDialFailure(t *testing.T) {
 	require.NotEmpty(t, logger.calls[0].Error)
 	require.Contains(t, string(logger.calls[0].RequestJSON), `"model":"a"`)
 }
+
+func TestProxyDoesNotFailoverAfterResponseStarted(t *testing.T) {
+	var secondHits atomic.Int32
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", "100")
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, `{"partial":true}`)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		if hj, ok := w.(http.Hijacker); ok {
+			if conn, _, err := hj.Hijack(); err == nil {
+				_ = conn.Close()
+			}
+		}
+	}))
+	t.Cleanup(first.Close)
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		secondHits.Add(1)
+		io.WriteString(w, `{"choices":[{"message":{"content":"backup"}}]}`)
+	}))
+	t.Cleanup(second.Close)
+
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(
+		Provider{Name: "a", URL: first.URL, Model: "a"},
+		Provider{Name: "b", URL: second.URL, Model: "b"},
+	), logger, nil).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int32(0), secondHits.Load())
+	require.Contains(t, rec.Body.String(), `"partial":true`)
+	require.NotContains(t, rec.Body.String(), "backup")
+	require.Len(t, logger.calls, 1)
+	require.Equal(t, "a", logger.calls[0].Provider)
+}
+
+func TestProxyLogsStreamUsage(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n")
+		io.WriteString(w, "data: {\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":1}}\n\n")
+		io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(Provider{Name: "m", URL: up.URL, Model: "m"}), logger, nil).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
+		"model":  "fast",
+		"stream": true,
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, logger.calls, 1)
+	require.Equal(t, int64(4), logger.calls[0].InputTokens)
+	require.Equal(t, int64(1), logger.calls[0].OutputTokens)
+	require.Contains(t, rec.Body.String(), "[DONE]")
+}
+
+func TestCapBuffer(t *testing.T) {
+	buf := &capBuffer{max: 8}
+	n, err := io.Copy(buf, bytes.NewReader(bytes.Repeat([]byte("x"), 32)))
+	require.NoError(t, err)
+	require.Equal(t, int64(32), n)
+	require.Equal(t, 8, len(buf.Bytes()))
+
+	var dst bytes.Buffer
+	mw := io.MultiWriter(&dst, &capBuffer{max: 4})
+	_, err = io.Copy(mw, bytes.NewReader([]byte("hello world")))
+	require.NoError(t, err)
+	require.Equal(t, "hello world", dst.String())
+}

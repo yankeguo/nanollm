@@ -135,3 +135,49 @@ func TestAdminLoginPage(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), `name="username"`)
 }
+
+func TestAdminLogoutClearsCookieWithoutSession(t *testing.T) {
+	h := NewServer(adminTestCfg(), nil, nil).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/admin/logout", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusFound, rec.Code)
+	require.Equal(t, "/admin/login", rec.Header().Get("Location"))
+	var cookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == adminCookieName {
+			cookie = c
+		}
+	}
+	require.NotNil(t, cookie)
+	require.True(t, cookie.MaxAge < 0)
+}
+
+func TestAdminSecurityHeaders(t *testing.T) {
+	h := NewServer(adminTestCfg(), nil, nil).Handler()
+	req := httptest.NewRequest(http.MethodGet, "/admin/login", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
+	require.Equal(t, "DENY", rec.Header().Get("X-Frame-Options"))
+	require.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+	require.Contains(t, rec.Header().Get("Content-Security-Policy"), "cdn.jsdelivr.net")
+}
+
+func TestAdminTrailingSlashRedirect(t *testing.T) {
+	h := NewServer(adminTestCfg(), nil, nil).Handler()
+	req := httptest.NewRequest(http.MethodGet, "/admin/", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusFound, rec.Code)
+	require.Equal(t, "/admin", rec.Header().Get("Location"))
+}
+
+func TestFormatNum(t *testing.T) {
+	require.Equal(t, "0", formatNum(0))
+	require.Equal(t, "999", formatNum(999))
+	require.Equal(t, "1,000", formatNum(1000))
+	require.Equal(t, "1,234,567", formatNum(int64(1234567)))
+	require.Equal(t, "-1,234", formatNum(-1234))
+	require.Equal(t, "1,000", formatNum(uint64(1000)))
+}

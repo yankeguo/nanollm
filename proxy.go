@@ -90,11 +90,15 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tw := &writeTracker{ResponseWriter: w}
 	var lastStatus int
 	var lastErr error
 
 	for _, provider := range providers {
-		status, err := p.forward(w, r, meta, provider)
+		status, err := p.forward(tw, r, meta, provider)
+		if tw.wrote {
+			return
+		}
 		if isCatastrophic(err, status) {
 			log.Printf("model %q provider %q catastrophically unavailable (%v, status=%d), trying next", meta.Model, provider.Name, err, status)
 			lastStatus, lastErr = status, err
@@ -168,7 +172,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	sse := meta.Stream || isSSE(resp.Header.Get("Content-Type"))
 
 	if isCatastrophic(nil, resp.StatusCode) {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, int64(maxMediumBlob)))
 		rec.ResponseJSON = encodeResponseBlob(body, sse)
 		rec.Error = "upstream status " + resp.Status
 		p.logCall(rec)
@@ -178,20 +182,15 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	copyResponseHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 
-	var buf bytes.Buffer
-	dst := io.Writer(w)
-	if sse {
-		dst = flushWriter{w}
-	}
-	_, err = io.Copy(dst, io.TeeReader(resp.Body, &buf))
-	body := buf.Bytes()
-	rec.ResponseJSON = encodeResponseBlob(body, sse)
+	buf := &capBuffer{max: maxMediumBlob}
 	var usage tokenUsage
 	if sse {
-		usage = parseUsageSSE(body)
+		usage, err = copyAndScanSSE(io.MultiWriter(newFlushWriter(w), buf), resp.Body)
 	} else {
-		usage = parseUsageJSON(body)
+		_, err = io.Copy(io.MultiWriter(w, buf), resp.Body)
+		usage = parseUsageJSON(buf.Bytes())
 	}
+	rec.ResponseJSON = encodeResponseBlob(buf.Bytes(), sse)
 	rec.InputTokens = usage.Input
 	rec.OutputTokens = usage.Output
 	rec.CacheTokens = usage.CacheRead
@@ -203,22 +202,70 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	return resp.StatusCode, err
 }
 
-type flushWriter struct {
+type writeTracker struct {
 	http.ResponseWriter
+	wrote bool
+}
+
+func (w *writeTracker) WriteHeader(status int) {
+	w.wrote = true
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *writeTracker) Write(p []byte) (int, error) {
+	w.wrote = true
+	return w.ResponseWriter.Write(p)
+}
+
+func (w *writeTracker) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
+type flushWriter struct {
+	w  http.ResponseWriter
+	rc *http.ResponseController
+}
+
+func newFlushWriter(w http.ResponseWriter) flushWriter {
+	return flushWriter{w: w, rc: http.NewResponseController(w)}
 }
 
 func (w flushWriter) Write(p []byte) (int, error) {
-	n, err := w.ResponseWriter.Write(p)
-	_ = http.NewResponseController(w.ResponseWriter).Flush()
+	n, err := w.w.Write(p)
+	_ = w.rc.Flush()
 	return n, err
+}
+
+// capBuffer keeps at most max bytes for call-log blobs; extra writes succeed
+// so io.MultiWriter can still copy the rest of the upstream body to the client.
+type capBuffer struct {
+	b   bytes.Buffer
+	max int
+}
+
+func (c *capBuffer) Write(p []byte) (int, error) {
+	n := len(p)
+	if c.max <= 0 || c.b.Len() >= c.max {
+		return n, nil
+	}
+	left := c.max - c.b.Len()
+	if len(p) > left {
+		p = p[:left]
+	}
+	if _, err := c.b.Write(p); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func (c *capBuffer) Bytes() []byte {
+	return c.b.Bytes()
 }
 
 func hopByHop(h http.Header) map[string]bool {
 	skip := make(map[string]bool, len(hopHeaders)+8)
-	for k, v := range hopHeaders {
-		if v {
-			skip[k] = v
-		}
+	for k := range hopHeaders {
+		skip[k] = true
 	}
 	for _, f := range h.Values("Connection") {
 		for _, tok := range strings.Split(f, ",") {

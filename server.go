@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -37,7 +38,10 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /admin/login", s.handleAdminLogin)
 	mux.HandleFunc("POST /admin/login", s.handleAdminLogin)
-	mux.Handle("POST /admin/logout", s.requireAdmin(http.HandlerFunc(s.handleAdminLogout)))
+	mux.HandleFunc("POST /admin/logout", s.handleAdminLogout)
+	mux.HandleFunc("GET /admin/{$}", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/admin", http.StatusFound)
+	})
 	mux.Handle("GET /admin", s.requireAdmin(http.HandlerFunc(s.handleAdminUsage)))
 	mux.Handle("GET /admin/calls", s.requireAdmin(http.HandlerFunc(s.handleAdminCalls)))
 	mux.Handle("GET /admin/calls/{id}", s.requireAdmin(http.HandlerFunc(s.handleAdminCall)))
@@ -53,7 +57,30 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /v1/embeddings", proxy)
 	mux.Handle("POST /embeddings", proxy)
 	mux.Handle("POST /v1/responses", proxy)
-	return mux
+	return withSecurityHeaders(mux)
+}
+
+func withSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		if strings.HasPrefix(r.URL.Path, "/admin") {
+			h.Set("Cache-Control", "no-store")
+			h.Set("Content-Security-Policy", strings.Join([]string{
+				"default-src 'none'",
+				"script-src https://cdn.jsdelivr.net 'unsafe-inline'",
+				"style-src 'unsafe-inline'",
+				"img-src 'self' data:",
+				"connect-src 'self'",
+				"form-action 'self'",
+				"base-uri 'none'",
+				"frame-ancestors 'none'",
+			}, "; "))
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/require"
@@ -41,6 +43,14 @@ func TestClipBlobAndError(t *testing.T) {
 		long[i] = 'x'
 	}
 	require.Len(t, clipError(string(long)), maxErrorLen)
+}
+
+func TestClipErrorUTF8(t *testing.T) {
+	prefix := strings.Repeat("x", maxErrorLen-1)
+	got := clipError(prefix + "世")
+	require.True(t, utf8.ValidString(got))
+	require.LessOrEqual(t, len(got), maxErrorLen)
+	require.Equal(t, prefix, got)
 }
 
 func TestMySQLDetailRetainDefault(t *testing.T) {

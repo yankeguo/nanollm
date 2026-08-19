@@ -8,6 +8,7 @@
   header { display:flex; align-items:center; gap:1.25rem; padding:.85rem 1.5rem; border-bottom:1px solid var(--line); background:var(--card); }
   header h1 { font-size:1rem; margin:0; font-weight:600; letter-spacing:.02em; }
   header nav { display:flex; gap:1rem; flex:1; }
+  header nav a.on { color:var(--fg); font-weight:600; }
   header form { margin-left:auto; }
   .wrap { max-width:1100px; margin:0 auto; padding:1.5rem; }
   .filters { display:flex; flex-wrap:wrap; gap:.5rem 1rem; margin-bottom:1.25rem; align-items:center; }
@@ -43,8 +44,8 @@
 <header>
   <h1>nanollm</h1>
   <nav>
-    <a href="/admin">Usage</a>
-    <a href="/admin/calls">Calls</a>
+    <a href="/admin"{{if eq .Nav "usage"}} class="on"{{end}}>Usage</a>
+    <a href="/admin/calls"{{if eq .Nav "calls"}} class="on"{{end}}>Calls</a>
   </nav>
   <form method="post" action="/admin/logout"><button type="submit">Sign out</button></form>
 </header>

@@ -126,6 +126,7 @@ For each request, providers are attempted from first to last.
 - ordinary `5xx` such as `500`
 - timeouts after the provider was reached
 - client cancellation
+- any error after the response status has already been written to the client
 
 This keeps prefix / prompt cache on the first healthy provider.
 

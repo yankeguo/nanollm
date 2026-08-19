@@ -16,7 +16,7 @@
       <button type="submit">Filter</button>
     </form>
     <div class="panel">
-      <h2>Calls <span class="muted">({{.Total}})</span></h2>
+      <h2>Calls <span class="muted">({{formatNum .Total}})</span></h2>
       <table>
         <thead>
           <tr>
@@ -32,10 +32,10 @@
             <td>{{.Model}}</td>
             <td>{{.Provider}}</td>
             <td>{{.APIKeyName}}</td>
-            <td class="num">{{.HTTPStatus}}</td>
-            <td class="num">{{.InputTokens}}</td>
-            <td class="num">{{.OutputTokens}}</td>
-            <td class="num">{{.CacheTokens}}</td>
+            <td class="num">{{if eq .HTTPStatus 0}}—{{else}}{{.HTTPStatus}}{{end}}</td>
+            <td class="num">{{formatNum .InputTokens}}</td>
+            <td class="num">{{formatNum .OutputTokens}}</td>
+            <td class="num">{{formatNum .CacheTokens}}</td>
             <td class="err">{{.Error}}</td>
             <td>{{if .HasDetail}}<a href="/admin/calls/{{.ID}}">view</a>{{else}}<span class="muted">—</span>{{end}}</td>
           </tr>

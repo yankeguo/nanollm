@@ -225,3 +225,26 @@ models:
 	_, err = loadConfig(path)
 	require.ErrorContains(t, err, "admin.password")
 }
+
+func TestLoadConfigTrimsAdminUsername(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+admin:
+  username: "  admin  "
+  password: REPLACE_ME
+api_keys:
+  - name: alice
+    value: sk-alice
+models:
+  - name: fast
+    providers:
+      - name: a
+        url: http://a.example
+`), 0o644))
+	cfg, err := loadConfig(path)
+	require.NoError(t, err)
+	require.Equal(t, "admin", cfg.Admin.Username)
+}
