@@ -18,8 +18,8 @@
       <div class="stat"><span>Upstream</span><b>{{.Call.ProviderModel}}</b></div>
       <div class="stat"><span>API key</span><b>{{.Call.APIKeyName}}</b></div>
       <div class="stat"><span>Status</span><b>{{if eq .Call.HTTPStatus 0}}—{{else}}{{.Call.HTTPStatus}}{{end}}</b></div>
-      <div class="stat"><span>Input / output</span><b>{{formatNum .Call.InputTokens}} / {{formatNum .Call.OutputTokens}}</b></div>
-      <div class="stat"><span>Cache / uncached</span><b>{{formatNum .Call.CacheTokens}} / {{formatNum .Call.UncachedTokens}}</b></div>
+      <div class="stat"><span>Output</span><b>{{formatNum .Call.OutputTokens}}</b></div>
+      <div class="stat"><span>Input</span><b>{{formatNum .Call.InputTokens}}</b>{{inputBar .Call.InputTokens .Call.CacheTokens}}</div>
     </div>
     {{if .Call.Error}}<p class="err">{{.Call.Error}}</p>{{end}}
     <div class="panel" style="margin-bottom:1rem">

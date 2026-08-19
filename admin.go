@@ -337,6 +337,25 @@ func prettyJSON(raw []byte) string {
 	return strings.TrimSuffix(buf.String(), "\n")
 }
 
+// inputBar renders the cached share of an input token total as a small
+// proportion bar (amber cached over the blue uncached track, matching the
+// usage chart) plus a "N cached · P%" caption. The bar length represents the
+// full input, so cache reads as a slice of it.
+func inputBar(input, cache int64) template.HTML {
+	var pct int64
+	if input > 0 {
+		pct = cache * 100 / input
+		if pct < 0 {
+			pct = 0
+		}
+		if pct > 100 {
+			pct = 100
+		}
+	}
+	return template.HTML(`<div class="inbar"><i style="width:` + strconv.FormatInt(pct, 10) +
+		`%"></i></div><div class="sub">` + formatInt64(cache) + ` cached · ` + strconv.FormatInt(pct, 10) + `%</div>`)
+}
+
 func formatNum(n any) string {
 	switch t := n.(type) {
 	case int:

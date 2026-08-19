@@ -1,6 +1,7 @@
 package main
 
 import (
+	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -180,4 +181,24 @@ func TestFormatNum(t *testing.T) {
 	require.Equal(t, "1,234,567", formatNum(int64(1234567)))
 	require.Equal(t, "-1,234", formatNum(-1234))
 	require.Equal(t, "1,000", formatNum(uint64(1000)))
+}
+
+func TestInputBar(t *testing.T) {
+	cases := []struct {
+		name  string
+		input int64
+		cache int64
+		want  string
+	}{
+		{"zero input", 0, 0, `<div class="inbar"><i style="width:0%"></i></div><div class="sub">0 cached · 0%</div>`},
+		{"half cached", 2000, 1000, `<div class="inbar"><i style="width:50%"></i></div><div class="sub">1,000 cached · 50%</div>`},
+		{"all cached", 1234, 1234, `<div class="inbar"><i style="width:100%"></i></div><div class="sub">1,234 cached · 100%</div>`},
+		{"cache over input clamps", 100, 250, `<div class="inbar"><i style="width:100%"></i></div><div class="sub">250 cached · 100%</div>`},
+		{"negative input", -10, 5, `<div class="inbar"><i style="width:0%"></i></div><div class="sub">5 cached · 0%</div>`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, template.HTML(c.want), inputBar(c.input, c.cache))
+		})
+	}
 }

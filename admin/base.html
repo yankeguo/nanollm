@@ -1,6 +1,6 @@
 {{define "css"}}
 <style>
-  :root { --bg:#0f1419; --card:#1a222c; --fg:#e8eef4; --muted:#8b9aab; --line:#2a3644; --acc:#5b9fd4; --err:#e07070; --ok:#6dbe8a; }
+  :root { --bg:#0f1419; --card:#1a222c; --fg:#e8eef4; --muted:#8b9aab; --line:#2a3644; --acc:#5b9fd4; --err:#e07070; --ok:#6dbe8a; --cache:#c9a45c; }
   * { box-sizing: border-box; }
   body { margin:0; font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; background:var(--bg); color:var(--fg); }
   a { color:var(--acc); text-decoration:none; }
@@ -29,6 +29,10 @@
   .err { color:var(--err); }
   .muted { color:var(--muted); }
   .num { text-align:right !important; }
+  .inbar { height:4px; min-width:56px; margin-top:.3rem; border-radius:2px; background:var(--acc); overflow:hidden; }
+  .inbar i { display:block; height:100%; background:var(--cache); }
+  .sub { margin-top:.2rem; font-size:.75rem; color:var(--muted); }
+  td.num .inbar { width:64px; margin-left:auto; }
   button, .btn { background:var(--acc); color:#0f1419; border:0; border-radius:8px; padding:.45rem .9rem; font-weight:600; cursor:pointer; }
   body.login { min-height:100vh; display:flex; align-items:center; justify-content:center; }
   form.card { width:min(360px,92vw); background:var(--card); border:1px solid var(--line); border-radius:12px; padding:1.5rem; display:flex; flex-direction:column; gap:.75rem; }

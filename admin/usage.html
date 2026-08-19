@@ -22,10 +22,8 @@
     </div>
     <div class="stats">
       <div class="stat"><span>Calls</span><b>{{formatNum .Totals.Calls}}</b></div>
-      <div class="stat"><span>Input</span><b>{{formatNum .Totals.Input}}</b></div>
+      <div class="stat"><span>Input</span><b>{{formatNum .Totals.Input}}</b>{{inputBar .Totals.Input .Totals.Cache}}</div>
       <div class="stat"><span>Output</span><b>{{formatNum .Totals.Output}}</b></div>
-      <div class="stat"><span>Cache</span><b>{{formatNum .Totals.Cache}}</b></div>
-      <div class="stat"><span>Uncached</span><b>{{formatNum .Totals.Uncached}}</b></div>
     </div>
     <div class="charts">
       <div class="panel"><h2>Tokens by period</h2><canvas id="tokensChart"></canvas></div>
@@ -34,9 +32,9 @@
     <div class="panel" style="margin-bottom:1rem">
       <h2>Time series (UTC)</h2>
       <table>
-        <thead><tr><th>Bucket</th><th class="num">Calls</th><th class="num">Input</th><th class="num">Output</th><th class="num">Cache</th><th class="num">Uncached</th></tr></thead>
+        <thead><tr><th>Bucket</th><th class="num">Calls</th><th class="num">Input</th><th class="num">Output</th></tr></thead>
         <tbody>
-        {{range .Series}}<tr><td>{{.Bucket}}</td><td class="num">{{formatNum .Calls}}</td><td class="num">{{formatNum .Input}}</td><td class="num">{{formatNum .Output}}</td><td class="num">{{formatNum .Cache}}</td><td class="num">{{formatNum .Uncached}}</td></tr>{{else}}<tr><td colspan="6" class="muted">No calls in this window</td></tr>{{end}}
+        {{range .Series}}<tr><td>{{.Bucket}}</td><td class="num">{{formatNum .Calls}}</td><td class="num">{{formatNum .Input}}{{inputBar .Input .Cache}}</td><td class="num">{{formatNum .Output}}</td></tr>{{else}}<tr><td colspan="4" class="muted">No calls in this window</td></tr>{{end}}
         </tbody>
       </table>
     </div>
@@ -44,9 +42,9 @@
     <div class="panel" style="margin-bottom:1rem">
       <h2>By {{.Title}}</h2>
       <table>
-        <thead><tr><th>{{.Title}}</th><th class="num">Calls</th><th class="num">Input</th><th class="num">Output</th><th class="num">Cache</th><th class="num">Uncached</th></tr></thead>
+        <thead><tr><th>{{.Title}}</th><th class="num">Calls</th><th class="num">Input</th><th class="num">Output</th></tr></thead>
         <tbody>
-        {{range .Rows}}<tr><td>{{.Name}}</td><td class="num">{{formatNum .Calls}}</td><td class="num">{{formatNum .Input}}</td><td class="num">{{formatNum .Output}}</td><td class="num">{{formatNum .Cache}}</td><td class="num">{{formatNum .Uncached}}</td></tr>{{else}}<tr><td colspan="6" class="muted">None</td></tr>{{end}}
+        {{range .Rows}}<tr><td>{{.Name}}</td><td class="num">{{formatNum .Calls}}</td><td class="num">{{formatNum .Input}}{{inputBar .Input .Cache}}</td><td class="num">{{formatNum .Output}}</td></tr>{{else}}<tr><td colspan="4" class="muted">None</td></tr>{{end}}
         </tbody>
       </table>
     </div>
