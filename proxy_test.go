@@ -20,7 +20,7 @@ func testProxy(t *testing.T, cfg *Config) http.Handler {
 	if len(cfg.APIKeys) == 0 {
 		cfg.APIKeys = []APIKey{{Name: "test", Value: testAPIKey}}
 	}
-	return NewServer(cfg, nil).Handler()
+	return NewServer(cfg).Handler()
 }
 
 func cfgFast(providers ...Provider) *Config {
@@ -174,7 +174,7 @@ func TestProxyUnknownModel(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-func TestProxyStreamUsage(t *testing.T) {
+func TestProxyStreamPassthrough(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n")

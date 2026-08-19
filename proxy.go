@@ -27,9 +27,8 @@ var hopHeaders = map[string]bool{
 }
 
 type Proxy struct {
-	Config  *Config
-	Metrics *Metrics
-	Client  *http.Client
+	Config *Config
+	Client *http.Client
 }
 
 func defaultHTTPClient() *http.Client {
@@ -87,7 +86,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var lastErr error
 
 	for _, provider := range providers {
-		status, usage, err := p.forward(w, r, meta, provider)
+		status, err := p.forward(w, r, meta, provider)
 		if isCatastrophic(err, status) {
 			log.Printf("model %q provider %q catastrophically unavailable (%v, status=%d), trying next", meta.Model, provider.Name, err, status)
 			lastStatus, lastErr = status, err
@@ -99,7 +98,6 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				writeAPIError(w, statusFromErr(err), "upstream_error", err.Error())
 			}
 		}
-		p.Metrics.record(r.Context(), meta.Model, provider, usage)
 		return
 	}
 
@@ -113,16 +111,16 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writeAPIError(w, lastStatus, "upstream_error", "all upstreams unavailable")
 }
 
-func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMeta, provider Provider) (int, tokenUsage, error) {
-	payload, err := rewriteRequest(meta.Body, provider.Model, meta.Stream)
+func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMeta, provider Provider) (int, error) {
+	payload, err := rewriteRequest(meta.Body, provider.Model)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
-		return http.StatusBadRequest, tokenUsage{}, err
+		return http.StatusBadRequest, err
 	}
 
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, provider.URL, bytes.NewReader(payload))
 	if err != nil {
-		return 0, tokenUsage{}, err
+		return 0, err
 	}
 	copyRequestHeaders(req.Header, r.Header)
 	for k, v := range provider.Headers {
@@ -136,30 +134,24 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 
 	resp, err := p.client().Do(req)
 	if err != nil {
-		return 0, tokenUsage{}, err
+		return 0, err
 	}
 	defer resp.Body.Close()
 
 	if isCatastrophic(nil, resp.StatusCode) {
 		_, _ = io.Copy(io.Discard, resp.Body)
-		return resp.StatusCode, tokenUsage{}, nil
+		return resp.StatusCode, nil
 	}
 
 	copyResponseHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 
-	var usage tokenUsage
+	dst := io.Writer(w)
 	if meta.Stream || isSSE(resp.Header.Get("Content-Type")) {
-		usage, err = copyAndScanSSE(flushWriter{w}, resp.Body)
-	} else {
-		var buf bytes.Buffer
-		_, err = io.Copy(w, io.TeeReader(resp.Body, &buf))
-		usage = parseUsageJSON(buf.Bytes())
+		dst = flushWriter{w}
 	}
-	if err != nil {
-		return resp.StatusCode, usage, err
-	}
-	return resp.StatusCode, usage, nil
+	_, err = io.Copy(dst, resp.Body)
+	return resp.StatusCode, err
 }
 
 type flushWriter struct {

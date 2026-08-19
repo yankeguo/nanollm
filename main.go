@@ -36,18 +36,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	metrics, shutdownMetrics := rg.Must2(setupMetrics(ctx))
-	defer func() {
-		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := shutdownMetrics(sctx); err != nil {
-			log.Println("metrics shutdown:", err)
-		}
-	}()
-
 	srv := &http.Server{
 		Addr:              listen,
-		Handler:           NewServer(cfg, metrics).Handler(),
+		Handler:           NewServer(cfg).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}

@@ -8,15 +8,13 @@ import (
 
 type Server struct {
 	Config  *Config
-	Metrics *Metrics
 	Client  *http.Client
 	started int64
 }
 
-func NewServer(cfg *Config, metrics *Metrics) *Server {
+func NewServer(cfg *Config) *Server {
 	return &Server{
 		Config:  cfg,
-		Metrics: metrics,
 		Client:  defaultHTTPClient(),
 		started: time.Now().Unix(),
 	}
@@ -29,7 +27,7 @@ func (s *Server) Handler() http.Handler {
 	auth := func(h http.Handler) http.Handler { return s.requireAPIKey(h) }
 	mux.Handle("GET /v1/models", auth(http.HandlerFunc(s.handleModels)))
 	mux.Handle("GET /v1/models/{model...}", auth(http.HandlerFunc(s.handleModel)))
-	proxy := auth(&Proxy{Config: s.Config, Metrics: s.Metrics, Client: s.Client})
+	proxy := auth(&Proxy{Config: s.Config, Client: s.Client})
 	mux.Handle("POST /v1/chat/completions", proxy)
 	mux.Handle("POST /chat/completions", proxy)
 	mux.Handle("POST /v1/completions", proxy)

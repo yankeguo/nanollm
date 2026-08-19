@@ -1,25 +1,11 @@
 package main
 
 import (
-	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"net/http"
 	"strings"
 )
-
-type ctxKey int
-
-const apiKeyNameCtxKey ctxKey = 1
-
-func withAPIKeyName(ctx context.Context, name string) context.Context {
-	return context.WithValue(ctx, apiKeyNameCtxKey, name)
-}
-
-func apiKeyNameFrom(ctx context.Context) string {
-	name, _ := ctx.Value(apiKeyNameCtxKey).(string)
-	return name
-}
 
 func extractAPIKey(r *http.Request) string {
 	if v := r.Header.Get("Authorization"); v != "" {
@@ -75,6 +61,6 @@ func (s *Server) requireAPIKey(next http.Handler) http.Handler {
 			writeAPIError(w, http.StatusUnauthorized, "invalid_request_error", "invalid api key")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(withAPIKeyName(r.Context(), key.Name)))
+		next.ServeHTTP(w, r)
 	})
 }

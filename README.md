@@ -1,6 +1,6 @@
 # nanollm
 
-OpenAI-compatible reverse proxy for LLM APIs. Point coding tools at nanollm, map one client-facing model name to one or more upstream providers, and export token usage (including cache hits) over OTLP/HTTP so you can see how many tokens an opaque coding plan actually delivers.
+OpenAI-compatible reverse proxy for LLM APIs. Point coding tools at nanollm and map one client-facing model name to one or more upstream providers.
 
 Providers for a model are tried **in order**. The next provider is used only when the current one is catastrophically unavailable. Rate limits, 4xx, and ordinary 5xx stay on the same provider so prompt cache is not thrown away.
 
@@ -10,7 +10,6 @@ Providers for a model are tried **in order**. The next provider is used only whe
 - YAML config: named models, named providers, auth merged into provider `headers`
 - Incoming API keys (`api_keys[].{name,value}`)
 - Streaming SSE pass-through
-- Custom OTEL counters: input / output / cache_read / cache_creation / uncached, labeled by model, provider, and API key
 - Failover only on dial/DNS/TLS failure or HTTP 502/503/504
 
 ## Quick start
@@ -40,8 +39,6 @@ Point the client at `http://127.0.0.1:8080/v1` with `Authorization: Bearer <api_
 
 The container image sets `NANOLLM_CONFIG=/config.yaml`.
 
-OTEL uses the standard SDK / OTLP HTTP environment variables (see [Metrics](#metrics)). `OTEL_SDK_DISABLED=true` turns export off.
-
 ## Config
 
 ```yaml
@@ -65,11 +62,11 @@ models:
 
 | Field | Required | Meaning |
 |---|---|---|
-| `api_keys[].name` | yes | Label stored on metrics as `nanollm.api_key` |
+| `api_keys[].name` | yes | Identifier for this key (must be unique) |
 | `api_keys[].value` | yes | Secret the client must send |
 | `models[].name` | yes | Client-facing model id |
 | `models[].providers` | yes | Ordered upstream list |
-| `providers[].name` | yes | Label stored on metrics as `nanollm.provider` |
+| `providers[].name` | yes | Identifier for this provider within a model (must be unique) |
 | `providers[].url` | yes | Full `http`/`https` upstream URL (not a base URL) |
 | `providers[].model` | no | Model string sent upstream; if empty, the client model is kept |
 | `providers[].headers` | no | Extra request headers, including upstream auth |
@@ -128,67 +125,7 @@ This keeps prefix / prompt cache on the first healthy provider.
 
 The JSON body `model` field selects `models[].name`. nanollm rewrites it to `providers[].model` and POSTs to `providers[].url`.
 
-Streaming (`"stream": true`) is copied through as SSE. If `stream_options.include_usage` is missing, it is set to `true` so the last chunk can carry token counts.
-
-## Metrics
-
-Custom counters, **not** OpenTelemetry GenAI semantic conventions.
-
-**Instrument:** `nanollm.token.usage`  
-**Type:** Counter  
-**Unit:** `{token}`
-
-One request can add several data points that share labels and differ by `nanollm.token.type`:
-
-| `nanollm.token.type` | Meaning |
-|---|---|
-| `input` | All input / prompt tokens (**includes** cache) |
-| `output` | All output / completion tokens |
-| `cache_read` | Input tokens served from provider cache |
-| `cache_creation` | Input tokens written into provider cache |
-| `uncached` | Input tokens that were not cache read or cache write |
-
-Attributes:
-
-| Attribute | Source |
-|---|---|
-| `nanollm.model` | `models[].name` |
-| `nanollm.provider` | `providers[].name` |
-| `nanollm.api_key` | `api_keys[].name` |
-| `nanollm.upstream.model` | `providers[].model` |
-| `nanollm.token.type` | see table above |
-
-`input` overlaps the cache breakdown on purpose:
-
-```
-cache hit ratio ≈ cache_read / input
-uncached ≈ input - cache_read - cache_creation
-```
-
-Usage is parsed from common OpenAI-compatible `usage` objects, including:
-
-- OpenAI `prompt_tokens` / `completion_tokens` / `prompt_tokens_details.cached_tokens`
-- DeepSeek `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`
-- Anthropic `cache_read_input_tokens` / `cache_creation_input_tokens`
-
-Standard OTLP/HTTP env vars:
-
-- `OTEL_SERVICE_NAME` (default resource service name is `nanollm`)
-- `OTEL_RESOURCE_ATTRIBUTES`
-- `OTEL_EXPORTER_OTLP_ENDPOINT` (base URL; `/v1/metrics` is appended)
-- `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` (full URL, typically `.../v1/metrics`)
-- `OTEL_EXPORTER_OTLP_HEADERS` / `OTEL_EXPORTER_OTLP_METRICS_HEADERS`
-- `OTEL_EXPORTER_OTLP_TIMEOUT`
-- `OTEL_EXPORTER_OTLP_COMPRESSION`
-- `OTEL_METRIC_EXPORT_INTERVAL`
-- `OTEL_SDK_DISABLED`
-
-```bash
-export OTEL_SERVICE_NAME=nanollm
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-go run . -config config.yaml
-```
+Streaming (`"stream": true`) is copied through as SSE. Request fields such as `stream_options` are forwarded as-is.
 
 ## Docker / GHCR
 
