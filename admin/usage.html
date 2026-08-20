@@ -9,21 +9,7 @@
 <body>
   {{template "nav" .}}
   <div class="wrap">
-    <div class="filters">
-      <div class="fgroup">
-        <span class="flabel"><span class="iconify" data-icon="lucide:calendar"></span> Range</span>
-        <div class="group">
-          {{range .Ranges}}<a class="chip{{if eq $.Window.Range .}} on{{end}}" href="/admin?range={{.}}&bucket={{$.Window.Bucket}}">{{.}}</a>{{end}}
-        </div>
-      </div>
-      <div class="fgroup">
-        <span class="flabel"><span class="iconify" data-icon="lucide:layers"></span> Bucket</span>
-        <div class="group">
-          {{range .Buckets}}<a class="chip{{if eq $.Window.Bucket .}} on{{end}}" href="/admin?range={{$.Window.Range}}&bucket={{.}}">{{.}}</a>{{end}}
-        </div>
-      </div>
-      <span class="ftime"><span class="iconify" data-icon="lucide:clock"></span> <time datetime="{{.Window.From.Format "2006-01-02T15:04:05Z"}}" data-min>{{.Window.From.Format "2006-01-02 15:04"}}</time> → <time datetime="{{.Window.To.Format "2006-01-02T15:04:05Z"}}" data-min>{{.Window.To.Format "2006-01-02 15:04"}}</time> <span data-tz>UTC</span></span>
-    </div>
+    {{template "filters" .}}
     <div class="stats">
       <div class="stat"><span>Calls</span><b>{{formatNum .Totals.Calls}}</b></div>
       <div class="stat"><span>Input</span><b>{{formatNum .Totals.Input}}<span class="iconify dir" data-icon="lucide:arrow-down"></span></b>{{inputBar .Totals.Input .Totals.Cache}}</div>
@@ -33,20 +19,42 @@
       <div class="panel"><h2>Tokens by period</h2><canvas id="tokensChart"></canvas></div>
       <div class="panel"><h2>Calls by period</h2><canvas id="callsChart"></canvas></div>
     </div>
-    <div class="panel">
-      <h2>Details</h2>
-      <table>
-        <colgroup><col><col class="w-calls"><col class="w-in"><col class="w-out"></colgroup>
-        <thead><tr><th>Bucket / Name</th><th class="num">Calls</th><th class="in">Input <span class="iconify" data-icon="lucide:arrow-down"></span></th><th class="out"><span class="iconify" data-icon="lucide:arrow-up"></span> Output</th></tr></thead>
-        <tbody>
-        <tr class="sect"><td colspan="4">Time series (UTC)</td></tr>
-        {{range .Series}}<tr><td>{{.Bucket}}</td><td class="num">{{formatNum .Calls}}</td><td class="in">{{formatNum .Input}}<span class="iconify dir" data-icon="lucide:arrow-down"></span>{{inputBar .Input .Cache}}</td><td class="out"><span class="iconify dir" data-icon="lucide:arrow-up"></span>{{formatNum .Output}}{{outputBar .Input .Output}}</td></tr>{{else}}<tr><td colspan="4" class="muted">No calls in this window</td></tr>{{end}}
-        {{range .Breakdowns}}
-        <tr class="sect"><td colspan="4">By {{.Title}}</td></tr>
-        {{range .Rows}}<tr><td>{{.Name}}</td><td class="num">{{formatNum .Calls}}</td><td class="in">{{formatNum .Input}}<span class="iconify dir" data-icon="lucide:arrow-down"></span>{{inputBar .Input .Cache}}</td><td class="out"><span class="iconify dir" data-icon="lucide:arrow-up"></span>{{formatNum .Output}}{{outputBar .Input .Output}}</td></tr>{{else}}<tr><td colspan="4" class="muted">None</td></tr>{{end}}
-        {{end}}
-        </tbody>
-      </table>
+    <div class="panels">
+      <div class="panel">
+        <h2>Time series (UTC)</h2>
+        <table>
+          <colgroup><col><col class="w-calls"><col class="w-in"><col class="w-out"></colgroup>
+          <thead><tr><th>Bucket</th><th class="num">Calls</th><th class="in">Input <span class="iconify" data-icon="lucide:arrow-down"></span></th><th class="out"><span class="iconify" data-icon="lucide:arrow-up"></span> Output</th></tr></thead>
+          <tbody>
+          {{range .Series}}<tr><td>{{.Bucket}}</td><td class="num">{{formatNum .Calls}}</td><td class="in">{{formatNum .Input}}<span class="iconify dir" data-icon="lucide:arrow-down"></span>{{inputBar .Input .Cache}}</td><td class="out"><span class="iconify dir" data-icon="lucide:arrow-up"></span>{{formatNum .Output}}{{outputBar .Input .Output}}</td></tr>{{else}}<tr><td colspan="4" class="muted">No calls in this window</td></tr>{{end}}
+          </tbody>
+        </table>
+      </div>
+      {{range .Breakdowns}}
+      {{$param := .Param}}
+      <div class="panel">
+        <h2>By {{.Title}}</h2>
+        <table>
+          <colgroup><col><col class="w-calls"><col class="w-in"><col class="w-out"></colgroup>
+          <thead><tr><th>Name</th><th class="num">Calls</th><th class="in">Input <span class="iconify" data-icon="lucide:arrow-down"></span></th><th class="out"><span class="iconify" data-icon="lucide:arrow-up"></span> Output</th></tr></thead>
+          <tbody>
+          {{range .Rows}}
+          <tr>
+            <td>
+              <div class="namecell">
+                <a href="{{filterPath "usage" (setFilter $.Filter $param .Name)}}">{{.Name}}</a>
+                <a class="listlink" href="{{filterPath "calls" (setFilter $.Filter $param .Name)}}">list</a>
+              </div>
+            </td>
+            <td class="num">{{formatNum .Calls}}</td>
+            <td class="in">{{formatNum .Input}}<span class="iconify dir" data-icon="lucide:arrow-down"></span>{{inputBar .Input .Cache}}</td>
+            <td class="out"><span class="iconify dir" data-icon="lucide:arrow-up"></span>{{formatNum .Output}}{{outputBar .Input .Output}}</td>
+          </tr>
+          {{else}}<tr><td colspan="4" class="muted">None</td></tr>{{end}}
+          </tbody>
+        </table>
+      </div>
+      {{end}}
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"

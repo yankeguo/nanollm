@@ -9,12 +9,7 @@
 <body>
   {{template "nav" .}}
   <div class="wrap">
-    <form class="filters" method="get" action="/admin/calls">
-      <label>Model <input name="model" value="{{.Filter.Model}}"></label>
-      <label>Provider <input name="provider" value="{{.Filter.Provider}}"></label>
-      <label>API key <input name="api_key" value="{{.Filter.APIKey}}"></label>
-      <button type="submit"><span class="iconify" data-icon="lucide:filter"></span> Filter</button>
-    </form>
+    {{template "filters" .}}
     <div class="panel">
       <h2>Calls <span class="muted">({{formatNum .Total}})</span></h2>
       <table>
@@ -35,7 +30,7 @@
             <td class="num"><span class="badge {{statusClass .HTTPStatus}}">{{if eq .HTTPStatus 0}}—{{else}}{{.HTTPStatus}}{{end}}</span>{{if .Error}} <span class="iconify {{callErrorClass .HTTPStatus .Error}}" data-icon="lucide:alert-triangle" title="{{.Error}}"></span>{{end}}</td>
             <td class="in">{{formatNum .InputTokens}}<span class="iconify dir" data-icon="lucide:arrow-down"></span>{{inputBar .InputTokens .CacheTokens}}</td>
             <td class="out"><span class="iconify dir" data-icon="lucide:arrow-up"></span>{{formatNum .OutputTokens}}{{outputBar .InputTokens .OutputTokens}}</td>
-            <td>{{if .HasDetail}}<a class="backlink" href="/admin/calls/{{.ID}}"><span class="iconify" data-icon="lucide:eye"></span> view</a>{{else}}<span class="muted">—</span>{{end}}</td>
+            <td>{{if .HasDetail}}<a class="backlink" href="/admin/calls/{{.ID}}{{if $.ListQuery}}?{{$.ListQuery}}{{end}}"><span class="iconify" data-icon="lucide:eye"></span> view</a>{{else}}<span class="muted">—</span>{{end}}</td>
           </tr>
         {{else}}
           <tr><td colspan="8" class="muted">No calls</td></tr>

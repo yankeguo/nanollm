@@ -9,7 +9,7 @@
 <body>
   {{template "nav" .}}
   <div class="wrap">
-    <p><a class="backlink" href="/admin/calls"><span class="iconify" data-icon="lucide:arrow-left"></span> Calls</a></p>
+    <p><a class="backlink" href="{{or .CallsURL "/admin/calls"}}"><span class="iconify" data-icon="lucide:arrow-left"></span> Calls</a></p>
     <div class="panel" style="margin-bottom:1rem">
       <div class="callhead">
         <h2>Call #{{.Call.ID}}</h2>

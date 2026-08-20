@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -34,6 +35,7 @@ func TestParseAdminWindow(t *testing.T) {
 		{"range=90d", "90d", "week", 90 * 24 * time.Hour},
 		{"range=7d&bucket=month", "7d", "month", 7 * 24 * time.Hour},
 		{"range=nope&bucket=hour", "7d", "hour", 7 * 24 * time.Hour},
+		{"range=all", "7d", "day", 7 * 24 * time.Hour},
 	}
 	for _, tc := range tests {
 		q, err := url.ParseQuery(tc.q)
@@ -230,4 +232,255 @@ func TestInputBar(t *testing.T) {
 			require.Equal(t, template.HTML(c.want), inputBar(c.input, c.cache))
 		})
 	}
+}
+
+func TestParseAdminFilterCustom(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	from := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	q := url.Values{
+		"range":  []string{"custom"},
+		"from":   []string{from.Format(time.RFC3339)},
+		"to":     []string{to.Format(time.RFC3339)},
+		"bucket": []string{"hour"},
+		"model":  []string{"fast"},
+	}
+	f := parseAdminFilter(q, now, "usage")
+	require.Equal(t, "custom", f.Range)
+	require.Equal(t, "hour", f.Bucket)
+	require.True(t, f.Bounded)
+	require.True(t, from.Equal(f.From))
+	require.True(t, to.Equal(f.To))
+	require.Equal(t, "fast", f.Model)
+
+	q.Set("from", to.Format(time.RFC3339))
+	q.Set("to", from.Format(time.RFC3339))
+	f = parseAdminFilter(q, now, "usage")
+	require.Equal(t, "7d", f.Range)
+	require.True(t, f.Bounded)
+	require.Equal(t, now.Add(-7*24*time.Hour), f.From)
+	require.Equal(t, now, f.To)
+
+	q.Set("from", now.Add(-400*24*time.Hour).Format(time.RFC3339))
+	q.Set("to", now.Format(time.RFC3339))
+	f = parseAdminFilter(q, now, "usage")
+	require.Equal(t, "7d", f.Range)
+
+	q.Set("from", "not-a-time")
+	q.Set("to", to.Format(time.RFC3339))
+	f = parseAdminFilter(q, now, "calls")
+	require.Equal(t, "all", f.Range)
+	require.False(t, f.Bounded)
+
+	q = url.Values{"range": []string{"custom"}, "from": []string{"2026-08-01T00:00"}, "to": []string{"2026-08-02T00:00"}}
+	f = parseAdminFilter(q, now, "usage")
+	require.Equal(t, "custom", f.Range)
+	require.Equal(t, time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC), f.From)
+}
+
+func TestParseAdminFilterCallsAll(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	f := parseAdminFilter(url.Values{}, now, "calls")
+	require.Equal(t, "all", f.Range)
+	require.False(t, f.Bounded)
+	require.True(t, f.From.IsZero())
+
+	f = parseAdminFilter(url.Values{"range": []string{"7d"}, "api_key": []string{"alice"}}, now, "calls")
+	require.Equal(t, "7d", f.Range)
+	require.True(t, f.Bounded)
+	require.Equal(t, "alice", f.APIKey)
+	require.Equal(t, now.Add(-7*24*time.Hour), f.From)
+}
+
+func TestAdminFilterRoundTrip(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	from := time.Date(2026, 7, 1, 8, 30, 0, 0, time.UTC)
+	to := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
+	orig := adminFilter{
+		Range:    "custom",
+		Bucket:   "week",
+		From:     from,
+		To:       to,
+		Bounded:  true,
+		Model:    "fast",
+		Provider: "openai",
+		APIKey:   "alice",
+		Outcome:  "error",
+	}
+	q := orig.values("usage")
+	got := parseAdminFilter(q, now, "usage")
+	require.Equal(t, orig.Range, got.Range)
+	require.Equal(t, orig.Bucket, got.Bucket)
+	require.Equal(t, orig.Model, got.Model)
+	require.Equal(t, orig.Provider, got.Provider)
+	require.Equal(t, orig.APIKey, got.APIKey)
+	require.Equal(t, orig.Outcome, got.Outcome)
+	require.True(t, orig.From.Equal(got.From))
+	require.True(t, orig.To.Equal(got.To))
+
+	empty := parseAdminFilter(url.Values{}, now, "usage")
+	require.Empty(t, empty.values("usage").Encode())
+}
+
+func TestAdminFilterCrossLinks(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	f := parseAdminFilter(url.Values{"range": []string{"30d"}, "model": []string{"fast"}, "page": []string{"3"}}, now, "usage")
+	usage := f.path("usage", "/admin")
+	calls := f.path("calls", "/admin/calls")
+	require.Contains(t, usage, "range=30d")
+	require.Contains(t, usage, "model=fast")
+	require.NotContains(t, usage, "page=")
+	require.Contains(t, calls, "range=30d")
+	require.Contains(t, calls, "model=fast")
+	require.NotContains(t, calls, "page=")
+	require.NotContains(t, calls, "bucket=")
+
+	fromCalls := parseAdminFilter(url.Values{"model": []string{"fast"}}, now, "calls")
+	require.Equal(t, "all", fromCalls.Range)
+	usageFromCalls := fromCalls.forUsage().path("usage", "/admin")
+	require.Equal(t, "/admin?model=fast", usageFromCalls)
+	require.NotContains(t, usageFromCalls, "range=")
+
+	require.Equal(t, "/admin/calls?model=fast", pagerURL(fromCalls, 1))
+	require.Equal(t, "/admin/calls?model=fast&page=2", pagerURL(fromCalls, 2))
+
+	g := setFilter(f, "provider", "openai")
+	require.Equal(t, "openai", g.Provider)
+	require.Equal(t, "fast", g.Model)
+	cleared := setFilter(g, "model", "")
+	require.Empty(t, cleared.Model)
+	require.Equal(t, "openai", cleared.Provider)
+}
+
+func TestOutcomeSQL(t *testing.T) {
+	clause, args := outcomeSQL("ok")
+	require.Contains(t, clause, "http_status >= ?")
+	require.Equal(t, []any{200, 300}, args)
+	clause, args = outcomeSQL("canceled")
+	require.Equal(t, "error = ?", clause)
+	require.Equal(t, []any{errCanceled}, args)
+	clause, args = outcomeSQL("no_response")
+	require.Equal(t, "http_status = ?", clause)
+	require.Equal(t, []any{0}, args)
+	clause, args = outcomeSQL("error")
+	require.Contains(t, clause, "error != ?")
+	require.Equal(t, []any{errCanceled}, args)
+	clause, args = outcomeSQL("")
+	require.Empty(t, clause)
+	require.Nil(t, args)
+	require.Equal(t, "", parseOutcome("nope"))
+	require.Equal(t, "ok", parseOutcome("ok"))
+}
+
+func TestAdminFilterSQL(t *testing.T) {
+	from := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 8, 8, 0, 0, 0, 0, time.UTC)
+	f := adminFilter{
+		Bounded:  true,
+		From:     from,
+		To:       to,
+		Model:    "fast",
+		Provider: "openai",
+		APIKey:   "alice",
+		Outcome:  "ok",
+	}
+	sql, args := adminFilterSQL(f, "")
+	require.Contains(t, sql, "created_at >= ?")
+	require.Contains(t, sql, "model = ?")
+	require.Contains(t, sql, "provider = ?")
+	require.Contains(t, sql, "api_key_name = ?")
+	require.Contains(t, sql, "http_status >= ?")
+	require.Equal(t, []any{from, to, "fast", "openai", "alice", 200, 300}, args)
+
+	sql, args = adminFilterSQL(f, "model")
+	require.NotContains(t, sql, "model =")
+	require.Contains(t, sql, "provider = ?")
+	require.Equal(t, []any{from, to, "openai", "alice", 200, 300}, args)
+
+	sql, args = adminFilterSQL(adminFilter{Range: "all"}, "")
+	require.Empty(t, sql)
+	require.Nil(t, args)
+}
+
+func TestFillUsageBuckets(t *testing.T) {
+	win := adminWindow{
+		Bucket: "hour",
+		From:   time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC),
+		To:     time.Date(2026, 8, 20, 14, 0, 0, 0, time.UTC),
+	}
+	got := fillUsageBuckets(win, []usageBucket{{Bucket: "2026-08-20 11:00", Calls: 5, Input: 10}})
+	require.Equal(t, []usageBucket{
+		{Bucket: "2026-08-20 10:00"},
+		{Bucket: "2026-08-20 11:00", Calls: 5, Input: 10},
+		{Bucket: "2026-08-20 12:00"},
+		{Bucket: "2026-08-20 13:00"},
+	}, got)
+
+	dayWin := adminWindow{
+		Bucket: "day",
+		From:   time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC),
+		To:     time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC),
+	}
+	got = fillUsageBuckets(dayWin, nil)
+	require.Equal(t, []string{"2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21"}, bucketNames(got))
+
+	weekWin := adminWindow{
+		Bucket: "week",
+		From:   time.Date(2026, 8, 19, 0, 0, 0, 0, time.UTC),
+		To:     time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC),
+	}
+	got = fillUsageBuckets(weekWin, nil)
+	require.Equal(t, []string{"2026-W34", "2026-W35"}, bucketNames(got))
+
+	monthWin := adminWindow{
+		Bucket: "month",
+		From:   time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC),
+		To:     time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+	}
+	got = fillUsageBuckets(monthWin, nil)
+	require.Equal(t, []string{"2026-07", "2026-08"}, bucketNames(got))
+}
+
+func bucketNames(rows []usageBucket) []string {
+	out := make([]string, len(rows))
+	for i, r := range rows {
+		out[i] = r.Bucket
+	}
+	return out
+}
+
+func TestAdminTemplatesRender(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	f := parseAdminFilter(url.Values{"model": []string{"fast"}}, now, "usage")
+	data := adminNavData("usage", f)
+	data["Window"] = f.window()
+	data["Kind"] = "usage"
+	data["FilterAction"] = "/admin"
+	data["Totals"] = usageTotals{Calls: 1, Input: 2, Output: 3}
+	data["Series"] = []usageBucket{{Bucket: "2026-08-20", Calls: 1, Input: 2, Output: 3}}
+	data["ChartJSON"] = template.JS(`{"labels":["2026-08-20"],"calls":[1],"input":[2],"output":[3],"cache":[0],"uncached":[2]}`)
+	data["Breakdowns"] = []map[string]any{
+		{"Title": "model", "Param": "model", "Rows": []usageNamed{{Name: "fast", Calls: 1, Input: 2, Output: 3}}},
+	}
+	mergeFilterView(data, f, "usage", filterOptions{Models: []string{"fast"}})
+	var buf bytes.Buffer
+	require.NoError(t, adminTmpl.ExecuteTemplate(&buf, "usage.html", data))
+	body := buf.String()
+	require.Contains(t, body, `href="/admin?model=fast"`)
+	require.Contains(t, body, `/admin/calls?`)
+	require.Contains(t, body, "model=fast")
+	require.Contains(t, body, "By model")
+
+	cf := parseAdminFilter(url.Values{"model": []string{"fast"}}, now, "calls")
+	cdata := adminNavData("calls", cf)
+	cdata["Kind"] = "calls"
+	cdata["FilterAction"] = "/admin/calls"
+	cdata["Rows"] = []callListRow{}
+	cdata["Total"] = int64(0)
+	cdata["ListQuery"] = filterQuery("calls", cf)
+	mergeFilterView(cdata, cf, "calls", filterOptions{Models: []string{"fast"}})
+	buf.Reset()
+	require.NoError(t, adminTmpl.ExecuteTemplate(&buf, "calls.html", cdata))
+	require.Contains(t, buf.String(), `name="model"`)
+	require.Contains(t, buf.String(), "all")
 }
