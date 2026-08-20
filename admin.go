@@ -725,26 +725,28 @@ func outputBar(input, output int64) template.HTML {
 
 // statusClass picks the badge color for an upstream HTTP status: green for
 // 2xx, red for anything else that got a response, muted when the provider was
-// never reached (status 0).
+// never reached (status 0). Returns Bootstrap text-bg classes.
 func statusClass(status int) string {
 	switch {
 	case status == 0:
-		return "muted"
+		return "text-bg-secondary"
 	case status >= 200 && status < 300:
-		return "ok"
+		return "text-bg-success"
 	default:
-		return "err"
+		return "text-bg-danger"
 	}
 }
 
+// callErrorClass colors the error indicator/text: muted for a client cancel
+// after a 2xx, red otherwise. Returns Bootstrap text color classes.
 func callErrorClass(status int, err string) string {
 	if err == "" {
 		return ""
 	}
 	if err == errCanceled && status >= 200 && status < 300 {
-		return "muted"
+		return "text-secondary"
 	}
-	return "err"
+	return "text-danger"
 }
 
 func formatNum(n any) string {

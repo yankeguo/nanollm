@@ -1,19 +1,27 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>nanollm admin — sign in</title>
   {{template "head" .}}
 </head>
-<body class="login">
-  <form class="card" method="post" action="/admin/login">
-    <h1><span class="iconify" data-icon="lucide:zap"></span> nanollm</h1>
-    <p class="muted">Admin sign in</p>
-    {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
-    <label><span><span class="iconify" data-icon="lucide:user"></span> Username</span><input name="username" autocomplete="username" required autofocus></label>
-    <label><span><span class="iconify" data-icon="lucide:lock"></span> Password</span><input type="password" name="password" autocomplete="current-password" required></label>
-    <button type="submit"><span class="iconify" data-icon="lucide:log-in"></span> Sign in</button>
+<body class="d-flex min-vh-100 align-items-center justify-content-center">
+  <form class="card" style="width:min(360px,92vw)" method="post" action="/admin/login">
+    <div class="card-body vstack gap-3 p-4">
+      <h1 class="h4 mb-0"><span class="iconify" data-icon="lucide:zap"></span> nanollm</h1>
+      <p class="text-secondary mb-0">Admin sign in</p>
+      {{if .Error}}<p class="text-danger mb-0">{{.Error}}</p>{{end}}
+      <div>
+        <label class="form-label" for="username"><span class="iconify" data-icon="lucide:user"></span> Username</label>
+        <input class="form-control" id="username" name="username" autocomplete="username" required autofocus>
+      </div>
+      <div>
+        <label class="form-label" for="password"><span class="iconify" data-icon="lucide:lock"></span> Password</label>
+        <input class="form-control" id="password" type="password" name="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn btn-primary"><span class="iconify" data-icon="lucide:log-in"></span> Sign in</button>
+    </div>
   </form>
 </body>
 </html>

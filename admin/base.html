@@ -2,165 +2,103 @@
 <script defer src="https://cdn.jsdelivr.net/npm/@iconify/iconify@3.1.1/dist/iconify.min.js"
   integrity="sha384-Ok2uDHnWhbSMsjjXrs20mYHBe3BLztRYQuPMBhyLnjPNH7OqWdv/c8Bmv54yhfKR"
   crossorigin="anonymous"></script>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet"
+  integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB"
+  crossorigin="anonymous">
+<script defer src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
+  integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI"
+  crossorigin="anonymous"></script>
 <style>
-  :root { --bg:#0f1419; --card:#1a222c; --fg:#e8eef4; --muted:#8b9aab; --line:#2a3644; --acc:#5b9fd4; --err:#e07070; --ok:#6dbe8a; --cache:#c9a45c; }
-  * { box-sizing: border-box; }
-  body { margin:0; font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; background:var(--bg); color:var(--fg); }
-  a { color:var(--acc); text-decoration:none; }
-  a:hover { text-decoration:underline; }
-  header { display:flex; flex-wrap:wrap; align-items:center; gap:.6rem 1.25rem; padding:.85rem 1.5rem; border-bottom:1px solid var(--line); background:var(--card); }
-  header h1 { font-size:1rem; margin:0; font-weight:600; letter-spacing:.02em; display:inline-flex; align-items:center; gap:.4rem; }
-  header nav { display:flex; gap:1rem; flex:1; }
-  header nav a { display:inline-flex; align-items:center; gap:.35rem; }
-  header nav a.on { color:var(--fg); font-weight:600; }
   .iconify { vertical-align:-0.125em; }
-  .pager a, .backlink { display:inline-flex; align-items:center; gap:.3rem; }
-  .hform { display:flex; flex-wrap:wrap; align-items:center; gap:.45rem; margin:0; }
-  .hform select, .hform input { padding:.3rem .45rem; font-size:.85rem; width:auto; }
-  .hform input[type=datetime-local] { width:11.5rem; }
-  .hform .tzsel { max-width:11rem; }
-  .hform button { padding:.3rem .7rem; font-size:.85rem; }
-  .wrap { max-width:1280px; margin:0 auto; padding:1.5rem; }
-  .filters { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1.25rem; margin-bottom:1.5rem; padding:.85rem 1rem; background:var(--card); border:1px solid var(--line); border-radius:10px; }
-  .filters .group { display:flex; gap:.35rem; flex-wrap:wrap; }
-  .filters .flabel { display:inline-flex; align-items:center; gap:.3rem; color:var(--muted); font-size:.75rem; font-weight:600; letter-spacing:.05em; text-transform:uppercase; }
-  .filters form.fform { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1rem; margin:0; }
-  .filters select { width:10.5rem; padding:.35rem .5rem; }
-  .chip { display:inline-flex; align-items:center; gap:.25rem; padding:.2rem .65rem; border:1px solid var(--line); border-radius:999px; color:var(--muted); }
-  .chip.on { background:var(--acc); color:#0f1419; border-color:var(--acc); }
-  .chip.clear { background:#0f1419; }
-  .chip.clear:hover { text-decoration:none; border-color:var(--acc); }
-  .panels { display:flex; flex-direction:column; gap:1rem; margin-bottom:1.5rem; }
-  .namecell { display:flex; align-items:center; gap:.5rem; }
-  .namecell .listlink { font-size:.75rem; color:var(--muted); }
-  .namecell .listlink:hover { color:var(--acc); }
-  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:.75rem; margin-bottom:1.5rem; }
-  .stat { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:.85rem 1rem; }
-  .stat b { display:block; font-size:1.25rem; font-variant-numeric:tabular-nums; }
-  .stat span { color:var(--muted); font-size:.8rem; }
-  .charts { display:grid; grid-template-columns:1fr; gap:1rem; margin-bottom:1.5rem; }
-  @media (min-width:900px) { .charts { grid-template-columns:1fr 1fr; } }
-  .panel { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:1rem; }
-  .panel h2 { margin:0 0 .75rem; font-size:.95rem; font-weight:600; }
-  table { width:100%; border-collapse:collapse; font-size:.9rem; }
-  th, td { text-align:left; padding:.4rem .5rem; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
-  th { color:var(--muted); font-weight:500; }
-  .err { color:var(--err); }
-  .muted { color:var(--muted); }
-  .num { text-align:right !important; }
-  .inbar, .outbar { height:4px; min-width:56px; margin-top:.3rem; border-radius:2px; overflow:hidden; }
-  .inbar { background:var(--acc); }
-  .outbar { background:var(--line); }
+  .tnum { font-variant-numeric:tabular-nums; }
+  .dir { color:var(--bs-secondary-color); font-size:.85em; padding:0 .15em; }
+  .inbar, .outbar { height:4px; width:64px; margin-top:.3rem; border-radius:2px; overflow:hidden; }
+  .inbar { background:var(--bs-primary); }
+  .outbar { background:var(--bs-border-color); }
   .inbar i, .outbar i { display:block; height:100%; }
-  .inbar i { background:var(--cache); }
-  .outbar i { background:var(--ok); }
-  .sub { margin-top:.2rem; font-size:.75rem; color:var(--muted); }
-  .dir { color:var(--muted); font-size:.85em; padding:0 .15em; }
-  th.in, td.in { text-align:right; }
-  th.out, td.out { text-align:left; }
-  td.in .inbar { width:64px; margin-left:auto; }
-  td.out .outbar { width:64px; }
-  button, .btn { background:var(--acc); color:#0f1419; border:0; border-radius:8px; padding:.45rem .9rem; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:.4rem; }
-  body.login { min-height:100vh; display:flex; align-items:center; justify-content:center; }
-  form.card { width:min(360px,92vw); background:var(--card); border:1px solid var(--line); border-radius:12px; padding:1.5rem; display:flex; flex-direction:column; gap:.75rem; }
-  form.card h1 { margin:0; }
-  label { display:flex; flex-direction:column; gap:.3rem; font-size:.85rem; color:var(--muted); }
-  input, select { background:#0f1419; border:1px solid var(--line); color:var(--fg); border-radius:8px; padding:.5rem .65rem; font:inherit; }
-  pre { background:#0f1419; border:1px solid var(--line); border-radius:8px; padding:1rem; overflow:auto; white-space:pre-wrap; word-break:break-word; font-size:.8rem; }
-  .pager { display:flex; gap:1rem; margin-top:1rem; }
-  .pager a:last-child { margin-left:auto; }
-  .filters label { flex-direction:row; align-items:center; gap:.45rem; }
-  .filters .fform button { padding:.35rem .75rem; }
-  tbody tr:not(.sect):hover td { background:rgba(91,159,212,.06); }
-  tr.sect td { background:#141c25; color:var(--muted); font-size:.75rem; font-weight:600; letter-spacing:.06em; text-transform:uppercase; padding:.45rem .5rem; }
-  col.w-calls { width:90px; }
-  col.w-in { width:200px; }
-  col.w-out { width:110px; }
-  .badge { display:inline-block; padding:.12rem .6rem; border-radius:999px; font-size:.78rem; font-weight:600; font-variant-numeric:tabular-nums; }
-  .badge.ok { background:rgba(109,190,138,.14); color:var(--ok); }
-  .badge.err { background:rgba(224,112,112,.14); color:var(--err); }
-  .badge.muted { background:rgba(139,154,171,.14); color:var(--muted); }
-  .callhead { display:flex; align-items:center; gap:.75rem; margin-bottom:1rem; }
-  .callhead h2 { margin:0; }
-  .meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:.85rem 1.5rem; margin:0; }
-  .meta > div { min-width:0; }
-  .meta dt { color:var(--muted); font-size:.78rem; margin-bottom:.15rem; }
-  .meta dd { margin:0; font-variant-numeric:tabular-nums; word-break:break-word; }
-  .callerr { margin:1rem 0 0; padding:.6rem .8rem; border:1px solid var(--line); border-radius:8px; background:#0f1419; word-break:break-word; }
+  .inbar i { background:#c9a45c; }
+  .outbar i { background:#6dbe8a; }
+  .sub { margin-top:.2rem; font-size:.75rem; color:var(--bs-secondary-color); }
+  td.text-end .inbar { margin-left:auto; }
+  .codebox { white-space:pre-wrap; word-break:break-word; }
 </style>
 {{end}}
 
 {{define "nav"}}
-<header>
-  <h1><span class="iconify" data-icon="lucide:zap"></span> nanollm</h1>
-  <nav>
-    <a href="{{or .UsageURL "/admin"}}"{{if eq .Nav "usage"}} class="on"{{end}}><span class="iconify" data-icon="lucide:activity"></span> Usage</a>
-    <a href="{{or .CallsURL "/admin/calls"}}"{{if eq .Nav "calls"}} class="on"{{end}}><span class="iconify" data-icon="lucide:list"></span> Calls</a>
-  </nav>
-  {{if .FilterAction}}
-  <form class="hform rangefilter" method="get" action="{{.FilterAction}}">
-    {{if .Filter.Model}}<input type="hidden" name="model" value="{{.Filter.Model}}">{{end}}
-    {{if .Filter.Provider}}<input type="hidden" name="provider" value="{{.Filter.Provider}}">{{end}}
-    {{if .Filter.APIKey}}<input type="hidden" name="api_key" value="{{.Filter.APIKey}}">{{end}}
-    {{if .Filter.Outcome}}<input type="hidden" name="outcome" value="{{.Filter.Outcome}}">{{end}}
-    <span class="iconify" data-icon="lucide:calendar" style="color:var(--muted)"></span>
-    <select name="range" class="qrange" title="Time range">
-      {{range .RangeOpts}}<option value="{{.Value}}"{{if .On}} selected{{end}}>{{.Label}}</option>{{end}}
-    </select>
-    <input type="datetime-local" name="from" value="{{.FromLocal}}"{{if .FromRFC}} data-utc="{{.FromRFC}}"{{end}} title="From">
-    <input type="datetime-local" name="to" value="{{.ToLocal}}"{{if .ToRFC}} data-utc="{{.ToRFC}}"{{end}} title="To">
-    <select name="tz" class="tzsel" title="Timezone for the custom range"{{if .TZExplicit}} data-explicit="1"{{end}}>
-      <option value="{{.TZone}}" selected>{{.TZone}}</option>
-    </select>
-    <button type="submit" title="Apply range"><span class="iconify" data-icon="lucide:check"></span> Apply</button>
-  </form>
-  {{end}}
-  <form method="post" action="/admin/logout"><button type="submit"><span class="iconify" data-icon="lucide:log-out"></span> Sign out</button></form>
+<header class="navbar border-bottom">
+  <div class="container-fluid column-gap-3">
+    <span class="navbar-brand mb-0 h1"><span class="iconify" data-icon="lucide:zap"></span> nanollm</span>
+    <ul class="navbar-nav flex-row gap-3 me-auto">
+      <li class="nav-item"><a class="nav-link{{if eq .Nav "usage"}} active{{end}}" href="{{or .UsageURL "/admin"}}"><span class="iconify" data-icon="lucide:activity"></span> Usage</a></li>
+      <li class="nav-item"><a class="nav-link{{if eq .Nav "calls"}} active{{end}}" href="{{or .CallsURL "/admin/calls"}}"><span class="iconify" data-icon="lucide:list"></span> Calls</a></li>
+    </ul>
+    {{if .FilterAction}}
+    <form class="rangefilter d-flex flex-wrap align-items-center gap-2" method="get" action="{{.FilterAction}}">
+      {{if .Filter.Model}}<input type="hidden" name="model" value="{{.Filter.Model}}">{{end}}
+      {{if .Filter.Provider}}<input type="hidden" name="provider" value="{{.Filter.Provider}}">{{end}}
+      {{if .Filter.APIKey}}<input type="hidden" name="api_key" value="{{.Filter.APIKey}}">{{end}}
+      {{if .Filter.Outcome}}<input type="hidden" name="outcome" value="{{.Filter.Outcome}}">{{end}}
+      <span class="iconify text-secondary" data-icon="lucide:calendar"></span>
+      <select name="range" class="form-select form-select-sm w-auto" title="Time range">
+        {{range .RangeOpts}}<option value="{{.Value}}"{{if .On}} selected{{end}}>{{.Label}}</option>{{end}}
+      </select>
+      <input type="datetime-local" name="from" class="form-control form-control-sm" style="width:12rem" value="{{.FromLocal}}"{{if .FromRFC}} data-utc="{{.FromRFC}}"{{end}} title="From">
+      <input type="datetime-local" name="to" class="form-control form-control-sm" style="width:12rem" value="{{.ToLocal}}"{{if .ToRFC}} data-utc="{{.ToRFC}}"{{end}} title="To">
+      <select name="tz" class="form-select form-select-sm w-auto" title="Timezone for the custom range"{{if .TZExplicit}} data-explicit="1"{{end}}>
+        <option value="{{.TZone}}" selected>{{.TZone}}</option>
+      </select>
+      <button type="submit" class="btn btn-sm btn-primary" title="Apply range"><span class="iconify" data-icon="lucide:check"></span> Apply</button>
+    </form>
+    {{end}}
+    <form method="post" action="/admin/logout"><button type="submit" class="btn btn-sm btn-outline-secondary"><span class="iconify" data-icon="lucide:log-out"></span> Sign out</button></form>
+  </div>
 </header>
 {{end}}
 
 {{define "filters"}}
-<div class="filters">
-  <form class="fform dim-filter" method="get" action="{{.FilterAction}}">
-    {{if .RangeParam}}<input type="hidden" name="range" value="{{.RangeParam}}">{{end}}
-    {{if .TZExplicit}}<input type="hidden" name="tz" value="{{.TZone}}">{{end}}
-    {{if and (eq .Filter.Range "custom") .FromRFC}}<input type="hidden" name="from" value="{{.FromRFC}}">{{end}}
-    {{if and (eq .Filter.Range "custom") .ToRFC}}<input type="hidden" name="to" value="{{.ToRFC}}">{{end}}
-    <span class="flabel"><span class="iconify" data-icon="lucide:filter"></span> Filter</span>
-    <label>Model
-      <select name="model" onchange="this.form.submit()">
-        <option value="">Any</option>
-        {{range .ModelOpts}}<option value="{{.}}"{{if eq $.Filter.Model .}} selected{{end}}>{{.}}</option>{{end}}
-      </select>
-    </label>
-    <label>Provider
-      <select name="provider" onchange="this.form.submit()">
-        <option value="">Any</option>
-        {{range .ProviderOpts}}<option value="{{.}}"{{if eq $.Filter.Provider .}} selected{{end}}>{{.}}</option>{{end}}
-      </select>
-    </label>
-    <label>API key
-      <select name="api_key" onchange="this.form.submit()">
-        <option value="">Any</option>
-        {{range .KeyOpts}}<option value="{{.}}"{{if eq $.Filter.APIKey .}} selected{{end}}>{{.}}</option>{{end}}
-      </select>
-    </label>
-    <label>Outcome
-      <select name="outcome" onchange="this.form.submit()">
-        <option value="">Any</option>
-        <option value="ok"{{if eq .Filter.Outcome "ok"}} selected{{end}}>ok</option>
-        <option value="error"{{if eq .Filter.Outcome "error"}} selected{{end}}>error</option>
-        <option value="canceled"{{if eq .Filter.Outcome "canceled"}} selected{{end}}>canceled</option>
-        <option value="no_response"{{if eq .Filter.Outcome "no_response"}} selected{{end}}>no response</option>
-      </select>
-    </label>
-    <button type="submit"><span class="iconify" data-icon="lucide:check"></span> Apply</button>
-  </form>
-  {{if .ActiveChips}}
-  <div class="group">
-    {{range .ActiveChips}}<a class="chip clear" href="{{.URL}}">{{.Label}} <span class="iconify" data-icon="lucide:x"></span></a>{{end}}
+<div class="card mb-4">
+  <div class="card-body d-flex flex-wrap align-items-center column-gap-4 row-gap-2">
+    <form class="dim-filter d-flex flex-wrap align-items-center column-gap-3 row-gap-2" method="get" action="{{.FilterAction}}">
+      {{if .RangeParam}}<input type="hidden" name="range" value="{{.RangeParam}}">{{end}}
+      {{if .TZExplicit}}<input type="hidden" name="tz" value="{{.TZone}}">{{end}}
+      {{if and (eq .Filter.Range "custom") .FromRFC}}<input type="hidden" name="from" value="{{.FromRFC}}">{{end}}
+      {{if and (eq .Filter.Range "custom") .ToRFC}}<input type="hidden" name="to" value="{{.ToRFC}}">{{end}}
+      <span class="text-secondary small text-uppercase fw-semibold"><span class="iconify" data-icon="lucide:filter"></span> Filter</span>
+      <label class="d-flex align-items-center gap-2 text-secondary small">Model
+        <select name="model" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+          <option value="">Any</option>
+          {{range .ModelOpts}}<option value="{{.}}"{{if eq $.Filter.Model .}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      </label>
+      <label class="d-flex align-items-center gap-2 text-secondary small">Provider
+        <select name="provider" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+          <option value="">Any</option>
+          {{range .ProviderOpts}}<option value="{{.}}"{{if eq $.Filter.Provider .}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      </label>
+      <label class="d-flex align-items-center gap-2 text-secondary small">API key
+        <select name="api_key" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+          <option value="">Any</option>
+          {{range .KeyOpts}}<option value="{{.}}"{{if eq $.Filter.APIKey .}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      </label>
+      <label class="d-flex align-items-center gap-2 text-secondary small">Outcome
+        <select name="outcome" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+          <option value="">Any</option>
+          <option value="ok"{{if eq .Filter.Outcome "ok"}} selected{{end}}>ok</option>
+          <option value="error"{{if eq .Filter.Outcome "error"}} selected{{end}}>error</option>
+          <option value="canceled"{{if eq .Filter.Outcome "canceled"}} selected{{end}}>canceled</option>
+          <option value="no_response"{{if eq .Filter.Outcome "no_response"}} selected{{end}}>no response</option>
+        </select>
+      </label>
+      <button type="submit" class="btn btn-sm btn-primary"><span class="iconify" data-icon="lucide:check"></span> Apply</button>
+    </form>
+    {{if .ActiveChips}}
+    <div class="d-flex flex-wrap gap-2">
+      {{range .ActiveChips}}<a class="btn btn-sm btn-outline-secondary text-decoration-none" href="{{.URL}}">{{.Label}} <span class="iconify" data-icon="lucide:x"></span></a>{{end}}
+    </div>
+    {{end}}
   </div>
-  {{end}}
 </div>
 {{end}}
 

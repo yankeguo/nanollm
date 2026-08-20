@@ -182,9 +182,9 @@ func TestAdminTrailingSlashRedirect(t *testing.T) {
 
 func TestCallErrorClass(t *testing.T) {
 	require.Equal(t, "", callErrorClass(200, ""))
-	require.Equal(t, "muted", callErrorClass(200, errCanceled))
-	require.Equal(t, "err", callErrorClass(0, errCanceled))
-	require.Equal(t, "err", callErrorClass(200, "upstream status 502"))
+	require.Equal(t, "text-secondary", callErrorClass(200, errCanceled))
+	require.Equal(t, "text-danger", callErrorClass(0, errCanceled))
+	require.Equal(t, "text-danger", callErrorClass(200, "upstream status 502"))
 }
 
 func TestFormatNum(t *testing.T) {

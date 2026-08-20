@@ -15,7 +15,7 @@ Single `package main`. No `internal/` split unless the tree clearly outgrows one
 | `auth.go` | Incoming API keys; do not forward client credentials |
 | `server.go` | `net/http` mux (`GET /healthz` unauthenticated) |
 | `admin.go` / `admin_auth.go` | Admin cookie login, usage dashboard, call viewer. Usage and Calls share GET filters: `range`/`from`/`to`/`tz`, `model`, `provider`, `api_key`, `outcome` (from `http_status`/`error`; the four outcomes partition `llm_calls`: ok / canceled / no_response / error). Usage windows are always bounded (custom max 366d); the chart bucket is derived from the span (≤48h hour, ≤62d day, else week), never user-selected. Naive `from`/`to` are interpreted in `tz` (IANA, default UTC; `time/tzdata` is embedded). |
-| `admin/*.html` | Embedded HTML for `/admin` |
+| `admin/*.html` | Embedded HTML for `/admin`. Bootstrap 5.3 (jsdelivr CDN, SRI) with `data-bs-theme="dark"` + Iconify; hand-rolled CSS is limited to the token bars and code boxes |
 | `proxy.go` | Body rewrite, ordered provider attempts, response copy, call logging |
 | `failover.go` | `isCatastrophic` — only then try the next provider |
 | `rewrite.go` | Patch top-level `model` (and OpenAI chat streaming `stream_options.include_usage`); copy other JSON fields as `json.RawMessage` |

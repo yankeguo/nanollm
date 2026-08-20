@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,32 +8,32 @@
 </head>
 <body>
   {{template "nav" .}}
-  <div class="wrap">
-    <p><a class="backlink" href="{{or .CallsURL "/admin/calls"}}"><span class="iconify" data-icon="lucide:arrow-left"></span> Calls</a></p>
-    <div class="panel" style="margin-bottom:1rem">
-      <div class="callhead">
-        <h2>Call #{{.Call.ID}}</h2>
+  <main class="container-xxl py-4">
+    <p><a href="{{or .CallsURL "/admin/calls"}}"><span class="iconify" data-icon="lucide:arrow-left"></span> Calls</a></p>
+    <div class="card mb-4"><div class="card-body">
+      <div class="d-flex align-items-center gap-3 mb-3">
+        <h2 class="h5 mb-0">Call #{{.Call.ID}}</h2>
         <span class="badge {{statusClass .Call.HTTPStatus}}">{{if eq .Call.HTTPStatus 0}}no response{{else}}{{.Call.HTTPStatus}}{{end}}</span>
       </div>
-      <dl class="meta">
-        <div><dt>Time (<span data-tz>UTC</span>)</dt><dd><time datetime="{{.Call.CreatedAt.UTC.Format "2006-01-02T15:04:05Z"}}">{{.Call.CreatedAt.UTC.Format "2006-01-02 15:04:05"}}</time></dd></div>
-        <div><dt>Model</dt><dd>{{.Call.Model}}</dd></div>
-        <div><dt>Provider</dt><dd>{{.Call.Provider}}{{if .Call.ProviderModel}} <span class="muted">→ {{.Call.ProviderModel}}</span>{{end}}</dd></div>
-        <div><dt>API key</dt><dd>{{.Call.APIKeyName}}</dd></div>
-        <div><dt>Input tokens</dt><dd>{{formatNum .Call.InputTokens}}<span class="iconify dir" data-icon="lucide:arrow-down"></span>{{inputBar .Call.InputTokens .Call.CacheTokens}}</dd></div>
-        <div><dt>Output tokens</dt><dd>{{formatNum .Call.OutputTokens}}<span class="iconify dir" data-icon="lucide:arrow-up"></span>{{outputBar .Call.InputTokens .Call.OutputTokens}}</dd></div>
+      <dl class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3 mb-0">
+        <div class="col"><dt class="text-secondary small">Time (<span data-tz>UTC</span>)</dt><dd class="mb-0 tnum"><time datetime="{{.Call.CreatedAt.UTC.Format "2006-01-02T15:04:05Z"}}">{{.Call.CreatedAt.UTC.Format "2006-01-02 15:04:05"}}</time></dd></div>
+        <div class="col"><dt class="text-secondary small">Model</dt><dd class="mb-0">{{.Call.Model}}</dd></div>
+        <div class="col"><dt class="text-secondary small">Provider</dt><dd class="mb-0">{{.Call.Provider}}{{if .Call.ProviderModel}} <span class="text-secondary">→ {{.Call.ProviderModel}}</span>{{end}}</dd></div>
+        <div class="col"><dt class="text-secondary small">API key</dt><dd class="mb-0">{{.Call.APIKeyName}}</dd></div>
+        <div class="col"><dt class="text-secondary small">Input tokens</dt><dd class="mb-0 tnum">{{formatNum .Call.InputTokens}}<span class="iconify dir" data-icon="lucide:arrow-down"></span>{{inputBar .Call.InputTokens .Call.CacheTokens}}</dd></div>
+        <div class="col"><dt class="text-secondary small">Output tokens</dt><dd class="mb-0 tnum">{{formatNum .Call.OutputTokens}}<span class="iconify dir" data-icon="lucide:arrow-up"></span>{{outputBar .Call.InputTokens .Call.OutputTokens}}</dd></div>
       </dl>
-      {{if .Call.Error}}<p class="callerr {{callErrorClass .Call.HTTPStatus .Call.Error}}">{{.Call.Error}}</p>{{end}}
-    </div>
-    <div class="panel" style="margin-bottom:1rem">
-      <h2>Request JSON</h2>
-      {{if .RequestPretty}}<pre>{{.RequestPretty}}</pre>{{else}}<p class="muted">detail not retained</p>{{end}}
-    </div>
-    <div class="panel">
-      <h2>Response JSON</h2>
-      {{if .ResponsePretty}}<pre>{{.ResponsePretty}}</pre>{{else}}<p class="muted">detail not retained</p>{{end}}
-    </div>
-  </div>
+      {{if .Call.Error}}<p class="border rounded p-2 mt-3 mb-0 text-break {{callErrorClass .Call.HTTPStatus .Call.Error}}">{{.Call.Error}}</p>{{end}}
+    </div></div>
+    <div class="card mb-4"><div class="card-body">
+      <h2 class="card-title h6">Request JSON</h2>
+      {{if .RequestPretty}}<pre class="codebox border rounded p-3 overflow-auto small mb-0">{{.RequestPretty}}</pre>{{else}}<p class="text-secondary mb-0">detail not retained</p>{{end}}
+    </div></div>
+    <div class="card"><div class="card-body">
+      <h2 class="card-title h6">Response JSON</h2>
+      {{if .ResponsePretty}}<pre class="codebox border rounded p-3 overflow-auto small mb-0">{{.ResponsePretty}}</pre>{{else}}<p class="text-secondary mb-0">detail not retained</p>{{end}}
+    </div></div>
+  </main>
   {{template "localtime" .}}
 </body>
 </html>
