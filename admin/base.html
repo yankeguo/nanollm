@@ -41,12 +41,14 @@
       <select name="range" class="form-select form-select-sm w-auto" title="Time range">
         {{range .RangeOpts}}<option value="{{.Value}}"{{if .On}} selected{{end}}>{{.Label}}</option>{{end}}
       </select>
-      <input type="datetime-local" name="from" class="form-control form-control-sm" style="width:12rem" value="{{.FromLocal}}"{{if .FromRFC}} data-utc="{{.FromRFC}}"{{end}} title="From">
-      <input type="datetime-local" name="to" class="form-control form-control-sm" style="width:12rem" value="{{.ToLocal}}"{{if .ToRFC}} data-utc="{{.ToRFC}}"{{end}} title="To">
-      <select name="tz" class="form-select form-select-sm w-auto" title="Timezone for the custom range"{{if .TZExplicit}} data-explicit="1"{{end}}>
-        <option value="{{.TZone}}" selected>{{.TZone}}</option>
-      </select>
-      <button type="submit" class="btn btn-sm btn-primary" title="Apply range"><i class="bi bi-check-lg"></i> Apply</button>
+      <span class="custombits d-flex flex-wrap align-items-center gap-2">
+        <input type="datetime-local" name="from" class="form-control form-control-sm" style="width:12rem" value="{{.FromLocal}}"{{if .FromRFC}} data-utc="{{.FromRFC}}"{{end}} title="From">
+        <input type="datetime-local" name="to" class="form-control form-control-sm" style="width:12rem" value="{{.ToLocal}}"{{if .ToRFC}} data-utc="{{.ToRFC}}"{{end}} title="To">
+        <select name="tz" class="form-select form-select-sm w-auto" title="Timezone for the custom range"{{if .TZExplicit}} data-explicit="1"{{end}}>
+          <option value="{{.TZone}}" selected>{{.TZone}}</option>
+        </select>
+        <button type="submit" class="btn btn-sm btn-primary" title="Apply range"><i class="bi bi-check-lg"></i> Apply</button>
+      </span>
     </form>
     {{end}}
     <form method="post" action="/admin/logout"><button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-box-arrow-right"></i> Sign out</button></form>
@@ -180,8 +182,19 @@
       }
       refresh();
       if (tzSel) tzSel.addEventListener('change', refresh);
-      // Quick ranges submit right away; picking custom only focuses the inputs.
+      // The custom-range controls (from/to, tz, Apply) only make sense for a
+      // custom range: hide and disable them otherwise so quick ranges submit
+      // clean URLs. Quick ranges submit on change; custom only reveals them.
+      var bits = form.querySelector('.custombits');
+      function syncBits() {
+        var custom = rangeSel && rangeSel.value === 'custom';
+        if (bits) bits.classList.toggle('d-none', !custom);
+        dts.forEach(function (el) { el.disabled = !custom; });
+        if (tzSel) tzSel.disabled = !custom;
+      }
+      syncBits();
       if (rangeSel) rangeSel.addEventListener('change', function () {
+        syncBits();
         if (rangeSel.value !== 'custom') form.submit();
       });
       form.addEventListener('submit', function () {
