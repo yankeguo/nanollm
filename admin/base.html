@@ -17,7 +17,9 @@
   .pager a, .backlink { display:inline-flex; align-items:center; gap:.3rem; }
   header form { margin-left:auto; }
   .wrap { max-width:1280px; margin:0 auto; padding:1.5rem; }
-  .filters { display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; margin-bottom:.75rem; align-items:center; }
+  .filters { display:flex; flex-direction:column; gap:.75rem; margin-bottom:1.5rem; padding:.85rem 1rem; background:var(--card); border:1px solid var(--line); border-radius:10px; }
+  .filters .frow { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1.25rem; }
+  .filters .frow + .frow { padding-top:.75rem; border-top:1px solid var(--line); }
   .filters .group { display:flex; gap:.35rem; flex-wrap:wrap; }
   .filters .fgroup { display:flex; align-items:center; gap:.5rem; }
   .filters .flabel { display:inline-flex; align-items:center; gap:.3rem; color:var(--muted); font-size:.75rem; font-weight:600; letter-spacing:.05em; text-transform:uppercase; }
@@ -27,9 +29,8 @@
   .filters input[type=datetime-local] { width:13.5rem; padding:.35rem .5rem; font-size:.85rem; }
   .chip { display:inline-flex; align-items:center; gap:.25rem; padding:.2rem .65rem; border:1px solid var(--line); border-radius:999px; color:var(--muted); }
   .chip.on { background:var(--acc); color:#0f1419; border-color:var(--acc); }
-  .chip.clear { background:var(--card); }
+  .chip.clear { background:#0f1419; }
   .chip.clear:hover { text-decoration:none; border-color:var(--acc); }
-  .achips { display:flex; flex-wrap:wrap; gap:.35rem; margin:0 0 1.25rem; min-height:0; }
   .panels { display:flex; flex-direction:column; gap:1rem; margin-bottom:1.5rem; }
   .namecell { display:flex; align-items:center; gap:.5rem; }
   .namecell .listlink { font-size:.75rem; color:var(--muted); }
@@ -70,7 +71,6 @@
   .pager { display:flex; gap:1rem; margin-top:1rem; }
   .pager a:last-child { margin-left:auto; }
   .filters label { flex-direction:row; align-items:center; gap:.45rem; }
-  .filters input { width:11rem; }
   .filters .fform button { padding:.35rem .75rem; }
   tbody tr:not(.sect):hover td { background:rgba(91,159,212,.06); }
   tr.sect td { background:#141c25; color:var(--muted); font-size:.75rem; font-weight:600; letter-spacing:.06em; text-transform:uppercase; padding:.45rem .5rem; }
@@ -104,75 +104,80 @@
 
 {{define "filters"}}
 <div class="filters">
-  <div class="fgroup">
-    <span class="flabel"><span class="iconify" data-icon="lucide:calendar"></span> Range</span>
-    <div class="group">
-      {{range .RangeChips}}<a class="chip{{if .On}} on{{end}}" href="{{.URL}}">{{.Label}}</a>{{end}}
-      <span class="chip{{if .Custom}} on{{end}}">custom</span>
+  <div class="frow">
+    <div class="fgroup">
+      <span class="flabel"><span class="iconify" data-icon="lucide:calendar"></span> Range</span>
+      <div class="group">
+        {{range .RangeChips}}<a class="chip{{if .On}} on{{end}}" href="{{.URL}}">{{.Label}}</a>{{end}}
+        <span class="chip{{if .Custom}} on{{end}}">custom</span>
+      </div>
     </div>
-  </div>
-  {{if .ShowBuckets}}
-  <div class="fgroup">
-    <span class="flabel"><span class="iconify" data-icon="lucide:layers"></span> Bucket</span>
-    <div class="group">
-      {{range .BucketChips}}<a class="chip{{if .On}} on{{end}}" href="{{.URL}}">{{.Label}}</a>{{end}}
+    {{if .ShowBuckets}}
+    <div class="fgroup">
+      <span class="flabel"><span class="iconify" data-icon="lucide:layers"></span> Bucket</span>
+      <div class="group">
+        {{range .BucketChips}}<a class="chip{{if .On}} on{{end}}" href="{{.URL}}">{{.Label}}</a>{{end}}
+      </div>
     </div>
+    {{end}}
+    <form class="fform custom-range" method="get" action="{{.FilterAction}}">
+      <input type="hidden" name="range" value="custom">
+      {{if .ShowBuckets}}<input type="hidden" name="bucket" value="{{.Filter.Bucket}}">{{end}}
+      {{if .Filter.Model}}<input type="hidden" name="model" value="{{.Filter.Model}}">{{end}}
+      {{if .Filter.Provider}}<input type="hidden" name="provider" value="{{.Filter.Provider}}">{{end}}
+      {{if .Filter.APIKey}}<input type="hidden" name="api_key" value="{{.Filter.APIKey}}">{{end}}
+      {{if .Filter.Outcome}}<input type="hidden" name="outcome" value="{{.Filter.Outcome}}">{{end}}
+      <label>From <input type="datetime-local" name="from" value="{{.FromLocal}}"{{if .FromRFC}} data-utc="{{.FromRFC}}"{{end}}></label>
+      <label>To <input type="datetime-local" name="to" value="{{.ToLocal}}"{{if .ToRFC}} data-utc="{{.ToRFC}}"{{end}}></label>
+      <button type="submit"><span class="iconify" data-icon="lucide:check"></span> Apply</button>
+    </form>
+    {{if .HasWindow}}
+    <span class="ftime"><span class="iconify" data-icon="lucide:clock"></span> <time datetime="{{.Filter.From.Format "2006-01-02T15:04:05Z"}}" data-min>{{.Filter.From.Format "2006-01-02 15:04"}}</time> → <time datetime="{{.Filter.To.Format "2006-01-02T15:04:05Z"}}" data-min>{{.Filter.To.Format "2006-01-02 15:04"}}</time> <span data-tz>UTC</span></span>
+    {{end}}
   </div>
-  {{end}}
-  <form class="fform custom-range" method="get" action="{{.FilterAction}}">
-    <input type="hidden" name="range" value="custom">
-    {{if .ShowBuckets}}<input type="hidden" name="bucket" value="{{.Filter.Bucket}}">{{end}}
-    {{if .Filter.Model}}<input type="hidden" name="model" value="{{.Filter.Model}}">{{end}}
-    {{if .Filter.Provider}}<input type="hidden" name="provider" value="{{.Filter.Provider}}">{{end}}
-    {{if .Filter.APIKey}}<input type="hidden" name="api_key" value="{{.Filter.APIKey}}">{{end}}
-    {{if .Filter.Outcome}}<input type="hidden" name="outcome" value="{{.Filter.Outcome}}">{{end}}
-    <label>From <input type="datetime-local" name="from" value="{{.FromLocal}}"{{if .FromRFC}} data-utc="{{.FromRFC}}"{{end}}></label>
-    <label>To <input type="datetime-local" name="to" value="{{.ToLocal}}"{{if .ToRFC}} data-utc="{{.ToRFC}}"{{end}}></label>
-    <button type="submit"><span class="iconify" data-icon="lucide:check"></span> Apply</button>
-  </form>
-  <form class="fform dim-filter" method="get" action="{{.FilterAction}}">
-    {{if .RangeParam}}<input type="hidden" name="range" value="{{.RangeParam}}">{{end}}
-    {{if .ShowBuckets}}<input type="hidden" name="bucket" value="{{.Filter.Bucket}}">{{end}}
-    {{if and (eq .Filter.Range "custom") .FromRFC}}<input type="hidden" name="from" value="{{.FromRFC}}">{{end}}
-    {{if and (eq .Filter.Range "custom") .ToRFC}}<input type="hidden" name="to" value="{{.ToRFC}}">{{end}}
-    <label>Model
-      <select name="model" onchange="this.form.submit()">
-        <option value="">Any</option>
-        {{range .ModelOpts}}<option value="{{.}}"{{if eq $.Filter.Model .}} selected{{end}}>{{.}}</option>{{end}}
-      </select>
-    </label>
-    <label>Provider
-      <select name="provider" onchange="this.form.submit()">
-        <option value="">Any</option>
-        {{range .ProviderOpts}}<option value="{{.}}"{{if eq $.Filter.Provider .}} selected{{end}}>{{.}}</option>{{end}}
-      </select>
-    </label>
-    <label>API key
-      <select name="api_key" onchange="this.form.submit()">
-        <option value="">Any</option>
-        {{range .KeyOpts}}<option value="{{.}}"{{if eq $.Filter.APIKey .}} selected{{end}}>{{.}}</option>{{end}}
-      </select>
-    </label>
-    <label>Outcome
-      <select name="outcome" onchange="this.form.submit()">
-        <option value="">Any</option>
-        <option value="ok"{{if eq .Filter.Outcome "ok"}} selected{{end}}>ok</option>
-        <option value="error"{{if eq .Filter.Outcome "error"}} selected{{end}}>error</option>
-        <option value="canceled"{{if eq .Filter.Outcome "canceled"}} selected{{end}}>canceled</option>
-        <option value="no_response"{{if eq .Filter.Outcome "no_response"}} selected{{end}}>no response</option>
-      </select>
-    </label>
-    <button type="submit"><span class="iconify" data-icon="lucide:filter"></span> Filter</button>
-  </form>
-  {{if .HasWindow}}
-  <span class="ftime"><span class="iconify" data-icon="lucide:clock"></span> <time datetime="{{.Filter.From.Format "2006-01-02T15:04:05Z"}}" data-min>{{.Filter.From.Format "2006-01-02 15:04"}}</time> → <time datetime="{{.Filter.To.Format "2006-01-02T15:04:05Z"}}" data-min>{{.Filter.To.Format "2006-01-02 15:04"}}</time> <span data-tz>UTC</span></span>
-  {{end}}
+  <div class="frow">
+    <form class="fform dim-filter" method="get" action="{{.FilterAction}}">
+      {{if .RangeParam}}<input type="hidden" name="range" value="{{.RangeParam}}">{{end}}
+      {{if .ShowBuckets}}<input type="hidden" name="bucket" value="{{.Filter.Bucket}}">{{end}}
+      {{if and (eq .Filter.Range "custom") .FromRFC}}<input type="hidden" name="from" value="{{.FromRFC}}">{{end}}
+      {{if and (eq .Filter.Range "custom") .ToRFC}}<input type="hidden" name="to" value="{{.ToRFC}}">{{end}}
+      <span class="flabel"><span class="iconify" data-icon="lucide:filter"></span> Filter</span>
+      <label>Model
+        <select name="model" onchange="this.form.submit()">
+          <option value="">Any</option>
+          {{range .ModelOpts}}<option value="{{.}}"{{if eq $.Filter.Model .}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      </label>
+      <label>Provider
+        <select name="provider" onchange="this.form.submit()">
+          <option value="">Any</option>
+          {{range .ProviderOpts}}<option value="{{.}}"{{if eq $.Filter.Provider .}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      </label>
+      <label>API key
+        <select name="api_key" onchange="this.form.submit()">
+          <option value="">Any</option>
+          {{range .KeyOpts}}<option value="{{.}}"{{if eq $.Filter.APIKey .}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      </label>
+      <label>Outcome
+        <select name="outcome" onchange="this.form.submit()">
+          <option value="">Any</option>
+          <option value="ok"{{if eq .Filter.Outcome "ok"}} selected{{end}}>ok</option>
+          <option value="error"{{if eq .Filter.Outcome "error"}} selected{{end}}>error</option>
+          <option value="canceled"{{if eq .Filter.Outcome "canceled"}} selected{{end}}>canceled</option>
+          <option value="no_response"{{if eq .Filter.Outcome "no_response"}} selected{{end}}>no response</option>
+        </select>
+      </label>
+      <button type="submit"><span class="iconify" data-icon="lucide:check"></span> Apply</button>
+    </form>
+    {{if .ActiveChips}}
+    <div class="group">
+      {{range .ActiveChips}}<a class="chip clear" href="{{.URL}}">{{.Label}} <span class="iconify" data-icon="lucide:x"></span></a>{{end}}
+    </div>
+    {{end}}
+  </div>
 </div>
-{{if .ActiveChips}}
-<div class="achips">
-  {{range .ActiveChips}}<a class="chip clear" href="{{.URL}}">{{.Label}} <span class="iconify" data-icon="lucide:x"></span></a>{{end}}
-</div>
-{{end}}
 {{end}}
 
 {{define "localtime"}}
