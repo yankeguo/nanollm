@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>nanollm admin — call {{.Call.ID}}</title>
-  {{template "css" .}}
+  {{template "head" .}}
 </head>
 <body>
   {{template "nav" .}}
   <div class="wrap">
-    <p><a href="/admin/calls">← Calls</a></p>
+    <p><a class="backlink" href="/admin/calls"><span class="iconify" data-icon="lucide:arrow-left"></span> Calls</a></p>
     <div class="panel" style="margin-bottom:1rem">
       <div class="callhead">
         <h2>Call #{{.Call.ID}}</h2>
@@ -20,8 +20,8 @@
         <div><dt>Model</dt><dd>{{.Call.Model}}</dd></div>
         <div><dt>Provider</dt><dd>{{.Call.Provider}}{{if .Call.ProviderModel}} <span class="muted">→ {{.Call.ProviderModel}}</span>{{end}}</dd></div>
         <div><dt>API key</dt><dd>{{.Call.APIKeyName}}</dd></div>
-        <div><dt>Input tokens</dt><dd>{{formatNum .Call.InputTokens}}<span class="dir">↓</span>{{inputBar .Call.InputTokens .Call.CacheTokens}}</dd></div>
-        <div><dt>Output tokens</dt><dd>{{formatNum .Call.OutputTokens}}<span class="dir">↑</span>{{outputBar .Call.InputTokens .Call.OutputTokens}}</dd></div>
+        <div><dt>Input tokens</dt><dd>{{formatNum .Call.InputTokens}}<span class="iconify dir" data-icon="lucide:arrow-down"></span>{{inputBar .Call.InputTokens .Call.CacheTokens}}</dd></div>
+        <div><dt>Output tokens</dt><dd>{{formatNum .Call.OutputTokens}}<span class="iconify dir" data-icon="lucide:arrow-up"></span>{{outputBar .Call.InputTokens .Call.OutputTokens}}</dd></div>
       </dl>
       {{if .Call.Error}}<p class="callerr {{callErrorClass .Call.HTTPStatus .Call.Error}}">{{.Call.Error}}</p>{{end}}
     </div>

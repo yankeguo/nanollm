@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>nanollm admin — usage</title>
-  {{template "css" .}}
+  {{template "head" .}}
 </head>
 <body>
   {{template "nav" .}}
@@ -22,8 +22,8 @@
     </div>
     <div class="stats">
       <div class="stat"><span>Calls</span><b>{{formatNum .Totals.Calls}}</b></div>
-      <div class="stat"><span>Input</span><b>{{formatNum .Totals.Input}}<span class="dir">↓</span></b>{{inputBar .Totals.Input .Totals.Cache}}</div>
-      <div class="stat"><span>Output</span><b>{{formatNum .Totals.Output}}<span class="dir">↑</span></b>{{outputBar .Totals.Input .Totals.Output}}</div>
+      <div class="stat"><span>Input</span><b>{{formatNum .Totals.Input}}<span class="iconify dir" data-icon="lucide:arrow-down"></span></b>{{inputBar .Totals.Input .Totals.Cache}}</div>
+      <div class="stat"><span>Output</span><b>{{formatNum .Totals.Output}}<span class="iconify dir" data-icon="lucide:arrow-up"></span></b>{{outputBar .Totals.Input .Totals.Output}}</div>
     </div>
     <div class="charts">
       <div class="panel"><h2>Tokens by period</h2><canvas id="tokensChart"></canvas></div>
@@ -33,13 +33,13 @@
       <h2>Details</h2>
       <table>
         <colgroup><col><col class="w-calls"><col class="w-in"><col class="w-out"></colgroup>
-        <thead><tr><th>Bucket / Name</th><th class="num">Calls</th><th class="in">Input ↓</th><th class="out">↑ Output</th></tr></thead>
+        <thead><tr><th>Bucket / Name</th><th class="num">Calls</th><th class="in">Input <span class="iconify" data-icon="lucide:arrow-down"></span></th><th class="out"><span class="iconify" data-icon="lucide:arrow-up"></span> Output</th></tr></thead>
         <tbody>
         <tr class="sect"><td colspan="4">Time series (UTC)</td></tr>
-        {{range .Series}}<tr><td>{{.Bucket}}</td><td class="num">{{formatNum .Calls}}</td><td class="in">{{formatNum .Input}}<span class="dir">↓</span>{{inputBar .Input .Cache}}</td><td class="out"><span class="dir">↑</span>{{formatNum .Output}}{{outputBar .Input .Output}}</td></tr>{{else}}<tr><td colspan="4" class="muted">No calls in this window</td></tr>{{end}}
+        {{range .Series}}<tr><td>{{.Bucket}}</td><td class="num">{{formatNum .Calls}}</td><td class="in">{{formatNum .Input}}<span class="iconify dir" data-icon="lucide:arrow-down"></span>{{inputBar .Input .Cache}}</td><td class="out"><span class="iconify dir" data-icon="lucide:arrow-up"></span>{{formatNum .Output}}{{outputBar .Input .Output}}</td></tr>{{else}}<tr><td colspan="4" class="muted">No calls in this window</td></tr>{{end}}
         {{range .Breakdowns}}
         <tr class="sect"><td colspan="4">By {{.Title}}</td></tr>
-        {{range .Rows}}<tr><td>{{.Name}}</td><td class="num">{{formatNum .Calls}}</td><td class="in">{{formatNum .Input}}<span class="dir">↓</span>{{inputBar .Input .Cache}}</td><td class="out"><span class="dir">↑</span>{{formatNum .Output}}{{outputBar .Input .Output}}</td></tr>{{else}}<tr><td colspan="4" class="muted">None</td></tr>{{end}}
+        {{range .Rows}}<tr><td>{{.Name}}</td><td class="num">{{formatNum .Calls}}</td><td class="in">{{formatNum .Input}}<span class="iconify dir" data-icon="lucide:arrow-down"></span>{{inputBar .Input .Cache}}</td><td class="out"><span class="iconify dir" data-icon="lucide:arrow-up"></span>{{formatNum .Output}}{{outputBar .Input .Output}}</td></tr>{{else}}<tr><td colspan="4" class="muted">None</td></tr>{{end}}
         {{end}}
         </tbody>
       </table>

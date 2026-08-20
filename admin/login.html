@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>nanollm admin — sign in</title>
-  {{template "css" .}}
+  {{template "head" .}}
 </head>
 <body class="login">
   <form class="card" method="post" action="/admin/login">
-    <h1>nanollm</h1>
+    <h1><span class="iconify" data-icon="lucide:zap"></span> nanollm</h1>
     <p class="muted">Admin sign in</p>
     {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
-    <label>Username <input name="username" autocomplete="username" required autofocus></label>
-    <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
-    <button type="submit">Sign in</button>
+    <label><span><span class="iconify" data-icon="lucide:user"></span> Username</span><input name="username" autocomplete="username" required autofocus></label>
+    <label><span><span class="iconify" data-icon="lucide:lock"></span> Password</span><input type="password" name="password" autocomplete="current-password" required></label>
+    <button type="submit"><span class="iconify" data-icon="lucide:log-in"></span> Sign in</button>
   </form>
 </body>
 </html>

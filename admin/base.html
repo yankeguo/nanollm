@@ -1,4 +1,7 @@
-{{define "css"}}
+{{define "head"}}
+<script defer src="https://cdn.jsdelivr.net/npm/@iconify/iconify@3.1.1/dist/iconify.min.js"
+  integrity="sha384-Ok2uDHnWhbSMsjjXrs20mYHBe3BLztRYQuPMBhyLnjPNH7OqWdv/c8Bmv54yhfKR"
+  crossorigin="anonymous"></script>
 <style>
   :root { --bg:#0f1419; --card:#1a222c; --fg:#e8eef4; --muted:#8b9aab; --line:#2a3644; --acc:#5b9fd4; --err:#e07070; --ok:#6dbe8a; --cache:#c9a45c; }
   * { box-sizing: border-box; }
@@ -6,9 +9,12 @@
   a { color:var(--acc); text-decoration:none; }
   a:hover { text-decoration:underline; }
   header { display:flex; align-items:center; gap:1.25rem; padding:.85rem 1.5rem; border-bottom:1px solid var(--line); background:var(--card); }
-  header h1 { font-size:1rem; margin:0; font-weight:600; letter-spacing:.02em; }
+  header h1 { font-size:1rem; margin:0; font-weight:600; letter-spacing:.02em; display:inline-flex; align-items:center; gap:.4rem; }
   header nav { display:flex; gap:1rem; flex:1; }
+  header nav a { display:inline-flex; align-items:center; gap:.35rem; }
   header nav a.on { color:var(--fg); font-weight:600; }
+  .iconify { vertical-align:-0.125em; }
+  .pager a, .backlink { display:inline-flex; align-items:center; gap:.3rem; }
   header form { margin-left:auto; }
   .wrap { max-width:1100px; margin:0 auto; padding:1.5rem; }
   .filters { display:flex; flex-wrap:wrap; gap:.5rem 1rem; margin-bottom:1.25rem; align-items:center; }
@@ -41,7 +47,7 @@
   th.out, td.out { text-align:left; }
   td.in .inbar { width:64px; margin-left:auto; }
   td.out .outbar { width:64px; }
-  button, .btn { background:var(--acc); color:#0f1419; border:0; border-radius:8px; padding:.45rem .9rem; font-weight:600; cursor:pointer; }
+  button, .btn { background:var(--acc); color:#0f1419; border:0; border-radius:8px; padding:.45rem .9rem; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:.4rem; }
   body.login { min-height:100vh; display:flex; align-items:center; justify-content:center; }
   form.card { width:min(360px,92vw); background:var(--card); border:1px solid var(--line); border-radius:12px; padding:1.5rem; display:flex; flex-direction:column; gap:.75rem; }
   form.card h1 { margin:0; }
@@ -74,11 +80,11 @@
 
 {{define "nav"}}
 <header>
-  <h1>nanollm</h1>
+  <h1><span class="iconify" data-icon="lucide:zap"></span> nanollm</h1>
   <nav>
-    <a href="/admin"{{if eq .Nav "usage"}} class="on"{{end}}>Usage</a>
-    <a href="/admin/calls"{{if eq .Nav "calls"}} class="on"{{end}}>Calls</a>
+    <a href="/admin"{{if eq .Nav "usage"}} class="on"{{end}}><span class="iconify" data-icon="lucide:activity"></span> Usage</a>
+    <a href="/admin/calls"{{if eq .Nav "calls"}} class="on"{{end}}><span class="iconify" data-icon="lucide:list"></span> Calls</a>
   </nav>
-  <form method="post" action="/admin/logout"><button type="submit">Sign out</button></form>
+  <form method="post" action="/admin/logout"><button type="submit"><span class="iconify" data-icon="lucide:log-out"></span> Sign out</button></form>
 </header>
 {{end}}

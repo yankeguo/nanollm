@@ -77,7 +77,7 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 				"script-src https://cdn.jsdelivr.net 'unsafe-inline'",
 				"style-src 'unsafe-inline'",
 				"img-src 'self' data:",
-				"connect-src 'self'",
+				"connect-src 'self' https://api.iconify.design https://api.simplesvg.com https://api.unisvg.com",
 				"form-action 'self'",
 				"base-uri 'none'",
 				"frame-ancestors 'none'",
