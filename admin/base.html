@@ -66,25 +66,25 @@
       {{if and (eq .Filter.Range "custom") .ToRFC}}<input type="hidden" name="to" value="{{.ToRFC}}">{{end}}
       <span class="text-secondary small text-uppercase fw-semibold"><i class="bi bi-funnel"></i> Filter</span>
       <label class="d-flex align-items-center gap-2 text-secondary small">Model
-        <select name="model" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+        <select name="model" class="form-select form-select-sm w-auto{{if $.Filter.Model}} border-primary{{end}}" onchange="this.form.submit()">
           <option value="">Any</option>
           {{range .ModelOpts}}<option value="{{.}}"{{if eq $.Filter.Model .}} selected{{end}}>{{.}}</option>{{end}}
         </select>
       </label>
       <label class="d-flex align-items-center gap-2 text-secondary small">Provider
-        <select name="provider" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+        <select name="provider" class="form-select form-select-sm w-auto{{if $.Filter.Provider}} border-primary{{end}}" onchange="this.form.submit()">
           <option value="">Any</option>
           {{range .ProviderOpts}}<option value="{{.}}"{{if eq $.Filter.Provider .}} selected{{end}}>{{.}}</option>{{end}}
         </select>
       </label>
       <label class="d-flex align-items-center gap-2 text-secondary small">API key
-        <select name="api_key" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+        <select name="api_key" class="form-select form-select-sm w-auto{{if $.Filter.APIKey}} border-primary{{end}}" onchange="this.form.submit()">
           <option value="">Any</option>
           {{range .KeyOpts}}<option value="{{.}}"{{if eq $.Filter.APIKey .}} selected{{end}}>{{.}}</option>{{end}}
         </select>
       </label>
       <label class="d-flex align-items-center gap-2 text-secondary small">Outcome
-        <select name="outcome" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+        <select name="outcome" class="form-select form-select-sm w-auto{{if $.Filter.Outcome}} border-primary{{end}}" onchange="this.form.submit()">
           <option value="">Any</option>
           <option value="ok"{{if eq .Filter.Outcome "ok"}} selected{{end}}>ok</option>
           <option value="error"{{if eq .Filter.Outcome "error"}} selected{{end}}>error</option>
@@ -92,13 +92,7 @@
           <option value="no_response"{{if eq .Filter.Outcome "no_response"}} selected{{end}}>no response</option>
         </select>
       </label>
-      <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg"></i> Apply</button>
     </form>
-    {{if .ActiveChips}}
-    <div class="d-flex flex-wrap gap-2">
-      {{range .ActiveChips}}<a class="btn btn-sm btn-outline-secondary text-decoration-none" href="{{.URL}}">{{.Label}} <i class="bi bi-x-lg"></i></a>{{end}}
-    </div>
-    {{end}}
   </div>
 </div>
 {{end}}

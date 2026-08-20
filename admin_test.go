@@ -495,6 +495,7 @@ func TestAdminTemplatesRender(t *testing.T) {
 	require.Contains(t, body, `href="/admin?model=fast"`)
 	require.Contains(t, body, `/admin/calls?`)
 	require.Contains(t, body, "model=fast")
+	require.Contains(t, body, "border-primary")
 	require.Contains(t, body, "Tokens by period")
 
 	cf := parseAdminFilter(url.Values{"model": []string{"fast"}}, now, "calls")

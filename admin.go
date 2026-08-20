@@ -70,12 +70,6 @@ type adminFilter struct {
 	Outcome  string
 }
 
-type filterChip struct {
-	Label string
-	URL   string
-	On    bool
-}
-
 type selectOption struct {
 	Value string
 	Label string
@@ -511,7 +505,6 @@ func adminNavData(nav string, f adminFilter) map[string]any {
 }
 
 func mergeFilterView(data map[string]any, f adminFilter, kind string, opts filterOptions) {
-	base := adminKindPath(kind)
 	ranges := []string{"24h", "7d", "30d", "90d"}
 	if kind == "calls" {
 		ranges = append([]string{"all"}, ranges...)
@@ -521,29 +514,7 @@ func mergeFilterView(data map[string]any, f adminFilter, kind string, opts filte
 	for _, rng := range ranges {
 		rangeOpts = append(rangeOpts, selectOption{Value: rng, Label: rng, On: f.Range == rng})
 	}
-	var active []filterChip
-	if f.Model != "" {
-		g := f
-		g.Model = ""
-		active = append(active, filterChip{Label: "model: " + f.Model, URL: g.path(kind, base)})
-	}
-	if f.Provider != "" {
-		g := f
-		g.Provider = ""
-		active = append(active, filterChip{Label: "provider: " + f.Provider, URL: g.path(kind, base)})
-	}
-	if f.APIKey != "" {
-		g := f
-		g.APIKey = ""
-		active = append(active, filterChip{Label: "api key: " + f.APIKey, URL: g.path(kind, base)})
-	}
-	if f.Outcome != "" {
-		g := f
-		g.Outcome = ""
-		active = append(active, filterChip{Label: "outcome: " + outcomeLabel(f.Outcome), URL: g.path(kind, base)})
-	}
 	data["RangeOpts"] = rangeOpts
-	data["ActiveChips"] = active
 	data["ModelOpts"] = mergeOption(opts.Models, f.Model)
 	data["ProviderOpts"] = mergeOption(opts.Providers, f.Provider)
 	data["KeyOpts"] = mergeOption(opts.Keys, f.APIKey)
@@ -571,21 +542,6 @@ func mergeFilterView(data map[string]any, f adminFilter, kind string, opts filte
 		data["ToLocal"] = ""
 		data["FromRFC"] = ""
 		data["ToRFC"] = ""
-	}
-}
-
-func outcomeLabel(s string) string {
-	switch s {
-	case "ok":
-		return "ok"
-	case "error":
-		return "error"
-	case "canceled":
-		return "canceled"
-	case "no_response":
-		return "no response"
-	default:
-		return s
 	}
 }
 
