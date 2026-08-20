@@ -17,8 +17,11 @@
   .pager a, .backlink { display:inline-flex; align-items:center; gap:.3rem; }
   header form { margin-left:auto; }
   .wrap { max-width:1100px; margin:0 auto; padding:1.5rem; }
-  .filters { display:flex; flex-wrap:wrap; gap:.5rem 1rem; margin-bottom:1.25rem; align-items:center; }
+  .filters { display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; margin-bottom:1.25rem; align-items:center; }
   .filters .group { display:flex; gap:.35rem; flex-wrap:wrap; }
+  .filters .fgroup { display:flex; align-items:center; gap:.5rem; }
+  .filters .flabel { display:inline-flex; align-items:center; gap:.3rem; color:var(--muted); font-size:.75rem; font-weight:600; letter-spacing:.05em; text-transform:uppercase; }
+  .filters .ftime { display:inline-flex; align-items:center; gap:.35rem; margin-left:auto; padding:.2rem .65rem; border:1px solid var(--line); border-radius:999px; color:var(--muted); font-size:.8rem; font-variant-numeric:tabular-nums; }
   .chip { display:inline-block; padding:.2rem .65rem; border:1px solid var(--line); border-radius:999px; color:var(--muted); }
   .chip.on { background:var(--acc); color:#0f1419; border-color:var(--acc); }
   .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:.75rem; margin-bottom:1.5rem; }
