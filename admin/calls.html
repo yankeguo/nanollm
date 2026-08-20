@@ -35,7 +35,7 @@
             <td class="num"><span class="badge {{statusClass .HTTPStatus}}">{{if eq .HTTPStatus 0}}—{{else}}{{.HTTPStatus}}{{end}}</span></td>
             <td class="in">{{formatNum .InputTokens}}<span class="iconify dir" data-icon="lucide:arrow-down"></span>{{inputBar .InputTokens .CacheTokens}}</td>
             <td class="out"><span class="iconify dir" data-icon="lucide:arrow-up"></span>{{formatNum .OutputTokens}}{{outputBar .InputTokens .OutputTokens}}</td>
-            <td class="clip {{callErrorClass .HTTPStatus .Error}}"{{if .Error}} title="{{.Error}}"{{end}}>{{.Error}}</td>
+            <td class="{{callErrorClass .HTTPStatus .Error}}"{{if .Error}} title="{{.Error}}"{{end}}>{{if .Error}}<span class="iconify" data-icon="lucide:alert-triangle"></span>{{else}}<span class="muted">—</span>{{end}}</td>
             <td>{{if .HasDetail}}<a class="backlink" href="/admin/calls/{{.ID}}"><span class="iconify" data-icon="lucide:eye"></span> view</a>{{else}}<span class="muted">—</span>{{end}}</td>
           </tr>
         {{else}}
