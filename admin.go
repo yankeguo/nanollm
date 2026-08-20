@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"html/template"
 	"log"
 	"net/http"
@@ -131,6 +132,8 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !s.checkAdminLogin(r.Form.Get("username"), r.Form.Get("password")) {
+			// renderAdmin sets Content-Type after WriteHeader, so write it first.
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusUnauthorized)
 			s.renderAdmin(w, "login.html", map[string]any{"Error": "invalid username or password"})
 			return
@@ -297,7 +300,12 @@ func (s *Server) handleAdminCall(w http.ResponseWriter, r *http.Request) {
 	}
 	var call LLMCall
 	if err := s.DB.First(&call, id).Error; err != nil {
-		http.NotFound(w, r)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Println("admin call lookup:", err)
+		http.Error(w, "query failed", http.StatusInternalServerError)
 		return
 	}
 	s.renderAdmin(w, "detail.html", map[string]any{

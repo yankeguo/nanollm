@@ -75,6 +75,8 @@ func TestAdminLoginAndGuard(t *testing.T) {
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.Equal(t, "text/html; charset=utf-8", rec.Result().Header.Get("Content-Type"))
+	require.Contains(t, rec.Body.String(), "invalid username or password")
 	require.Empty(t, rec.Result().Cookies())
 
 	req = httptest.NewRequest(http.MethodPost, "/admin/login", strings.NewReader("username=admin&password=secret"))

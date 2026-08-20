@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log"
 	"net/http"
@@ -58,6 +59,11 @@ func main() {
 
 	select {
 	case err = <-errCh:
+		// ListenAndServe always returns a non-nil error; ErrServerClosed means
+		// a clean Shutdown, which only fires after the signal branch below.
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		}
 		return
 	case <-ctx.Done():
 		log.Println("shutting down")

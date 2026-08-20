@@ -180,7 +180,7 @@ Each provider attempt writes one row to `llm_calls`:
 
 Failures and failover hops are recorded so you can see which hop died. The synthetic “all upstreams unavailable” client error is not an extra row.
 
-After each insert, blobs older than the latest `mysql.detail_retain` rows are set to `NULL`. Metadata is kept. Bodies larger than 16 MiB skip the blob columns.
+Periodically (every 50 inserts), blobs older than the latest `mysql.detail_retain` rows are set to `NULL`. Metadata is kept. Bodies larger than 16 MiB skip the blob columns.
 
 Insert/prune errors are logged and do not change the client response.
 

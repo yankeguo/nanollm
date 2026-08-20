@@ -65,6 +65,10 @@ type Provider struct {
 	URL       string            `yaml:"url"`
 }
 
+// endpoint returns the protocol block for format. The top-level url/format
+// fallback only matters for Provider values that never went through
+// normalize (e.g. hand-built test fixtures); validate() folds the legacy
+// fields into the matching block.
 func (p Provider) endpoint(format string) *ProviderEndpoint {
 	if format == "" {
 		format = formatOpenAI
@@ -208,10 +212,10 @@ func (p *Provider) normalize(model string) error {
 		if p.URL != "" || strings.TrimSpace(p.Format) != "" {
 			return fmt.Errorf("config: model %q provider %q cannot mix top-level url/format with openai/anthropic blocks", model, p.Name)
 		}
-		if err := validateEndpoint(model, p.Name, formatOpenAI, p.OpenAI); err != nil {
+		if err := validateEndpointURL(model, p.Name, formatOpenAI, p.OpenAI); err != nil {
 			return err
 		}
-		if err := validateEndpoint(model, p.Name, formatAnthropic, p.Anthropic); err != nil {
+		if err := validateEndpointURL(model, p.Name, formatAnthropic, p.Anthropic); err != nil {
 			return err
 		}
 		return nil
@@ -240,7 +244,7 @@ func (p *Provider) normalize(model string) error {
 	return nil
 }
 
-func validateEndpoint(model, provider, format string, ep *ProviderEndpoint) error {
+func validateEndpointURL(model, provider, format string, ep *ProviderEndpoint) error {
 	if ep == nil {
 		return nil
 	}

@@ -340,6 +340,35 @@ func TestCopyResponseHeadersStripsHopByHop(t *testing.T) {
 	require.Empty(t, dst.Get("Keep-Alive"))
 }
 
+func TestProxyCatastrophicStatusReturnsError(t *testing.T) {
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		io.WriteString(w, `{"error":"down"}`)
+	}))
+	t.Cleanup(first.Close)
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true}`)
+	}))
+	t.Cleanup(second.Close)
+
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(
+		Provider{Name: "a", URL: first.URL},
+		Provider{Name: "b", URL: second.URL},
+	), logger, nil).Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, logger.calls, 2)
+	require.Equal(t, http.StatusServiceUnavailable, logger.calls[0].HTTPStatus)
+	require.Contains(t, logger.calls[0].Error, "503")
+	require.Equal(t, http.StatusOK, logger.calls[1].HTTPStatus)
+}
+
 func jsonBody(v any) io.Reader {
 	b, _ := json.Marshal(v)
 	return bytes.NewReader(b)

@@ -21,7 +21,7 @@ type Server struct {
 func NewServer(cfg *Config, logger CallLogger, db *gorm.DB) *Server {
 	s := &Server{
 		Config:  cfg,
-		Client:  defaultHTTPClient(),
+		Client:  defaultClient,
 		Logger:  logger,
 		DB:      db,
 		started: time.Now().Unix(),

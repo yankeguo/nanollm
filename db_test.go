@@ -58,3 +58,23 @@ func TestMySQLDetailRetainDefault(t *testing.T) {
 	zero := 0
 	require.Equal(t, 0, MySQLConfig{DetailRetain: &zero}.detailRetain())
 }
+
+func TestPruneAsyncThrottle(t *testing.T) {
+	var n int
+	l := &gormCallLogger{pruneFn: func() error {
+		n++
+		return nil
+	}}
+	for i := 0; i < pruneEveryN-1; i++ {
+		l.pruneAsync()
+		require.Equal(t, i+1, l.sincePrune)
+		require.Equal(t, 0, n)
+	}
+	l.pruneAsync()
+	require.Equal(t, 0, l.sincePrune)
+	require.Equal(t, 1, n)
+
+	l.pruneAsync()
+	require.Equal(t, 1, l.sincePrune)
+	require.Equal(t, 1, n)
+}

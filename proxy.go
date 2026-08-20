@@ -62,31 +62,31 @@ func (p *Proxy) upstreamErrorType() string {
 	return "upstream_error"
 }
 
-func defaultHTTPClient() *http.Client {
-	return &http.Client{
-		Timeout: 0,
-		Transport: &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			DialContext: (&net.Dialer{
-				Timeout:   10 * time.Second,
-				KeepAlive: 30 * time.Second,
-			}).DialContext,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          100,
-			MaxIdleConnsPerHost:   16,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ResponseHeaderTimeout: 120 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-	}
+// defaultClient is shared by all proxies so upstream connections pool together.
+var defaultClient = &http.Client{
+	Transport: &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   16,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 120 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	},
+	// No total Timeout: streaming responses stay open as long as the upstream
+	// keeps sending; ResponseHeaderTimeout bounds the wait for the first byte.
 }
 
 func (p *Proxy) client() *http.Client {
 	if p.Client != nil {
 		return p.Client
 	}
-	return http.DefaultClient
+	return defaultClient
 }
 
 func (p *Proxy) logCall(rec CallRecord) {
@@ -125,36 +125,26 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tw := &writeTracker{ResponseWriter: w}
-	var lastStatus int
 	var lastErr error
 
 	for _, provider := range providers {
-		status, err := p.forward(tw, r, meta, provider)
+		_, err := p.forward(tw, r, meta, provider)
 		if tw.wrote {
 			return
 		}
-		if isCatastrophic(err, status) {
-			log.Printf("model %q provider %q catastrophically unavailable (%v, status=%d), trying next", meta.Model, provider.Name, err, status)
-			lastStatus, lastErr = status, err
+		if err == nil || errors.Is(err, context.Canceled) {
+			return
+		}
+		if isCatastrophic(err, 0) {
+			log.Printf("model %q provider %q catastrophically unavailable (%v), trying next", meta.Model, provider.Name, err)
+			lastErr = err
 			continue
 		}
-
-		if status == 0 && err != nil {
-			if !errors.Is(err, context.Canceled) {
-				p.writeError(w, statusFromErr(err), p.upstreamErrorType(), err.Error())
-			}
-		}
+		p.writeError(w, statusFromErr(err), p.upstreamErrorType(), err.Error())
 		return
 	}
 
-	if lastErr != nil && lastStatus == 0 {
-		p.writeError(w, http.StatusBadGateway, p.upstreamErrorType(), "all upstreams unavailable: "+lastErr.Error())
-		return
-	}
-	if lastStatus == 0 {
-		lastStatus = http.StatusBadGateway
-	}
-	p.writeError(w, lastStatus, p.upstreamErrorType(), "all upstreams unavailable")
+	p.writeError(w, http.StatusBadGateway, p.upstreamErrorType(), "all upstreams unavailable: "+lastErr.Error())
 }
 
 func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMeta, provider Provider) (int, error) {
@@ -224,7 +214,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 		rec.ResponseJSON = encodeResponseBlob(body, sse)
 		rec.Error = "upstream status " + resp.Status
 		p.logCall(rec)
-		return resp.StatusCode, nil
+		return resp.StatusCode, fmt.Errorf("upstream status %s", resp.Status)
 	}
 
 	copyResponseHeaders(w.Header(), resp.Header)

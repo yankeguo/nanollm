@@ -72,6 +72,24 @@ func TestCopyAndScanSSECapsScanBuffer(t *testing.T) {
 	require.Equal(t, 1000, dst.Len())
 }
 
+// parseUsageSSE parses an entire SSE transcript; the production path streams
+// through copyAndScanSSE, so this helper lives only in tests.
+func parseUsageSSE(body []byte) tokenUsage {
+	var usage tokenUsage
+	for {
+		i := bytes.IndexByte(body, '\n')
+		if i < 0 {
+			if len(body) > 0 {
+				mergeUsage(&usage, parseUsageSSELine(string(body)))
+			}
+			return usage
+		}
+		line := string(bytes.TrimRight(body[:i], "\r"))
+		body = body[i+1:]
+		mergeUsage(&usage, parseUsageSSELine(line))
+	}
+}
+
 func TestParseUsageSSE(t *testing.T) {
 	body := []byte("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n" +
 		"data: {\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":1}}\n\n" +

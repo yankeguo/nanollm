@@ -139,15 +139,12 @@ func parseUsageJSON(body []byte) tokenUsage {
 		return tokenUsage{}
 	}
 	var out tokenUsage
+	// Anthropic-style {"type":"message_start","message":{"model":...,"usage":...}}
 	if resp.Message != nil {
 		out.ResponseModel = resp.Message.Model
 		if resp.Message.Usage != nil {
-			u := resp.Message.Usage.asTokenUsage()
-			out.Input = u.Input
-			out.Output = u.Output
-			out.CacheRead = u.CacheRead
-			out.CacheCreation = u.CacheCreation
-			out.Uncached = u.Uncached
+			out = resp.Message.Usage.asTokenUsage()
+			out.ResponseModel = resp.Message.Model
 		}
 	}
 	if resp.Model != "" {
@@ -169,22 +166,6 @@ func parseUsageSSELine(line string) tokenUsage {
 		return tokenUsage{}
 	}
 	return parseUsageJSON([]byte(payload))
-}
-
-func parseUsageSSE(body []byte) tokenUsage {
-	var usage tokenUsage
-	for {
-		i := bytes.IndexByte(body, '\n')
-		if i < 0 {
-			if len(body) > 0 {
-				mergeUsage(&usage, parseUsageSSELine(string(body)))
-			}
-			return usage
-		}
-		line := string(bytes.TrimRight(body[:i], "\r"))
-		body = body[i+1:]
-		mergeUsage(&usage, parseUsageSSELine(line))
-	}
 }
 
 func copyAndScanSSE(dst io.Writer, src io.Reader) (tokenUsage, error) {

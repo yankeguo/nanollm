@@ -104,7 +104,14 @@ type gormCallLogger struct {
 	db      *gorm.DB
 	retain  int
 	pruning sync.Mutex
+	// sincePrune counts inserts since the last prune; pruneAsync only runs
+	// every pruneEveryN inserts to avoid one UPDATE per request.
+	sincePrune int
+	// pruneFn, if set, replaces prune (tests).
+	pruneFn func() error
 }
+
+const pruneEveryN = 50
 
 func newGormCallLogger(db *gorm.DB, retain int) *gormCallLogger {
 	return &gormCallLogger{db: db, retain: retain}
@@ -143,10 +150,23 @@ func (l *gormCallLogger) pruneAsync() {
 	if !l.pruning.TryLock() {
 		return
 	}
+	l.sincePrune++
+	if l.sincePrune < pruneEveryN {
+		l.pruning.Unlock()
+		return
+	}
+	l.sincePrune = 0
 	defer l.pruning.Unlock()
-	if err := l.prune(); err != nil {
+	if err := l.runPrune(); err != nil {
 		log.Println("llm_calls prune:", err)
 	}
+}
+
+func (l *gormCallLogger) runPrune() error {
+	if l.pruneFn != nil {
+		return l.pruneFn()
+	}
+	return l.prune()
 }
 
 func (l *gormCallLogger) prune() error {
