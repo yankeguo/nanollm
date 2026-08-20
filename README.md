@@ -2,13 +2,13 @@
 
 OpenAI- and Anthropic-compatible reverse proxy for LLM APIs. Point coding tools at nanollm and map one client-facing model name to one or more upstream providers.
 
-Providers for a model are tried **in order**, but only those that have a protocol block matching the inbound API (`openai` or `anthropic`). The next provider is used only when the current one is catastrophically unavailable. Rate limits, 4xx, and ordinary 5xx stay on the same provider so prompt cache is not thrown away.
+Providers for a model are tried **in order**, but only those that have a protocol block matching the inbound API (`openai`, `responses`, or `anthropic`). The next provider is used only when the current one is catastrophically unavailable. Rate limits, 4xx, and ordinary 5xx stay on the same provider so prompt cache is not thrown away.
 
 ## Features
 
-- Standard `net/http` server: OpenAI `/v1/chat/completions` (plus completions, embeddings, responses) and Anthropic `/v1/messages`
-- YAML config: named models, named vendors, optional `openai` / `anthropic` endpoint blocks, auth merged into `headers`
-- No OpenAI ↔ Anthropic body conversion; each inbound API only uses matching providers
+- Standard `net/http` server: OpenAI `/v1/chat/completions` (plus completions, embeddings), OpenAI `/v1/responses`, and Anthropic `/v1/messages`
+- YAML config: named models, named vendors, optional `openai` / `responses` / `anthropic` endpoint blocks, auth merged into `headers`
+- No body conversion between protocols; each inbound API only uses matching providers
 - Incoming API keys (`api_keys[].{name,value}`)
 - Streaming SSE pass-through
 - Failover only on dial/DNS/TLS failure or HTTP 502/503/504
@@ -31,7 +31,7 @@ docker run --rm -p 8080:8080 \
   ghcr.io/yankeguo/nanollm:latest
 ```
 
-Point OpenAI clients at `http://127.0.0.1:8080/v1` with `Authorization: Bearer <api_keys.value>` and `"model": "<models[].name>"`.
+Point OpenAI clients at `http://127.0.0.1:8080/v1` with `Authorization: Bearer <api_keys.value>` and `"model": "<models[].name>"`. Chat Completions uses the vendor `openai` block; the Responses API (`POST /v1/responses`) uses the `responses` block.
 
 Point Anthropic clients at `http://127.0.0.1:8080` with `x-api-key: <api_keys.value>` and the same `"model"` field. The model must have at least one provider with an `anthropic` block.
 
@@ -62,10 +62,13 @@ models:
   - name: gpt-4o
     providers:
       - name: openai
-        url: https://api.openai.com/v1/chat/completions
         model: gpt-4o
         headers:
           Authorization: Bearer sk-REPLACE_ME
+        openai:
+          url: https://api.openai.com/v1/chat/completions
+        responses:
+          url: https://api.openai.com/v1/responses
   - name: claude
     providers:
       - name: openrouter
@@ -75,6 +78,8 @@ models:
           anthropic-version: "2023-06-01"
         openai:
           url: https://openrouter.ai/api/v1/chat/completions
+        responses:
+          url: https://openrouter.ai/api/v1/responses
         anthropic:
           url: https://openrouter.ai/api/v1/messages
 ```
@@ -92,12 +97,12 @@ models:
 | `providers[].name` | yes | Vendor name within a model (must be unique). Used for failover order and `llm_calls.provider` |
 | `providers[].model` | no | Default upstream model; a protocol block may override it. If both are empty, the client model is kept |
 | `providers[].headers` | no | Default extra headers (including upstream auth); a protocol block may override keys |
-| `providers[].openai` / `providers[].anthropic` | one of these, or legacy `url` | Protocol endpoint. OpenAI routes only use vendors with `openai`; `POST /v1/messages` only uses vendors with `anthropic` |
-| `openai.url` / `anthropic.url` | yes (when the block is present) | Full `http`/`https` upstream URL (not a base URL) |
-| `openai.model` / `anthropic.model` | no | Overrides the vendor-level `model` for that protocol |
-| `openai.headers` / `anthropic.headers` | no | Overlay on vendor-level `headers` (`Set` per key) |
-| `providers[].url` | legacy | Flat form: required when no protocol blocks are set. Normalized into `openai` (default) or `anthropic` |
-| `providers[].format` | no (legacy) | Flat form only: `openai` (default) or `anthropic`. Cannot be mixed with protocol blocks |
+| `providers[].openai` / `providers[].responses` / `providers[].anthropic` | one of these, or legacy `url` | Protocol endpoint. Chat/completions/embeddings only use vendors with `openai`; `POST /v1/responses` only uses vendors with `responses`; `POST /v1/messages` only uses vendors with `anthropic` |
+| `openai.url` / `responses.url` / `anthropic.url` | yes (when the block is present) | Full `http`/`https` upstream URL (not a base URL) |
+| `openai.model` / `responses.model` / `anthropic.model` | no | Overrides the vendor-level `model` for that protocol |
+| `openai.headers` / `responses.headers` / `anthropic.headers` | no | Overlay on vendor-level `headers` (`Set` per key) |
+| `providers[].url` | legacy | Flat form: required when no protocol blocks are set. Normalized into `openai` (default), `responses`, or `anthropic` |
+| `providers[].format` | no (legacy) | Flat form only: `openai` (default), `responses`, or `anthropic`. Cannot be mixed with protocol blocks |
 
 Rules:
 
@@ -105,11 +110,11 @@ Rules:
 - MySQL DSN is required; timestamps are stored in UTC
 - At least one API key and one model
 - Model names unique; provider names unique **within** a model
-- Nested `openai`/`anthropic` blocks cannot be mixed with top-level `url`/`format` on the same vendor
+- Nested `openai`/`responses`/`anthropic` blocks cannot be mixed with top-level `url`/`format` on the same vendor
 - API key names unique; API key values unique
 - Incoming `Authorization` / `X-Api-Key` / `Api-Key` are **not** forwarded
 - Request bodies larger than 64 MiB return `413`
-- nanollm does **not** convert OpenAI and Anthropic bodies. If a model has no vendor with a matching protocol block, the request fails with `404`
+- nanollm does **not** convert bodies between chat completions, Responses, and Anthropic. If a model has no vendor with a matching protocol block, the request fails with `404`
 - `config.yaml` is gitignored; commit `config.example.yaml` only
 
 See `config.example.yaml`.
@@ -156,7 +161,7 @@ This keeps prefix / prompt cache on the first healthy provider.
 | `POST` | `/v1/chat/completions` | yes | Also `/chat/completions` |
 | `POST` | `/v1/completions` | yes | Also `/completions` |
 | `POST` | `/v1/embeddings` | yes | Also `/embeddings` |
-| `POST` | `/v1/responses` | yes | |
+| `POST` | `/v1/responses` | yes | Also `/responses`. Only providers with a `responses` block |
 | `POST` | `/v1/messages` | yes | Anthropic Messages; only providers with an `anthropic` block |
 | `GET` | `/admin` | cookie | Usage tables and Chart.js graphs |
 | `GET` | `/admin/calls` | cookie | Paginated call log |
@@ -164,9 +169,9 @@ This keeps prefix / prompt cache on the first healthy provider.
 | `GET`/`POST` | `/admin/login` | no | Admin sign-in |
 | `POST` | `/admin/logout` | cookie | Clear admin cookie |
 
-The JSON body `model` field selects `models[].name`. nanollm rewrites only the top-level `model` (and, for OpenAI streaming, injects `stream_options.include_usage` when missing). Other JSON fields are copied as raw values and are not decoded into a typed tree. OpenAI routes never call a vendor's `anthropic` block, and `/v1/messages` never calls a vendor's `openai` block.
+The JSON body `model` field selects `models[].name`. nanollm rewrites only the top-level `model` (and, for OpenAI chat streaming, injects `stream_options.include_usage` when missing). Responses and Anthropic bodies are not given `stream_options`. Other JSON fields are copied as raw values and are not decoded into a typed tree. Each inbound path only uses vendors with the matching protocol block: chat/completions/embeddings → `openai`, `/v1/responses` → `responses`, `/v1/messages` → `anthropic`.
 
-Streaming (`"stream": true`) is copied through as SSE. While the upstream is silent (long thinking / a long tool-using turn), nanollm writes SSE comments (`:` lines) so the client and any idle proxy do not time out. Usage is parsed from a copy of the upstream body; keepalive comments are not stored in the call-log blob. Anthropic bodies are not rewritten beyond `model`.
+Streaming (`"stream": true`) is copied through as SSE. While the upstream is silent (long thinking / a long tool-using turn), nanollm writes SSE comments (`:` lines) so the client and any idle proxy do not time out. Usage is parsed from a copy of the upstream body (including Responses `response.usage` on `response.completed`); keepalive comments are not stored in the call-log blob. Anthropic and Responses bodies are not rewritten beyond `model`.
 
 ## Call log (MySQL)
 

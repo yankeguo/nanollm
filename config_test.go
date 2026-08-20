@@ -277,6 +277,10 @@ models:
       - name: openrouter
         url: https://openrouter.ai/api/v1/chat/completions
         model: anthropic/claude-sonnet-4-5
+      - name: responses
+        format: responses
+        url: https://api.openai.com/v1/responses
+        model: gpt-4o
 `), 0o644))
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
@@ -285,10 +289,16 @@ models:
 	require.Equal(t, "https://api.anthropic.com/v1/messages", cfg.providers("claude")[0].Anthropic.URL)
 	require.NotNil(t, cfg.providers("claude")[1].OpenAI)
 	require.Nil(t, cfg.providers("claude")[1].Anthropic)
+	require.Nil(t, cfg.providers("claude")[1].Responses)
+	require.NotNil(t, cfg.providers("claude")[2].Responses)
+	require.Nil(t, cfg.providers("claude")[2].OpenAI)
+	require.Equal(t, "https://api.openai.com/v1/responses", cfg.providers("claude")[2].Responses.URL)
 	require.Len(t, cfg.providersFor("claude", formatAnthropic), 1)
 	require.Equal(t, "anthropic", cfg.providersFor("claude", formatAnthropic)[0].Name)
 	require.Len(t, cfg.providersFor("claude", formatOpenAI), 1)
 	require.Equal(t, "openrouter", cfg.providersFor("claude", formatOpenAI)[0].Name)
+	require.Len(t, cfg.providersFor("claude", formatResponses), 1)
+	require.Equal(t, "responses", cfg.providersFor("claude", formatResponses)[0].Name)
 
 	require.NoError(t, os.WriteFile(path, []byte(`
 mysql:
@@ -307,7 +317,7 @@ models:
         url: http://a.example
 `), 0o644))
 	_, err = loadConfig(path)
-	require.ErrorContains(t, err, "format must be openai or anthropic")
+	require.ErrorContains(t, err, "format must be openai, responses, or anthropic")
 }
 
 func TestLoadConfigNestedProviderEndpoints(t *testing.T) {
@@ -334,6 +344,9 @@ models:
           url: https://openrouter.ai/api/v1/chat/completions
           headers:
             X-Shared: openai
+        responses:
+          url: https://openrouter.ai/api/v1/responses
+          model: openai/gpt-4o
         anthropic:
           url: https://openrouter.ai/api/v1/messages
           model: anthropic/claude-override
@@ -348,6 +361,7 @@ models:
 	or := cfg.providers("claude")[0]
 	require.Equal(t, "openrouter", or.Name)
 	require.NotNil(t, or.OpenAI)
+	require.NotNil(t, or.Responses)
 	require.NotNil(t, or.Anthropic)
 	require.Empty(t, or.URL)
 	require.Empty(t, or.Format)
@@ -361,6 +375,16 @@ models:
 	require.Equal(t, "anthropic/claude-sonnet-4-5", model)
 	require.Equal(t, "Bearer sk-or", headers["Authorization"])
 	require.Equal(t, "openai", headers["X-Shared"])
+
+	responses := cfg.providersFor("claude", formatResponses)
+	require.Len(t, responses, 1)
+	require.Equal(t, "openrouter", responses[0].Name)
+	u, model, headers, ok = responses[0].resolve(formatResponses)
+	require.True(t, ok)
+	require.Equal(t, "https://openrouter.ai/api/v1/responses", u)
+	require.Equal(t, "openai/gpt-4o", model)
+	require.Equal(t, "Bearer sk-or", headers["Authorization"])
+	require.Equal(t, "top", headers["X-Shared"])
 
 	anth := cfg.providersFor("claude", formatAnthropic)
 	require.Len(t, anth, 2)

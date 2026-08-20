@@ -880,3 +880,139 @@ func TestProxyPassesSSEBytesUnchanged(t *testing.T) {
 	require.Equal(t, int64(3), logger.calls[0].InputTokens)
 	require.Equal(t, int64(1), logger.calls[0].OutputTokens)
 }
+
+func TestProxyResponsesRewritesModelWithoutStreamOptions(t *testing.T) {
+	var gotBody []byte
+	var gotAuth string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		gotAuth = r.Header.Get("Authorization")
+		require.Equal(t, "/v1/responses", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"id":"resp_1","object":"response","model":"gpt-4o","usage":{"input_tokens":5,"output_tokens":2,"input_tokens_details":{"cached_tokens":1}}}`)
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	cfg := &Config{
+		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
+		Models: []ModelConfig{{Name: "fast", Providers: []Provider{{
+			Name:  "openai",
+			Model: "gpt-4o",
+			Headers: map[string]string{
+				"Authorization": "Bearer sk-up",
+			},
+			OpenAI:    &ProviderEndpoint{URL: up.URL + "/v1/chat/completions"},
+			Responses: &ProviderEndpoint{URL: up.URL + "/v1/responses"},
+		}}}},
+	}
+	h := NewServer(cfg, logger, nil).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", jsonBody(map[string]any{
+		"model":  "fast",
+		"stream": true,
+		"input":  "hi",
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var sent map[string]any
+	require.NoError(t, json.Unmarshal(gotBody, &sent))
+	require.Equal(t, "gpt-4o", sent["model"])
+	require.Equal(t, "hi", sent["input"])
+	_, hasStreamOpts := sent["stream_options"]
+	require.False(t, hasStreamOpts)
+	require.Equal(t, "Bearer sk-up", gotAuth)
+	require.Len(t, logger.calls, 1)
+	require.Equal(t, "openai", logger.calls[0].Provider)
+	require.Equal(t, "gpt-4o", logger.calls[0].ProviderModel)
+}
+
+func TestProxyResponsesStreamUsage(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"model\":\"gpt-4o\",\"usage\":null}}\n\n")
+		io.WriteString(w, "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"model\":\"gpt-4o\",\"usage\":{\"input_tokens\":6,\"output_tokens\":2}}}\n\n")
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	cfg := &Config{
+		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
+		Models: []ModelConfig{{Name: "fast", Providers: []Provider{{
+			Name:      "openai",
+			Responses: &ProviderEndpoint{URL: up.URL, Model: "gpt-4o"},
+		}}}},
+	}
+	h := NewServer(cfg, logger, nil).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", jsonBody(map[string]any{
+		"model":  "fast",
+		"stream": true,
+		"input":  "hi",
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, logger.calls, 1)
+	require.Equal(t, int64(6), logger.calls[0].InputTokens)
+	require.Equal(t, int64(2), logger.calls[0].OutputTokens)
+	require.Contains(t, rec.Body.String(), "response.completed")
+}
+
+func TestProxyResponsesMissingProviders(t *testing.T) {
+	h := testProxy(t, cfgFast(Provider{Name: "x", URL: "http://example.invalid", Model: "x"}))
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", jsonBody(map[string]any{"model": "fast", "input": "hi"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Contains(t, rec.Body.String(), "has no responses providers")
+	require.Contains(t, rec.Body.String(), "invalid_request_error")
+}
+
+func TestProxyResponsesDoesNotUseOpenAIURL(t *testing.T) {
+	var openaiHits atomic.Int32
+	openaiUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		openaiHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"choices":[{"message":{"content":"oai"}}]}`)
+	}))
+	t.Cleanup(openaiUp.Close)
+
+	cfg := &Config{
+		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
+		Models: []ModelConfig{{Name: "fast", Providers: []Provider{{
+			Name:   "openai",
+			OpenAI: &ProviderEndpoint{URL: openaiUp.URL, Model: "gpt-4o"},
+		}}}},
+	}
+	h := NewServer(cfg, nil, nil).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", jsonBody(map[string]any{"model": "fast", "input": "hi"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Equal(t, int32(0), openaiHits.Load())
+}
+
+func TestProxyResponsesLegacyFormat(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"id":"resp_1","usage":{"input_tokens":3,"output_tokens":1}}`)
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	cfg := &Config{
+		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
+		Models: []ModelConfig{{Name: "fast", Providers: []Provider{{
+			Name: "openai", Format: formatResponses, URL: up.URL, Model: "gpt-4o",
+		}}}},
+	}
+	h := NewServer(cfg, logger, nil).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/responses", jsonBody(map[string]any{"model": "fast", "input": "hi"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, logger.calls, 1)
+	require.Equal(t, int64(3), logger.calls[0].InputTokens)
+	require.Equal(t, int64(1), logger.calls[0].OutputTokens)
+}

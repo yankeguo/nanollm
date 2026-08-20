@@ -125,13 +125,33 @@ func (u openaiUsage) asTokenUsage() tokenUsage {
 	return usage
 }
 
+type openaiNestedUsage struct {
+	Model string       `json:"model"`
+	Usage *openaiUsage `json:"usage"`
+}
+
 type openaiResponse struct {
-	Model   string       `json:"model"`
-	Usage   *openaiUsage `json:"usage"`
-	Message *struct {
-		Model string       `json:"model"`
-		Usage *openaiUsage `json:"usage"`
-	} `json:"message"`
+	Model    string             `json:"model"`
+	Usage    *openaiUsage       `json:"usage"`
+	Message  *openaiNestedUsage `json:"message"`
+	Response *openaiNestedUsage `json:"response"`
+}
+
+func mergeNestedUsage(out *tokenUsage, nested *openaiNestedUsage) {
+	if nested == nil {
+		return
+	}
+	if nested.Model != "" {
+		out.ResponseModel = nested.Model
+	}
+	if nested.Usage != nil {
+		u := nested.Usage.asTokenUsage()
+		u.ResponseModel = nested.Model
+		if u.ResponseModel == "" {
+			u.ResponseModel = out.ResponseModel
+		}
+		mergeUsage(out, u)
+	}
 }
 
 func parseUsageJSON(body []byte) tokenUsage {
@@ -141,13 +161,9 @@ func parseUsageJSON(body []byte) tokenUsage {
 	}
 	var out tokenUsage
 	// Anthropic-style {"type":"message_start","message":{"model":...,"usage":...}}
-	if resp.Message != nil {
-		out.ResponseModel = resp.Message.Model
-		if resp.Message.Usage != nil {
-			out = resp.Message.Usage.asTokenUsage()
-			out.ResponseModel = resp.Message.Model
-		}
-	}
+	mergeNestedUsage(&out, resp.Message)
+	// OpenAI Responses SSE {"type":"response.completed","response":{"model":...,"usage":...}}
+	mergeNestedUsage(&out, resp.Response)
 	if resp.Model != "" {
 		out.ResponseModel = resp.Model
 	}

@@ -136,6 +136,15 @@ func TestParseUsageJSONAnthropicMessageStart(t *testing.T) {
 	require.Equal(t, "claude-sonnet-4-5", u.ResponseModel)
 }
 
+func TestParseUsageJSONResponses(t *testing.T) {
+	u := parseUsageJSON([]byte(`{"id":"resp_1","object":"response","model":"gpt-4o","usage":{"input_tokens":11,"output_tokens":7,"input_tokens_details":{"cached_tokens":4}}}`))
+	require.Equal(t, int64(11), u.Input)
+	require.Equal(t, int64(7), u.Output)
+	require.Equal(t, int64(4), u.CacheRead)
+	require.Equal(t, int64(7), u.Uncached)
+	require.Equal(t, "gpt-4o", u.ResponseModel)
+}
+
 func TestParseUsageSSEAnthropic(t *testing.T) {
 	body := []byte("event: message_start\n" +
 		"data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-sonnet-4-5\",\"usage\":{\"input_tokens\":10,\"cache_read_input_tokens\":2}}}\n\n" +
@@ -149,4 +158,19 @@ func TestParseUsageSSEAnthropic(t *testing.T) {
 	require.Equal(t, int64(2), u.CacheRead)
 	require.Equal(t, int64(8), u.Uncached)
 	require.Equal(t, "claude-sonnet-4-5", u.ResponseModel)
+}
+
+func TestParseUsageSSEResponses(t *testing.T) {
+	body := []byte("event: response.created\n" +
+		"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"model\":\"gpt-4o\",\"usage\":null}}\n\n" +
+		"event: response.output_text.delta\n" +
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}\n\n" +
+		"event: response.completed\n" +
+		"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"model\":\"gpt-4o\",\"usage\":{\"input_tokens\":9,\"output_tokens\":2,\"input_tokens_details\":{\"cached_tokens\":3}}}}\n\n")
+	u := parseUsageSSE(body)
+	require.Equal(t, int64(9), u.Input)
+	require.Equal(t, int64(2), u.Output)
+	require.Equal(t, int64(3), u.CacheRead)
+	require.Equal(t, int64(6), u.Uncached)
+	require.Equal(t, "gpt-4o", u.ResponseModel)
 }

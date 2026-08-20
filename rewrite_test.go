@@ -75,6 +75,18 @@ func TestRewriteRequestAnthropicDoesNotInjectStreamOptions(t *testing.T) {
 	require.Equal(t, rawObjectField(t, body, "messages"), rawObjectField(t, out, "messages"))
 }
 
+func TestRewriteRequestResponsesDoesNotInjectStreamOptions(t *testing.T) {
+	body := []byte(`{"model":"fast","stream":true,"input":"hi"}`)
+	out, err := rewriteRequest(body, "gpt-4o", true, formatResponses)
+	require.NoError(t, err)
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(out, &raw))
+	require.Equal(t, "gpt-4o", raw["model"])
+	_, has := raw["stream_options"]
+	require.False(t, has)
+	require.Equal(t, rawObjectField(t, body, "input"), rawObjectField(t, out, "input"))
+}
+
 func rawObjectField(t *testing.T, body []byte, key string) json.RawMessage {
 	t.Helper()
 	var m map[string]json.RawMessage

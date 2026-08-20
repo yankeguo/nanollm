@@ -13,6 +13,7 @@ const (
 	defaultDetailRetain = 1000
 	formatOpenAI        = "openai"
 	formatAnthropic     = "anthropic"
+	formatResponses     = "responses"
 )
 
 type Config struct {
@@ -60,6 +61,7 @@ type Provider struct {
 	Model     string            `yaml:"model"`
 	Headers   map[string]string `yaml:"headers"`
 	OpenAI    *ProviderEndpoint `yaml:"openai"`
+	Responses *ProviderEndpoint `yaml:"responses"`
 	Anthropic *ProviderEndpoint `yaml:"anthropic"`
 	Format    string            `yaml:"format"`
 	URL       string            `yaml:"url"`
@@ -78,12 +80,16 @@ func (p Provider) endpoint(format string) *ProviderEndpoint {
 		if p.OpenAI != nil {
 			return p.OpenAI
 		}
+	case formatResponses:
+		if p.Responses != nil {
+			return p.Responses
+		}
 	case formatAnthropic:
 		if p.Anthropic != nil {
 			return p.Anthropic
 		}
 	}
-	if p.OpenAI == nil && p.Anthropic == nil && p.URL != "" {
+	if p.OpenAI == nil && p.Anthropic == nil && p.Responses == nil && p.URL != "" {
 		legacy := strings.ToLower(strings.TrimSpace(p.Format))
 		if legacy == "" {
 			legacy = formatOpenAI
@@ -207,12 +213,15 @@ func (c *Config) validate() error {
 }
 
 func (p *Provider) normalize(model string) error {
-	nested := p.OpenAI != nil || p.Anthropic != nil
+	nested := p.OpenAI != nil || p.Anthropic != nil || p.Responses != nil
 	if nested {
 		if p.URL != "" || strings.TrimSpace(p.Format) != "" {
-			return fmt.Errorf("config: model %q provider %q cannot mix top-level url/format with openai/anthropic blocks", model, p.Name)
+			return fmt.Errorf("config: model %q provider %q cannot mix top-level url/format with openai/responses/anthropic blocks", model, p.Name)
 		}
 		if err := validateEndpointURL(model, p.Name, formatOpenAI, p.OpenAI); err != nil {
+			return err
+		}
+		if err := validateEndpointURL(model, p.Name, formatResponses, p.Responses); err != nil {
 			return err
 		}
 		if err := validateEndpointURL(model, p.Name, formatAnthropic, p.Anthropic); err != nil {
@@ -227,16 +236,19 @@ func (p *Provider) normalize(model string) error {
 	if format == "" {
 		format = formatOpenAI
 	}
-	if format != formatOpenAI && format != formatAnthropic {
-		return fmt.Errorf("config: model %q provider %q format must be openai or anthropic", model, p.Name)
+	if format != formatOpenAI && format != formatAnthropic && format != formatResponses {
+		return fmt.Errorf("config: model %q provider %q format must be openai, responses, or anthropic", model, p.Name)
 	}
 	if err := validateHTTPURL(model, p.Name, "", p.URL); err != nil {
 		return err
 	}
 	ep := &ProviderEndpoint{URL: p.URL}
-	if format == formatAnthropic {
+	switch format {
+	case formatAnthropic:
 		p.Anthropic = ep
-	} else {
+	case formatResponses:
+		p.Responses = ep
+	default:
 		p.OpenAI = ep
 	}
 	p.URL = ""

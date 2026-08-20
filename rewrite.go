@@ -38,7 +38,7 @@ func rewriteRequest(body []byte, upstreamModel string, stream bool, format strin
 		}
 		raw["model"] = b
 	}
-	if stream && format != formatAnthropic {
+	if stream && format == formatOpenAI {
 		opts, err := ensureIncludeUsage(raw["stream_options"])
 		if err != nil {
 			return nil, err
