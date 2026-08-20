@@ -368,6 +368,24 @@ func inputBar(input, cache int64) template.HTML {
 		`%"></i></div><div class="sub">` + formatInt64(cache) + ` cached · ` + strconv.FormatInt(pct, 10) + `%</div>`)
 }
 
+// outputBar renders the output share of total tokens (input + output) as a
+// solid green bar matching the usage chart's output color. Same geometry as
+// inputBar but with no caption, so an adjacent right-aligned input cell and
+// left-aligned output cell read as one mirrored unit.
+func outputBar(input, output int64) template.HTML {
+	var pct int64
+	if total := input + output; total > 0 {
+		pct = output * 100 / total
+		if pct < 0 {
+			pct = 0
+		}
+		if pct > 100 {
+			pct = 100
+		}
+	}
+	return template.HTML(`<div class="outbar"><i style="width:` + strconv.FormatInt(pct, 10) + `%"></i></div>`)
+}
+
 // statusClass picks the badge color for an upstream HTTP status: green for
 // 2xx, red for anything else that got a response, muted when the provider was
 // never reached (status 0).

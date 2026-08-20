@@ -21,7 +21,7 @@
         <thead>
           <tr>
             <th>Time (UTC)</th><th>Model</th><th>Provider</th><th>API key</th>
-            <th class="num">Status</th><th class="num">In</th><th class="num">Out</th>
+            <th class="num">Status</th><th class="in">In ↓</th><th class="out">↑ Out</th>
             <th>Error</th><th>Detail</th>
           </tr>
         </thead>
@@ -33,8 +33,8 @@
             <td>{{.Provider}}</td>
             <td>{{.APIKeyName}}</td>
             <td class="num"><span class="badge {{statusClass .HTTPStatus}}">{{if eq .HTTPStatus 0}}—{{else}}{{.HTTPStatus}}{{end}}</span></td>
-            <td class="num">{{formatNum .InputTokens}}{{inputBar .InputTokens .CacheTokens}}</td>
-            <td class="num">{{formatNum .OutputTokens}}</td>
+            <td class="in">{{formatNum .InputTokens}}<span class="dir">↓</span>{{inputBar .InputTokens .CacheTokens}}</td>
+            <td class="out"><span class="dir">↑</span>{{formatNum .OutputTokens}}{{outputBar .InputTokens .OutputTokens}}</td>
             <td class="clip {{callErrorClass .HTTPStatus .Error}}"{{if .Error}} title="{{.Error}}"{{end}}>{{.Error}}</td>
             <td>{{if .HasDetail}}<a href="/admin/calls/{{.ID}}">view</a>{{else}}<span class="muted">—</span>{{end}}</td>
           </tr>

@@ -20,8 +20,8 @@
         <div><dt>Model</dt><dd>{{.Call.Model}}</dd></div>
         <div><dt>Provider</dt><dd>{{.Call.Provider}}{{if .Call.ProviderModel}} <span class="muted">→ {{.Call.ProviderModel}}</span>{{end}}</dd></div>
         <div><dt>API key</dt><dd>{{.Call.APIKeyName}}</dd></div>
-        <div><dt>Input tokens</dt><dd>{{formatNum .Call.InputTokens}}{{inputBar .Call.InputTokens .Call.CacheTokens}}</dd></div>
-        <div><dt>Output tokens</dt><dd>{{formatNum .Call.OutputTokens}}</dd></div>
+        <div><dt>Input tokens</dt><dd>{{formatNum .Call.InputTokens}}<span class="dir">↓</span>{{inputBar .Call.InputTokens .Call.CacheTokens}}</dd></div>
+        <div><dt>Output tokens</dt><dd>{{formatNum .Call.OutputTokens}}<span class="dir">↑</span>{{outputBar .Call.InputTokens .Call.OutputTokens}}</dd></div>
       </dl>
       {{if .Call.Error}}<p class="callerr {{callErrorClass .Call.HTTPStatus .Call.Error}}">{{.Call.Error}}</p>{{end}}
     </div>

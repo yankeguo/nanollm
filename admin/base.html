@@ -29,10 +29,18 @@
   .err { color:var(--err); }
   .muted { color:var(--muted); }
   .num { text-align:right !important; }
-  .inbar { height:4px; min-width:56px; margin-top:.3rem; border-radius:2px; background:var(--acc); overflow:hidden; }
-  .inbar i { display:block; height:100%; background:var(--cache); }
+  .inbar, .outbar { height:4px; min-width:56px; margin-top:.3rem; border-radius:2px; overflow:hidden; }
+  .inbar { background:var(--acc); }
+  .outbar { background:var(--line); }
+  .inbar i, .outbar i { display:block; height:100%; }
+  .inbar i { background:var(--cache); }
+  .outbar i { background:var(--ok); }
   .sub { margin-top:.2rem; font-size:.75rem; color:var(--muted); }
-  td.num .inbar { width:64px; margin-left:auto; }
+  .dir { color:var(--muted); font-size:.85em; padding:0 .15em; }
+  th.in, td.in { text-align:right; }
+  th.out, td.out { text-align:left; }
+  td.in .inbar { width:64px; margin-left:auto; }
+  td.out .outbar { width:64px; }
   button, .btn { background:var(--acc); color:#0f1419; border:0; border-radius:8px; padding:.45rem .9rem; font-weight:600; cursor:pointer; }
   body.login { min-height:100vh; display:flex; align-items:center; justify-content:center; }
   form.card { width:min(360px,92vw); background:var(--card); border:1px solid var(--line); border-radius:12px; padding:1.5rem; display:flex; flex-direction:column; gap:.75rem; }
