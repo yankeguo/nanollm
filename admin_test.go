@@ -168,7 +168,8 @@ func TestAdminSecurityHeaders(t *testing.T) {
 	require.Equal(t, "DENY", rec.Header().Get("X-Frame-Options"))
 	require.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 	require.Contains(t, rec.Header().Get("Content-Security-Policy"), "cdn.jsdelivr.net")
-	require.Contains(t, rec.Header().Get("Content-Security-Policy"), "connect-src 'self' https://api.iconify.design")
+	require.Contains(t, rec.Header().Get("Content-Security-Policy"), "connect-src 'self'")
+	require.Contains(t, rec.Header().Get("Content-Security-Policy"), "font-src https://cdn.jsdelivr.net")
 }
 
 func TestAdminTrailingSlashRedirect(t *testing.T) {

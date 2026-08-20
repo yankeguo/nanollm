@@ -9,7 +9,7 @@
 <body>
   {{template "nav" .}}
   <main class="container-xxl py-4">
-    <p><a href="{{or .CallsURL "/admin/calls"}}"><span class="iconify" data-icon="lucide:arrow-left"></span> Calls</a></p>
+    <p><a href="{{or .CallsURL "/admin/calls"}}"><i class="bi bi-arrow-left"></i> Calls</a></p>
     <div class="card mb-4"><div class="card-body">
       <div class="d-flex align-items-center gap-3 mb-3">
         <h2 class="h5 mb-0">Call #{{.Call.ID}}</h2>
@@ -20,8 +20,8 @@
         <div class="col"><dt class="text-secondary small">Model</dt><dd class="mb-0">{{.Call.Model}}</dd></div>
         <div class="col"><dt class="text-secondary small">Provider</dt><dd class="mb-0">{{.Call.Provider}}{{if .Call.ProviderModel}} <span class="text-secondary">→ {{.Call.ProviderModel}}</span>{{end}}</dd></div>
         <div class="col"><dt class="text-secondary small">API key</dt><dd class="mb-0">{{.Call.APIKeyName}}</dd></div>
-        <div class="col"><dt class="text-secondary small">Input tokens</dt><dd class="mb-0 tnum">{{formatNum .Call.InputTokens}}<span class="iconify dir" data-icon="lucide:arrow-down"></span>{{inputBar .Call.InputTokens .Call.CacheTokens}}</dd></div>
-        <div class="col"><dt class="text-secondary small">Output tokens</dt><dd class="mb-0 tnum">{{formatNum .Call.OutputTokens}}<span class="iconify dir" data-icon="lucide:arrow-up"></span>{{outputBar .Call.InputTokens .Call.OutputTokens}}</dd></div>
+        <div class="col"><dt class="text-secondary small">Input tokens</dt><dd class="mb-0 tnum">{{formatNum .Call.InputTokens}}<i class="bi bi-arrow-down dir"></i>{{inputBar .Call.InputTokens .Call.CacheTokens}}</dd></div>
+        <div class="col"><dt class="text-secondary small">Output tokens</dt><dd class="mb-0 tnum">{{formatNum .Call.OutputTokens}}<i class="bi bi-arrow-up dir"></i>{{outputBar .Call.InputTokens .Call.OutputTokens}}</dd></div>
       </dl>
       {{if .Call.Error}}<p class="border rounded p-2 mt-3 mb-0 text-break {{callErrorClass .Call.HTTPStatus .Call.Error}}">{{.Call.Error}}</p>{{end}}
     </div></div>

@@ -1,15 +1,14 @@
 {{define "head"}}
-<script defer src="https://cdn.jsdelivr.net/npm/@iconify/iconify@3.1.1/dist/iconify.min.js"
-  integrity="sha384-Ok2uDHnWhbSMsjjXrs20mYHBe3BLztRYQuPMBhyLnjPNH7OqWdv/c8Bmv54yhfKR"
-  crossorigin="anonymous"></script>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet"
   integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB"
+  crossorigin="anonymous">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" rel="stylesheet"
+  integrity="sha384-CK2SzKma4jA5H/MXDUU7i1TqZlCFaD4T01vtyDFvPlD97JQyS+IsSh1nI2EFbpyk"
   crossorigin="anonymous">
 <script defer src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
   integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI"
   crossorigin="anonymous"></script>
 <style>
-  .iconify { vertical-align:-0.125em; }
   .tnum { font-variant-numeric:tabular-nums; }
   .dir { color:var(--bs-secondary-color); font-size:.85em; padding:0 .15em; }
   .inbar, .outbar { height:4px; width:64px; margin-top:.3rem; border-radius:2px; overflow:hidden; }
@@ -27,10 +26,10 @@
 {{define "nav"}}
 <header class="navbar border-bottom">
   <div class="container-fluid column-gap-3">
-    <span class="navbar-brand mb-0 h1"><span class="iconify" data-icon="lucide:zap"></span> nanollm</span>
+    <span class="navbar-brand mb-0 h1"><i class="bi bi-lightning-charge-fill"></i> nanollm</span>
     <ul class="navbar-nav flex-row gap-3 me-auto">
-      <li class="nav-item"><a class="nav-link{{if eq .Nav "usage"}} active{{end}}" href="{{or .UsageURL "/admin"}}"><span class="iconify" data-icon="lucide:activity"></span> Usage</a></li>
-      <li class="nav-item"><a class="nav-link{{if eq .Nav "calls"}} active{{end}}" href="{{or .CallsURL "/admin/calls"}}"><span class="iconify" data-icon="lucide:list"></span> Calls</a></li>
+      <li class="nav-item"><a class="nav-link{{if eq .Nav "usage"}} active{{end}}" href="{{or .UsageURL "/admin"}}"><i class="bi bi-activity"></i> Usage</a></li>
+      <li class="nav-item"><a class="nav-link{{if eq .Nav "calls"}} active{{end}}" href="{{or .CallsURL "/admin/calls"}}"><i class="bi bi-list-ul"></i> Calls</a></li>
     </ul>
     {{if .FilterAction}}
     <form class="rangefilter d-flex flex-wrap align-items-center gap-2" method="get" action="{{.FilterAction}}">
@@ -38,7 +37,7 @@
       {{if .Filter.Provider}}<input type="hidden" name="provider" value="{{.Filter.Provider}}">{{end}}
       {{if .Filter.APIKey}}<input type="hidden" name="api_key" value="{{.Filter.APIKey}}">{{end}}
       {{if .Filter.Outcome}}<input type="hidden" name="outcome" value="{{.Filter.Outcome}}">{{end}}
-      <span class="iconify text-secondary" data-icon="lucide:calendar"></span>
+      <i class="bi bi-calendar3 text-secondary"></i>
       <select name="range" class="form-select form-select-sm w-auto" title="Time range">
         {{range .RangeOpts}}<option value="{{.Value}}"{{if .On}} selected{{end}}>{{.Label}}</option>{{end}}
       </select>
@@ -47,10 +46,10 @@
       <select name="tz" class="form-select form-select-sm w-auto" title="Timezone for the custom range"{{if .TZExplicit}} data-explicit="1"{{end}}>
         <option value="{{.TZone}}" selected>{{.TZone}}</option>
       </select>
-      <button type="submit" class="btn btn-sm btn-primary" title="Apply range"><span class="iconify" data-icon="lucide:check"></span> Apply</button>
+      <button type="submit" class="btn btn-sm btn-primary" title="Apply range"><i class="bi bi-check-lg"></i> Apply</button>
     </form>
     {{end}}
-    <form method="post" action="/admin/logout"><button type="submit" class="btn btn-sm btn-outline-secondary"><span class="iconify" data-icon="lucide:log-out"></span> Sign out</button></form>
+    <form method="post" action="/admin/logout"><button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-box-arrow-right"></i> Sign out</button></form>
   </div>
 </header>
 {{end}}
@@ -63,7 +62,7 @@
       {{if .TZExplicit}}<input type="hidden" name="tz" value="{{.TZone}}">{{end}}
       {{if and (eq .Filter.Range "custom") .FromRFC}}<input type="hidden" name="from" value="{{.FromRFC}}">{{end}}
       {{if and (eq .Filter.Range "custom") .ToRFC}}<input type="hidden" name="to" value="{{.ToRFC}}">{{end}}
-      <span class="text-secondary small text-uppercase fw-semibold"><span class="iconify" data-icon="lucide:filter"></span> Filter</span>
+      <span class="text-secondary small text-uppercase fw-semibold"><i class="bi bi-funnel"></i> Filter</span>
       <label class="d-flex align-items-center gap-2 text-secondary small">Model
         <select name="model" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
           <option value="">Any</option>
@@ -91,11 +90,11 @@
           <option value="no_response"{{if eq .Filter.Outcome "no_response"}} selected{{end}}>no response</option>
         </select>
       </label>
-      <button type="submit" class="btn btn-sm btn-primary"><span class="iconify" data-icon="lucide:check"></span> Apply</button>
+      <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg"></i> Apply</button>
     </form>
     {{if .ActiveChips}}
     <div class="d-flex flex-wrap gap-2">
-      {{range .ActiveChips}}<a class="btn btn-sm btn-outline-secondary text-decoration-none" href="{{.URL}}">{{.Label}} <span class="iconify" data-icon="lucide:x"></span></a>{{end}}
+      {{range .ActiveChips}}<a class="btn btn-sm btn-outline-secondary text-decoration-none" href="{{.URL}}">{{.Label}} <i class="bi bi-x-lg"></i></a>{{end}}
     </div>
     {{end}}
   </div>

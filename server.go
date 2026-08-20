@@ -75,9 +75,10 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 			h.Set("Content-Security-Policy", strings.Join([]string{
 				"default-src 'none'",
 				"script-src https://cdn.jsdelivr.net 'unsafe-inline'",
-				"style-src 'unsafe-inline'",
+				"style-src https://cdn.jsdelivr.net 'unsafe-inline'",
+				"font-src https://cdn.jsdelivr.net",
 				"img-src 'self' data:",
-				"connect-src 'self' https://api.iconify.design https://api.simplesvg.com https://api.unisvg.com",
+				"connect-src 'self'",
 				"form-action 'self'",
 				"base-uri 'none'",
 				"frame-ancestors 'none'",

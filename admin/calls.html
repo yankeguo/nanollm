@@ -16,7 +16,7 @@
         <thead>
           <tr>
             <th>Time (<span data-tz>UTC</span>)</th><th>Model</th><th>Provider</th><th>API key</th>
-            <th class="text-end">Status</th><th class="text-end">In <span class="iconify" data-icon="lucide:arrow-down"></span></th><th><span class="iconify" data-icon="lucide:arrow-up"></span> Out</th>
+            <th class="text-end">Status</th><th class="text-end">In <i class="bi bi-arrow-down"></i></th><th><i class="bi bi-arrow-up"></i> Out</th>
             <th>Detail</th>
           </tr>
         </thead>
@@ -27,10 +27,10 @@
             <td>{{.Model}}</td>
             <td>{{.Provider}}</td>
             <td>{{.APIKeyName}}</td>
-            <td class="text-end"><span class="badge {{statusClass .HTTPStatus}}">{{if eq .HTTPStatus 0}}—{{else}}{{.HTTPStatus}}{{end}}</span>{{if .Error}} <span class="iconify {{callErrorClass .HTTPStatus .Error}}" data-icon="lucide:alert-triangle" title="{{.Error}}"></span>{{end}}</td>
-            <td class="text-end">{{formatNum .InputTokens}}<span class="iconify dir" data-icon="lucide:arrow-down"></span>{{inputBar .InputTokens .CacheTokens}}</td>
-            <td><span class="iconify dir" data-icon="lucide:arrow-up"></span>{{formatNum .OutputTokens}}{{outputBar .InputTokens .OutputTokens}}</td>
-            <td>{{if .HasDetail}}<a href="/admin/calls/{{.ID}}{{if $.ListQuery}}?{{$.ListQuery}}{{end}}"><span class="iconify" data-icon="lucide:eye"></span> view</a>{{else}}<span class="text-secondary">—</span>{{end}}</td>
+            <td class="text-end"><span class="badge {{statusClass .HTTPStatus}}">{{if eq .HTTPStatus 0}}—{{else}}{{.HTTPStatus}}{{end}}</span>{{if .Error}} <i class="bi bi-exclamation-triangle {{callErrorClass .HTTPStatus .Error}}" title="{{.Error}}"></i>{{end}}</td>
+            <td class="text-end">{{formatNum .InputTokens}}<i class="bi bi-arrow-down dir"></i>{{inputBar .InputTokens .CacheTokens}}</td>
+            <td><i class="bi bi-arrow-up dir"></i>{{formatNum .OutputTokens}}{{outputBar .InputTokens .OutputTokens}}</td>
+            <td>{{if .HasDetail}}<a href="/admin/calls/{{.ID}}{{if $.ListQuery}}?{{$.ListQuery}}{{end}}"><i class="bi bi-eye"></i> view</a>{{else}}<span class="text-secondary">—</span>{{end}}</td>
           </tr>
         {{else}}
           <tr><td colspan="8" class="text-secondary">No calls</td></tr>
@@ -38,8 +38,8 @@
         </tbody>
       </table>
       <div class="d-flex">
-        {{if .Prev}}<a class="btn btn-sm btn-outline-secondary" href="{{.Prev}}"><span class="iconify" data-icon="lucide:chevron-left"></span> Newer</a>{{end}}
-        {{if .Next}}<a class="btn btn-sm btn-outline-secondary ms-auto" href="{{.Next}}">Older <span class="iconify" data-icon="lucide:chevron-right"></span></a>{{end}}
+        {{if .Prev}}<a class="btn btn-sm btn-outline-secondary" href="{{.Prev}}"><i class="bi bi-chevron-left"></i> Newer</a>{{end}}
+        {{if .Next}}<a class="btn btn-sm btn-outline-secondary ms-auto" href="{{.Next}}">Older <i class="bi bi-chevron-right"></i></a>{{end}}
       </div>
     </div></div>
   </main>
