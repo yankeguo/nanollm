@@ -14,7 +14,7 @@ Single `package main`. No `internal/` split unless the tree clearly outgrows one
 | `config.go` | YAML load/validate |
 | `auth.go` | Incoming API keys; do not forward client credentials |
 | `server.go` | `net/http` mux (`GET /healthz` unauthenticated) |
-| `admin.go` / `admin_auth.go` | Admin cookie login, usage dashboard, call viewer. Usage and Calls share GET filters: `range`/`from`/`to`, `model`, `provider`, `api_key`, `outcome` (from `http_status`/`error`). Usage windows are always bounded (custom max 366d). |
+| `admin.go` / `admin_auth.go` | Admin cookie login, usage dashboard, call viewer. Usage and Calls share GET filters: `range`/`from`/`to`, `model`, `provider`, `api_key`, `outcome` (from `http_status`/`error`; the four outcomes partition `llm_calls`: ok / canceled / no_response / error). Usage windows are always bounded (custom max 366d); an hour bucket over a span > 31d coerces to day. |
 | `admin/*.html` | Embedded HTML for `/admin` |
 | `proxy.go` | Body rewrite, ordered provider attempts, response copy, call logging |
 | `failover.go` | `isCatastrophic` — only then try the next provider |

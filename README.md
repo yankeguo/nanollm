@@ -189,7 +189,7 @@ Periodically (every 50 inserts), blobs older than the latest `mysql.detail_retai
 
 Insert/prune errors are logged and do not change the client response.
 
-Browse the same data at `/admin` after signing in with `admin.username` / `admin.password`. Usage and Calls share a time window (presets, a custom range, or all-time on Calls) and combinable filters for model, provider, API key, and outcome. Usage can be grouped by hour, day, week, or month.
+Browse the same data at `/admin` after signing in with `admin.username` / `admin.password`. Usage and Calls share a time window (presets, a custom range, or all-time on Calls) and combinable filters for model, provider, API key, and outcome (`ok` / `canceled` / `no_response` / `error`, partitioning every recorded call). Usage can be grouped by hour, day, week, or month; an hour bucket over a span longer than 31 days is automatically grouped by day instead.
 
 ## Docker / GHCR
 

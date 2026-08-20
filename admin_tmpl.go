@@ -16,5 +16,4 @@ var adminTmpl = template.Must(template.New("").Funcs(template.FuncMap{
 	"statusClass":    statusClass,
 	"setFilter":      setFilter,
 	"filterPath":     filterPath,
-	"filterQuery":    filterQuery,
 }).ParseFS(adminFS, "admin/*.html"))

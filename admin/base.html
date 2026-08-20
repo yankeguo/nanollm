@@ -131,7 +131,7 @@
     <button type="submit"><span class="iconify" data-icon="lucide:check"></span> Apply</button>
   </form>
   <form class="fform dim-filter" method="get" action="{{.FilterAction}}">
-    {{if and (ne .Filter.Range "") (not (and (eq .Kind "usage") (eq .Filter.Range "7d"))) (not (and (eq .Kind "calls") (eq .Filter.Range "all")))}}<input type="hidden" name="range" value="{{.Filter.Range}}">{{end}}
+    {{if .RangeParam}}<input type="hidden" name="range" value="{{.RangeParam}}">{{end}}
     {{if .ShowBuckets}}<input type="hidden" name="bucket" value="{{.Filter.Bucket}}">{{end}}
     {{if and (eq .Filter.Range "custom") .FromRFC}}<input type="hidden" name="from" value="{{.FromRFC}}">{{end}}
     {{if and (eq .Filter.Range "custom") .ToRFC}}<input type="hidden" name="to" value="{{.ToRFC}}">{{end}}

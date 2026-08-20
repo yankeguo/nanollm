@@ -150,7 +150,19 @@ func parseAdminFilter(q url.Values, now time.Time, kind string) adminFilter {
 		f.Bounded = true
 		f.From, f.To = presetWindow(rng, now)
 	}
+	if f.Bounded {
+		f.Bucket = coerceAdminBucket(f.Bucket, f.From, f.To)
+	}
 	return f
+}
+
+// coerceAdminBucket keeps chart point counts sane: hour buckets over spans
+// longer than a month explode into thousands of points, so bump them to days.
+func coerceAdminBucket(bucket string, from, to time.Time) string {
+	if bucket == "hour" && to.Sub(from) > 31*24*time.Hour {
+		return "day"
+	}
+	return bucket
 }
 
 func parseAdminFilterFallback(q url.Values, now time.Time, kind string, f adminFilter) adminFilter {
@@ -322,10 +334,6 @@ func filterPath(kind string, f adminFilter) string {
 	return f.path(kind, adminKindPath(kind))
 }
 
-func filterQuery(kind string, f adminFilter) string {
-	return f.values(kind).Encode()
-}
-
 func (f adminFilter) forUsage() adminFilter {
 	g := f
 	if g.Range == "all" || g.Range == "" {
@@ -338,10 +346,6 @@ func (f adminFilter) forUsage() adminFilter {
 		}
 	}
 	return g
-}
-
-func (f adminFilter) forCalls() adminFilter {
-	return f
 }
 
 func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
@@ -503,7 +507,13 @@ func (s *Server) handleAdminCalls(w http.ResponseWriter, r *http.Request) {
 	data["Total"] = total
 	data["Prev"] = prev
 	data["Next"] = next
-	data["ListQuery"] = filterQuery("calls", f)
+	lv := f.values("calls")
+	if page > 1 {
+		lv.Set("page", strconv.Itoa(page))
+	}
+	// template.URL: embedded in an href, a plain string gets percent-escaped
+	// by html/template, which would break multi-param links.
+	data["ListQuery"] = template.URL(lv.Encode())
 	mergeFilterView(data, f, "calls", opts)
 	s.renderAdmin(w, "calls.html", data)
 }
@@ -529,13 +539,20 @@ func (s *Server) handleAdminCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f := parseAdminFilter(r.URL.Query(), time.Now().UTC(), "calls")
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	if page > maxAdminPage {
+		page = maxAdminPage
+	}
 	data := adminNavData("calls", f)
 	data["Filter"] = f
 	data["Kind"] = "calls"
 	data["Call"] = call
 	data["RequestPretty"] = prettyJSON(call.RequestJSON)
 	data["ResponsePretty"] = prettyJSON(call.ResponseJSON)
-	data["CallsURL"] = f.forCalls().path("calls", "/admin/calls")
+	data["CallsURL"] = pagerURL(f, page)
 	s.renderAdmin(w, "detail.html", data)
 }
 
@@ -544,7 +561,7 @@ func adminNavData(nav string, f adminFilter) map[string]any {
 		"Nav":      nav,
 		"Filter":   f,
 		"UsageURL": f.forUsage().path("usage", "/admin"),
-		"CallsURL": f.forCalls().path("calls", "/admin/calls"),
+		"CallsURL": f.path("calls", "/admin/calls"),
 	}
 }
 
@@ -605,6 +622,13 @@ func mergeFilterView(data map[string]any, f adminFilter, kind string, opts filte
 	data["KeyOpts"] = mergeOption(opts.Keys, f.APIKey)
 	data["Custom"] = f.Range == "custom"
 	data["HasWindow"] = f.Bounded
+	// RangeParam mirrors values(): omit the range hidden input when it is the
+	// kind's default so the dim-filter form does not pin it explicitly.
+	rangeParam := f.Range
+	if rangeParam == "" || (kind == "usage" && rangeParam == "7d") || (kind == "calls" && rangeParam == "all") {
+		rangeParam = ""
+	}
+	data["RangeParam"] = rangeParam
 	if f.Bounded {
 		data["FromLocal"] = f.From.UTC().Format("2006-01-02T15:04")
 		data["ToLocal"] = f.To.UTC().Format("2006-01-02T15:04")
@@ -779,6 +803,11 @@ func commaDigits(s string) string {
 	return b.String()
 }
 
+// outcomeSQL maps an outcome filter to a WHERE clause. The four outcomes
+// partition llm_calls: ok (2xx, no error), canceled (client disconnected
+// after the response started), no_response (no HTTP status ever arrived,
+// e.g. transport failure or pre-response cancel), error (anything else with
+// an HTTP status: 4xx/5xx, rewrite failures, mid-stream copy errors).
 func outcomeSQL(outcome string) (string, []any) {
 	switch outcome {
 	case "ok":
@@ -786,9 +815,9 @@ func outcomeSQL(outcome string) (string, []any) {
 	case "canceled":
 		return "error = ?", []any{errCanceled}
 	case "no_response":
-		return "http_status = ?", []any{0}
+		return "http_status = ? AND (error = '' OR error IS NULL OR error != ?)", []any{0, errCanceled}
 	case "error":
-		return "(error != '' AND error IS NOT NULL AND error != ?) OR (http_status != 0 AND (http_status < 200 OR http_status >= 300))", []any{errCanceled}
+		return "http_status != ? AND ((http_status < ? OR http_status >= ?) OR (error != '' AND error IS NOT NULL AND error != ?))", []any{0, 200, 300, errCanceled}
 	default:
 		return "", nil
 	}

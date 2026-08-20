@@ -42,8 +42,10 @@
           <tr>
             <td>
               <div class="namecell">
+                {{if .Name}}
                 <a href="{{filterPath "usage" (setFilter $.Filter $param .Name)}}">{{.Name}}</a>
                 <a class="listlink" href="{{filterPath "calls" (setFilter $.Filter $param .Name)}}">list</a>
+                {{else}}<span class="muted">(empty)</span>{{end}}
               </div>
             </td>
             <td class="num">{{formatNum .Calls}}</td>

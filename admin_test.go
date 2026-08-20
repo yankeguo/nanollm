@@ -292,6 +292,28 @@ func TestParseAdminFilterCallsAll(t *testing.T) {
 	require.Equal(t, now.Add(-7*24*time.Hour), f.From)
 }
 
+func TestParseAdminFilterBucketCoercion(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	// hour over spans longer than a month is bumped to day
+	f := parseAdminFilter(url.Values{"range": []string{"90d"}, "bucket": []string{"hour"}}, now, "usage")
+	require.Equal(t, "day", f.Bucket)
+	// hour stays for shorter spans
+	f = parseAdminFilter(url.Values{"range": []string{"7d"}, "bucket": []string{"hour"}}, now, "usage")
+	require.Equal(t, "hour", f.Bucket)
+	// long custom range with hour bucket
+	f = parseAdminFilter(url.Values{
+		"range":  []string{"custom"},
+		"from":   []string{now.Add(-60 * 24 * time.Hour).Format(time.RFC3339)},
+		"to":     []string{now.Format(time.RFC3339)},
+		"bucket": []string{"hour"},
+	}, now, "usage")
+	require.Equal(t, "custom", f.Range)
+	require.Equal(t, "day", f.Bucket)
+	// other buckets are untouched
+	f = parseAdminFilter(url.Values{"range": []string{"90d"}, "bucket": []string{"month"}}, now, "usage")
+	require.Equal(t, "month", f.Bucket)
+}
+
 func TestAdminFilterRoundTrip(t *testing.T) {
 	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
 	from := time.Date(2026, 7, 1, 8, 30, 0, 0, time.UTC)
@@ -360,11 +382,13 @@ func TestOutcomeSQL(t *testing.T) {
 	require.Equal(t, "error = ?", clause)
 	require.Equal(t, []any{errCanceled}, args)
 	clause, args = outcomeSQL("no_response")
-	require.Equal(t, "http_status = ?", clause)
-	require.Equal(t, []any{0}, args)
-	clause, args = outcomeSQL("error")
+	require.Contains(t, clause, "http_status = ?")
 	require.Contains(t, clause, "error != ?")
-	require.Equal(t, []any{errCanceled}, args)
+	require.Equal(t, []any{0, errCanceled}, args)
+	clause, args = outcomeSQL("error")
+	require.Contains(t, clause, "http_status != ?")
+	require.Contains(t, clause, "error != ?")
+	require.Equal(t, []any{0, 200, 300, errCanceled}, args)
 	clause, args = outcomeSQL("")
 	require.Empty(t, clause)
 	require.Nil(t, args)
@@ -475,12 +499,15 @@ func TestAdminTemplatesRender(t *testing.T) {
 	cdata := adminNavData("calls", cf)
 	cdata["Kind"] = "calls"
 	cdata["FilterAction"] = "/admin/calls"
-	cdata["Rows"] = []callListRow{}
+	cdata["Rows"] = []callListRow{{ID: 7, Model: "fast", HasDetail: true}}
 	cdata["Total"] = int64(0)
-	cdata["ListQuery"] = filterQuery("calls", cf)
+	lv := cf.values("calls")
+	lv.Set("page", "2")
+	cdata["ListQuery"] = template.URL(lv.Encode())
 	mergeFilterView(cdata, cf, "calls", filterOptions{Models: []string{"fast"}})
 	buf.Reset()
 	require.NoError(t, adminTmpl.ExecuteTemplate(&buf, "calls.html", cdata))
 	require.Contains(t, buf.String(), `name="model"`)
 	require.Contains(t, buf.String(), "all")
+	require.Contains(t, buf.String(), `/admin/calls/7?model=fast&amp;page=2`)
 }
