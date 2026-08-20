@@ -364,6 +364,20 @@ func inputBar(input, cache int64) template.HTML {
 		`%"></i></div><div class="sub">` + formatInt64(cache) + ` cached · ` + strconv.FormatInt(pct, 10) + `%</div>`)
 }
 
+// statusClass picks the badge color for an upstream HTTP status: green for
+// 2xx, red for anything else that got a response, muted when the provider was
+// never reached (status 0).
+func statusClass(status int) string {
+	switch {
+	case status == 0:
+		return "muted"
+	case status >= 200 && status < 300:
+		return "ok"
+	default:
+		return "err"
+	}
+}
+
 func callErrorClass(status int, err string) string {
 	if err == "" {
 		return ""

@@ -10,18 +10,21 @@
   {{template "nav" .}}
   <div class="wrap">
     <p><a href="/admin/calls">← Calls</a></p>
-    <div class="stats">
-      <div class="stat"><span>ID</span><b>{{.Call.ID}}</b></div>
-      <div class="stat"><span>Time UTC</span><b>{{.Call.CreatedAt.UTC.Format "2006-01-02 15:04:05"}}</b></div>
-      <div class="stat"><span>Model</span><b>{{.Call.Model}}</b></div>
-      <div class="stat"><span>Provider</span><b>{{.Call.Provider}}</b></div>
-      <div class="stat"><span>Upstream</span><b>{{.Call.ProviderModel}}</b></div>
-      <div class="stat"><span>API key</span><b>{{.Call.APIKeyName}}</b></div>
-      <div class="stat"><span>Status</span><b>{{if eq .Call.HTTPStatus 0}}—{{else}}{{.Call.HTTPStatus}}{{end}}</b></div>
-      <div class="stat"><span>Output</span><b>{{formatNum .Call.OutputTokens}}</b></div>
-      <div class="stat"><span>Input</span><b>{{formatNum .Call.InputTokens}}</b>{{inputBar .Call.InputTokens .Call.CacheTokens}}</div>
+    <div class="panel" style="margin-bottom:1rem">
+      <div class="callhead">
+        <h2>Call #{{.Call.ID}}</h2>
+        <span class="badge {{statusClass .Call.HTTPStatus}}">{{if eq .Call.HTTPStatus 0}}no response{{else}}{{.Call.HTTPStatus}}{{end}}</span>
+      </div>
+      <dl class="meta">
+        <div><dt>Time (UTC)</dt><dd>{{.Call.CreatedAt.UTC.Format "2006-01-02 15:04:05"}}</dd></div>
+        <div><dt>Model</dt><dd>{{.Call.Model}}</dd></div>
+        <div><dt>Provider</dt><dd>{{.Call.Provider}}{{if .Call.ProviderModel}} <span class="muted">→ {{.Call.ProviderModel}}</span>{{end}}</dd></div>
+        <div><dt>API key</dt><dd>{{.Call.APIKeyName}}</dd></div>
+        <div><dt>Input tokens</dt><dd>{{formatNum .Call.InputTokens}}{{inputBar .Call.InputTokens .Call.CacheTokens}}</dd></div>
+        <div><dt>Output tokens</dt><dd>{{formatNum .Call.OutputTokens}}</dd></div>
+      </dl>
+      {{if .Call.Error}}<p class="callerr {{callErrorClass .Call.HTTPStatus .Call.Error}}">{{.Call.Error}}</p>{{end}}
     </div>
-    {{if .Call.Error}}<p class="{{callErrorClass .Call.HTTPStatus .Call.Error}}">{{.Call.Error}}</p>{{end}}
     <div class="panel" style="margin-bottom:1rem">
       <h2>Request JSON</h2>
       {{if .RequestPretty}}<pre>{{.RequestPretty}}</pre>{{else}}<p class="muted">detail not retained</p>{{end}}

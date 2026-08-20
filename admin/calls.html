@@ -32,10 +32,10 @@
             <td>{{.Model}}</td>
             <td>{{.Provider}}</td>
             <td>{{.APIKeyName}}</td>
-            <td class="num">{{if eq .HTTPStatus 0}}—{{else}}{{.HTTPStatus}}{{end}}</td>
+            <td class="num"><span class="badge {{statusClass .HTTPStatus}}">{{if eq .HTTPStatus 0}}—{{else}}{{.HTTPStatus}}{{end}}</span></td>
             <td class="num">{{formatNum .InputTokens}}{{inputBar .InputTokens .CacheTokens}}</td>
             <td class="num">{{formatNum .OutputTokens}}</td>
-            <td class="{{callErrorClass .HTTPStatus .Error}}">{{.Error}}</td>
+            <td class="clip {{callErrorClass .HTTPStatus .Error}}"{{if .Error}} title="{{.Error}}"{{end}}>{{.Error}}</td>
             <td>{{if .HasDetail}}<a href="/admin/calls/{{.ID}}">view</a>{{else}}<span class="muted">—</span>{{end}}</td>
           </tr>
         {{else}}

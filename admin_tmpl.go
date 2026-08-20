@@ -12,4 +12,5 @@ var adminTmpl = template.Must(template.New("").Funcs(template.FuncMap{
 	"formatNum":      formatNum,
 	"inputBar":       inputBar,
 	"callErrorClass": callErrorClass,
+	"statusClass":    statusClass,
 }).ParseFS(adminFS, "admin/*.html"))

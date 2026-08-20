@@ -29,26 +29,21 @@
       <div class="panel"><h2>Tokens by period</h2><canvas id="tokensChart"></canvas></div>
       <div class="panel"><h2>Calls by period</h2><canvas id="callsChart"></canvas></div>
     </div>
-    <div class="panel" style="margin-bottom:1rem">
-      <h2>Time series (UTC)</h2>
+    <div class="panel">
+      <h2>Details</h2>
       <table>
-        <thead><tr><th>Bucket</th><th class="num">Calls</th><th class="num">Input</th><th class="num">Output</th></tr></thead>
+        <colgroup><col><col class="w-calls"><col class="w-in"><col class="w-out"></colgroup>
+        <thead><tr><th>Bucket / Name</th><th class="num">Calls</th><th class="num">Input</th><th class="num">Output</th></tr></thead>
         <tbody>
+        <tr class="sect"><td colspan="4">Time series (UTC)</td></tr>
         {{range .Series}}<tr><td>{{.Bucket}}</td><td class="num">{{formatNum .Calls}}</td><td class="num">{{formatNum .Input}}{{inputBar .Input .Cache}}</td><td class="num">{{formatNum .Output}}</td></tr>{{else}}<tr><td colspan="4" class="muted">No calls in this window</td></tr>{{end}}
-        </tbody>
-      </table>
-    </div>
-    {{range .Breakdowns}}
-    <div class="panel" style="margin-bottom:1rem">
-      <h2>By {{.Title}}</h2>
-      <table>
-        <thead><tr><th>{{.Title}}</th><th class="num">Calls</th><th class="num">Input</th><th class="num">Output</th></tr></thead>
-        <tbody>
+        {{range .Breakdowns}}
+        <tr class="sect"><td colspan="4">By {{.Title}}</td></tr>
         {{range .Rows}}<tr><td>{{.Name}}</td><td class="num">{{formatNum .Calls}}</td><td class="num">{{formatNum .Input}}{{inputBar .Input .Cache}}</td><td class="num">{{formatNum .Output}}</td></tr>{{else}}<tr><td colspan="4" class="muted">None</td></tr>{{end}}
+        {{end}}
         </tbody>
       </table>
     </div>
-    {{end}}
   </div>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
   <script>
