@@ -72,6 +72,7 @@ type adminFilter struct {
 	From     time.Time
 	To       time.Time
 	Bounded  bool
+	TZ       string
 	Model    string
 	Provider string
 	APIKey   string
@@ -81,6 +82,12 @@ type adminFilter struct {
 type filterChip struct {
 	Label string
 	URL   string
+	On    bool
+}
+
+type selectOption struct {
+	Value string
+	Label string
 	On    bool
 }
 
@@ -117,6 +124,12 @@ func parseAdminFilter(q url.Values, now time.Time, kind string) adminFilter {
 		APIKey:   strings.TrimSpace(q.Get("api_key")),
 		Outcome:  parseOutcome(q.Get("outcome")),
 	}
+	if tz := strings.TrimSpace(q.Get("tz")); tz != "" {
+		if loc, err := time.LoadLocation(tz); err == nil {
+			f.TZ = loc.String()
+		}
+	}
+	loc := f.tzLoc()
 	rng := q.Get("range")
 	if kind == "calls" {
 		switch rng {
@@ -132,16 +145,22 @@ func parseAdminFilter(q url.Values, now time.Time, kind string) adminFilter {
 		}
 	}
 	f.Range = rng
-	f.Bucket = parseAdminBucket(q.Get("bucket"), rng)
 
 	switch rng {
 	case "all":
-		f.Bounded = false
+		// unbounded
 	case "custom":
-		from, okFrom := parseAdminTime(q.Get("from"))
-		to, okTo := parseAdminTime(q.Get("to"))
+		from, okFrom := parseAdminTime(q.Get("from"), loc)
+		to, okTo := parseAdminTime(q.Get("to"), loc)
 		if !okFrom || !okTo || !to.After(from) || (kind == "usage" && to.Sub(from) > maxAdminUsageRange) {
-			return parseAdminFilterFallback(q, now, kind, f)
+			if kind == "calls" {
+				f.Range = "all"
+			} else {
+				f.Range = "7d"
+				f.Bounded = true
+				f.From, f.To = presetWindow("7d", now)
+			}
+			break
 		}
 		f.Bounded = true
 		f.From = from
@@ -151,34 +170,32 @@ func parseAdminFilter(q url.Values, now time.Time, kind string) adminFilter {
 		f.From, f.To = presetWindow(rng, now)
 	}
 	if f.Bounded {
-		f.Bucket = coerceAdminBucket(f.Bucket, f.From, f.To)
+		f.Bucket = deriveAdminBucket(f.From, f.To)
 	}
 	return f
 }
 
-// coerceAdminBucket keeps chart point counts sane: hour buckets over spans
-// longer than a month explode into thousands of points, so bump them to days.
-func coerceAdminBucket(bucket string, from, to time.Time) string {
-	if bucket == "hour" && to.Sub(from) > 31*24*time.Hour {
+// tzLoc resolves the filter's display timezone, defaulting to UTC.
+func (f adminFilter) tzLoc() *time.Location {
+	if f.TZ != "" {
+		if loc, err := time.LoadLocation(f.TZ); err == nil {
+			return loc
+		}
+	}
+	return time.UTC
+}
+
+// deriveAdminBucket picks the bucket granularity from the window span; users
+// no longer choose it. Short windows get hours, medium days, long weeks.
+func deriveAdminBucket(from, to time.Time) string {
+	switch span := to.Sub(from); {
+	case span <= 48*time.Hour:
+		return "hour"
+	case span <= 62*24*time.Hour:
 		return "day"
+	default:
+		return "week"
 	}
-	return bucket
-}
-
-func parseAdminFilterFallback(q url.Values, now time.Time, kind string, f adminFilter) adminFilter {
-	if kind == "calls" {
-		f.Range = "all"
-		f.Bounded = false
-		f.From = time.Time{}
-		f.To = time.Time{}
-		f.Bucket = parseAdminBucket(q.Get("bucket"), "all")
-		return f
-	}
-	f.Range = "7d"
-	f.Bounded = true
-	f.From, f.To = presetWindow("7d", now)
-	f.Bucket = parseAdminBucket(q.Get("bucket"), "7d")
-	return f
 }
 
 func parseOutcome(s string) string {
@@ -187,21 +204,6 @@ func parseOutcome(s string) string {
 		return s
 	default:
 		return ""
-	}
-}
-
-func parseAdminBucket(bucket, rng string) string {
-	switch bucket {
-	case "hour", "day", "week", "month":
-		return bucket
-	}
-	switch rng {
-	case "24h":
-		return "hour"
-	case "90d":
-		return "week"
-	default:
-		return "day"
 	}
 }
 
@@ -220,7 +222,9 @@ func presetWindow(rng string, now time.Time) (time.Time, time.Time) {
 	return now.Add(-dur), now
 }
 
-func parseAdminTime(s string) (time.Time, bool) {
+// parseAdminTime parses a custom range endpoint. Offset-bearing RFC3339 is
+// honored as given; naive layouts are interpreted in loc (the selected tz).
+func parseAdminTime(s string, loc *time.Location) (time.Time, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return time.Time{}, false
@@ -238,7 +242,7 @@ func parseAdminTime(s string) (time.Time, bool) {
 		"2006-01-02",
 	}
 	for _, layout := range layouts {
-		if t, err := time.ParseInLocation(layout, s, time.UTC); err == nil {
+		if t, err := time.ParseInLocation(layout, s, loc); err == nil {
 			return t.UTC(), true
 		}
 	}
@@ -279,8 +283,8 @@ func (f adminFilter) values(kind string) url.Values {
 			v.Set("to", f.To.UTC().Format(time.RFC3339))
 		}
 	}
-	if kind == "usage" && f.Bucket != "" && f.Bucket != parseAdminBucket("", f.Range) {
-		v.Set("bucket", f.Bucket)
+	if f.TZ != "" && f.TZ != "UTC" {
+		v.Set("tz", f.TZ)
 	}
 	if f.Model != "" {
 		v.Set("model", f.Model)
@@ -322,10 +326,6 @@ func setFilter(f adminFilter, key, val string) adminFilter {
 		f.APIKey = val
 	case "outcome":
 		f.Outcome = parseOutcome(val)
-	case "range":
-		f.Range = val
-	case "bucket":
-		f.Bucket = val
 	}
 	return f
 }
@@ -341,9 +341,6 @@ func (f adminFilter) forUsage() adminFilter {
 		g.Bounded = true
 		g.From = time.Time{}
 		g.To = time.Time{}
-		if g.Bucket == "" {
-			g.Bucket = "day"
-		}
 	}
 	return g
 }
@@ -571,26 +568,10 @@ func mergeFilterView(data map[string]any, f adminFilter, kind string, opts filte
 	if kind == "calls" {
 		ranges = append([]string{"all"}, ranges...)
 	}
-	rangeChips := make([]filterChip, 0, len(ranges))
+	ranges = append(ranges, "custom")
+	rangeOpts := make([]selectOption, 0, len(ranges))
 	for _, rng := range ranges {
-		g := f
-		g.Range = rng
-		rangeChips = append(rangeChips, filterChip{
-			Label: rng,
-			URL:   g.path(kind, base),
-			On:    f.Range == rng,
-		})
-	}
-	buckets := []string{"hour", "day", "week", "month"}
-	bucketChips := make([]filterChip, 0, len(buckets))
-	for _, b := range buckets {
-		g := f
-		g.Bucket = b
-		bucketChips = append(bucketChips, filterChip{
-			Label: b,
-			URL:   g.path(kind, base),
-			On:    f.Bucket == b,
-		})
+		rangeOpts = append(rangeOpts, selectOption{Value: rng, Label: rng, On: f.Range == rng})
 	}
 	var active []filterChip
 	if f.Model != "" {
@@ -613,15 +594,17 @@ func mergeFilterView(data map[string]any, f adminFilter, kind string, opts filte
 		g.Outcome = ""
 		active = append(active, filterChip{Label: "outcome: " + outcomeLabel(f.Outcome), URL: g.path(kind, base)})
 	}
-	data["RangeChips"] = rangeChips
-	data["BucketChips"] = bucketChips
-	data["ShowBuckets"] = kind == "usage"
+	data["RangeOpts"] = rangeOpts
 	data["ActiveChips"] = active
 	data["ModelOpts"] = mergeOption(opts.Models, f.Model)
 	data["ProviderOpts"] = mergeOption(opts.Providers, f.Provider)
 	data["KeyOpts"] = mergeOption(opts.Keys, f.APIKey)
-	data["Custom"] = f.Range == "custom"
-	data["HasWindow"] = f.Bounded
+	tz := f.TZ
+	if tz == "" {
+		tz = "UTC"
+	}
+	data["TZone"] = tz
+	data["TZExplicit"] = f.TZ != ""
 	// RangeParam mirrors values(): omit the range hidden input when it is the
 	// kind's default so the dim-filter form does not pin it explicitly.
 	rangeParam := f.Range
@@ -630,8 +613,9 @@ func mergeFilterView(data map[string]any, f adminFilter, kind string, opts filte
 	}
 	data["RangeParam"] = rangeParam
 	if f.Bounded {
-		data["FromLocal"] = f.From.UTC().Format("2006-01-02T15:04")
-		data["ToLocal"] = f.To.UTC().Format("2006-01-02T15:04")
+		loc := f.tzLoc()
+		data["FromLocal"] = f.From.In(loc).Format("2006-01-02T15:04")
+		data["ToLocal"] = f.To.In(loc).Format("2006-01-02T15:04")
 		data["FromRFC"] = f.From.UTC().Format(time.RFC3339)
 		data["ToRFC"] = f.To.UTC().Format(time.RFC3339)
 	} else {

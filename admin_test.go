@@ -33,8 +33,9 @@ func TestParseAdminWindow(t *testing.T) {
 		{"range=24h", "24h", "hour", 24 * time.Hour},
 		{"range=30d", "30d", "day", 30 * 24 * time.Hour},
 		{"range=90d", "90d", "week", 90 * 24 * time.Hour},
-		{"range=7d&bucket=month", "7d", "month", 7 * 24 * time.Hour},
-		{"range=nope&bucket=hour", "7d", "hour", 7 * 24 * time.Hour},
+		// bucket is derived from the span; the bucket param is ignored
+		{"range=7d&bucket=month", "7d", "day", 7 * 24 * time.Hour},
+		{"range=nope&bucket=hour", "7d", "day", 7 * 24 * time.Hour},
 		{"range=all", "7d", "day", 7 * 24 * time.Hour},
 	}
 	for _, tc := range tests {
@@ -239,15 +240,14 @@ func TestParseAdminFilterCustom(t *testing.T) {
 	from := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
 	q := url.Values{
-		"range":  []string{"custom"},
-		"from":   []string{from.Format(time.RFC3339)},
-		"to":     []string{to.Format(time.RFC3339)},
-		"bucket": []string{"hour"},
-		"model":  []string{"fast"},
+		"range": []string{"custom"},
+		"from":  []string{from.Format(time.RFC3339)},
+		"to":    []string{to.Format(time.RFC3339)},
+		"model": []string{"fast"},
 	}
 	f := parseAdminFilter(q, now, "usage")
 	require.Equal(t, "custom", f.Range)
-	require.Equal(t, "hour", f.Bucket)
+	require.Equal(t, "day", f.Bucket) // derived from the 9-day span
 	require.True(t, f.Bounded)
 	require.True(t, from.Equal(f.From))
 	require.True(t, to.Equal(f.To))
@@ -276,6 +276,17 @@ func TestParseAdminFilterCustom(t *testing.T) {
 	f = parseAdminFilter(q, now, "usage")
 	require.Equal(t, "custom", f.Range)
 	require.Equal(t, time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC), f.From)
+
+	// naive endpoints are interpreted in the selected tz
+	q.Set("tz", "Asia/Shanghai")
+	f = parseAdminFilter(q, now, "usage")
+	require.Equal(t, "Asia/Shanghai", f.TZ)
+	require.Equal(t, time.Date(2026, 7, 31, 16, 0, 0, 0, time.UTC), f.From)
+	// invalid tz falls back to UTC
+	q.Set("tz", "Mars/Olympus")
+	f = parseAdminFilter(q, now, "usage")
+	require.Empty(t, f.TZ)
+	require.Equal(t, time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC), f.From)
 }
 
 func TestParseAdminFilterCallsAll(t *testing.T) {
@@ -292,26 +303,27 @@ func TestParseAdminFilterCallsAll(t *testing.T) {
 	require.Equal(t, now.Add(-7*24*time.Hour), f.From)
 }
 
-func TestParseAdminFilterBucketCoercion(t *testing.T) {
+func TestDeriveAdminBucket(t *testing.T) {
 	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
-	// hour over spans longer than a month is bumped to day
+	// presets: 24h → hour, 7d/30d → day, 90d → week
+	for rng, bucket := range map[string]string{"24h": "hour", "7d": "day", "30d": "day", "90d": "week"} {
+		f := parseAdminFilter(url.Values{"range": []string{rng}}, now, "usage")
+		require.Equal(t, bucket, f.Bucket, rng)
+	}
+	// the bucket param is ignored entirely
 	f := parseAdminFilter(url.Values{"range": []string{"90d"}, "bucket": []string{"hour"}}, now, "usage")
-	require.Equal(t, "day", f.Bucket)
-	// hour stays for shorter spans
-	f = parseAdminFilter(url.Values{"range": []string{"7d"}, "bucket": []string{"hour"}}, now, "usage")
-	require.Equal(t, "hour", f.Bucket)
-	// long custom range with hour bucket
-	f = parseAdminFilter(url.Values{
-		"range":  []string{"custom"},
-		"from":   []string{now.Add(-60 * 24 * time.Hour).Format(time.RFC3339)},
-		"to":     []string{now.Format(time.RFC3339)},
-		"bucket": []string{"hour"},
-	}, now, "usage")
-	require.Equal(t, "custom", f.Range)
-	require.Equal(t, "day", f.Bucket)
-	// other buckets are untouched
-	f = parseAdminFilter(url.Values{"range": []string{"90d"}, "bucket": []string{"month"}}, now, "usage")
-	require.Equal(t, "month", f.Bucket)
+	require.Equal(t, "week", f.Bucket)
+	// custom spans: ≤48h → hour, ≤62d → day, beyond → week
+	custom := func(dur time.Duration) string {
+		return parseAdminFilter(url.Values{
+			"range": []string{"custom"},
+			"from":  []string{now.Add(-dur).Format(time.RFC3339)},
+			"to":    []string{now.Format(time.RFC3339)},
+		}, now, "usage").Bucket
+	}
+	require.Equal(t, "hour", custom(36*time.Hour))
+	require.Equal(t, "day", custom(60*24*time.Hour))
+	require.Equal(t, "week", custom(200*24*time.Hour))
 }
 
 func TestAdminFilterRoundTrip(t *testing.T) {
@@ -320,10 +332,10 @@ func TestAdminFilterRoundTrip(t *testing.T) {
 	to := time.Date(2026, 7, 15, 18, 0, 0, 0, time.UTC)
 	orig := adminFilter{
 		Range:    "custom",
-		Bucket:   "week",
 		From:     from,
 		To:       to,
 		Bounded:  true,
+		TZ:       "Asia/Shanghai",
 		Model:    "fast",
 		Provider: "openai",
 		APIKey:   "alice",
@@ -332,7 +344,8 @@ func TestAdminFilterRoundTrip(t *testing.T) {
 	q := orig.values("usage")
 	got := parseAdminFilter(q, now, "usage")
 	require.Equal(t, orig.Range, got.Range)
-	require.Equal(t, orig.Bucket, got.Bucket)
+	require.Equal(t, "day", got.Bucket) // derived from the 14-day span
+	require.Equal(t, orig.TZ, got.TZ)
 	require.Equal(t, orig.Model, got.Model)
 	require.Equal(t, orig.Provider, got.Provider)
 	require.Equal(t, orig.APIKey, got.APIKey)

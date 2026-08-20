@@ -10,6 +10,9 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	// Embed the tz database so time.LoadLocation works in the Alpine image,
+	// which ships no zoneinfo.
+	_ "time/tzdata"
 
 	"github.com/yankeguo/rg"
 )
