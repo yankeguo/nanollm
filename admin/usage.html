@@ -22,7 +22,7 @@
           {{range .Buckets}}<a class="chip{{if eq $.Window.Bucket .}} on{{end}}" href="/admin?range={{$.Window.Range}}&bucket={{.}}">{{.}}</a>{{end}}
         </div>
       </div>
-      <span class="ftime"><span class="iconify" data-icon="lucide:clock"></span> {{.Window.From.Format "2006-01-02 15:04"}} → {{.Window.To.Format "2006-01-02 15:04"}} UTC</span>
+      <span class="ftime"><span class="iconify" data-icon="lucide:clock"></span> <time datetime="{{.Window.From.Format "2006-01-02T15:04:05Z"}}" data-min>{{.Window.From.Format "2006-01-02 15:04"}}</time> → <time datetime="{{.Window.To.Format "2006-01-02T15:04:05Z"}}" data-min>{{.Window.To.Format "2006-01-02 15:04"}}</time> <span data-tz>UTC</span></span>
     </div>
     <div class="stats">
       <div class="stat"><span>Calls</span><b>{{formatNum .Totals.Calls}}</b></div>
@@ -52,6 +52,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"
     integrity="sha384-T/4KgSWuZEPozpPz7rnnp/5lDSnpY1VPJCojf1S81uTHS1E38qgLfMgVsAeRCWc4"
     crossorigin="anonymous"></script>
+  {{template "localtime" .}}
   <script>
     const data = {{.ChartJSON}};
     // input totals include cached tokens; derive the non-cached remainder so the

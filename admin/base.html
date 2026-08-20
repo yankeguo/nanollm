@@ -91,3 +91,27 @@
   <form method="post" action="/admin/logout"><button type="submit"><span class="iconify" data-icon="lucide:log-out"></span> Sign out</button></form>
 </header>
 {{end}}
+
+{{define "localtime"}}
+<script>
+  // Rewrite server-rendered UTC <time datetime> stamps into the browser's
+  // timezone and swap every [data-tz] label to the local IANA zone name.
+  // Without JS the page still shows the original UTC text.
+  (function () {
+    var tz = '';
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
+    var opts = { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false };
+    var noSec = new Intl.DateTimeFormat(undefined, opts);
+    var withSec = new Intl.DateTimeFormat(undefined, Object.assign({ second: '2-digit' }, opts));
+    document.querySelectorAll('time[datetime]').forEach(function (el) {
+      var d = new Date(el.getAttribute('datetime'));
+      if (isNaN(d)) return;
+      el.textContent = ('min' in el.dataset ? noSec : withSec).format(d);
+      el.title = d.toString();
+    });
+    if (tz) {
+      document.querySelectorAll('[data-tz]').forEach(function (el) { el.textContent = tz; });
+    }
+  })();
+</script>
+{{end}}
