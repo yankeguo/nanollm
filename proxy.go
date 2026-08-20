@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -157,10 +158,24 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMeta, provider Provider) (int, error) {
+	upstreamURL, providerModel, headers, ok := provider.resolve(p.format())
+	if !ok {
+		err := fmt.Errorf("provider %q has no %s endpoint", provider.Name, p.format())
+		rec := CallRecord{
+			Model:       meta.Model,
+			Provider:    provider.Name,
+			APIKeyName:  apiKeyNameFrom(r.Context()),
+			RequestJSON: meta.Body,
+			Error:       err.Error(),
+		}
+		p.logCall(rec)
+		return 0, err
+	}
+
 	rec := CallRecord{
 		Model:         meta.Model,
 		Provider:      provider.Name,
-		ProviderModel: provider.Model,
+		ProviderModel: providerModel,
 		APIKeyName:    apiKeyNameFrom(r.Context()),
 		RequestJSON:   meta.Body,
 	}
@@ -168,7 +183,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 		rec.ProviderModel = meta.Model
 	}
 
-	payload, err := rewriteRequest(meta.Body, provider.Model, meta.Stream, p.format())
+	payload, err := rewriteRequest(meta.Body, providerModel, meta.Stream, p.format())
 	if err != nil {
 		rec.HTTPStatus = http.StatusBadRequest
 		rec.Error = err.Error()
@@ -178,14 +193,14 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	}
 	rec.RequestJSON = payload
 
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, provider.URL, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, bytes.NewReader(payload))
 	if err != nil {
 		rec.Error = err.Error()
 		p.logCall(rec)
 		return 0, err
 	}
 	copyRequestHeaders(req.Header, r.Header)
-	for k, v := range provider.Headers {
+	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 	if req.Header.Get("Content-Type") == "" {

@@ -2,12 +2,12 @@
 
 OpenAI- and Anthropic-compatible reverse proxy for LLM APIs. Point coding tools at nanollm and map one client-facing model name to one or more upstream providers.
 
-Providers for a model are tried **in order**, but only those whose `format` matches the inbound API. The next provider is used only when the current one is catastrophically unavailable. Rate limits, 4xx, and ordinary 5xx stay on the same provider so prompt cache is not thrown away.
+Providers for a model are tried **in order**, but only those that have a protocol block matching the inbound API (`openai` or `anthropic`). The next provider is used only when the current one is catastrophically unavailable. Rate limits, 4xx, and ordinary 5xx stay on the same provider so prompt cache is not thrown away.
 
 ## Features
 
 - Standard `net/http` server: OpenAI `/v1/chat/completions` (plus completions, embeddings, responses) and Anthropic `/v1/messages`
-- YAML config: named models, named providers, `format` (`openai` or `anthropic`), auth merged into provider `headers`
+- YAML config: named models, named vendors, optional `openai` / `anthropic` endpoint blocks, auth merged into `headers`
 - No OpenAI ↔ Anthropic body conversion; each inbound API only uses matching providers
 - Incoming API keys (`api_keys[].{name,value}`)
 - Streaming SSE pass-through
@@ -33,7 +33,7 @@ docker run --rm -p 8080:8080 \
 
 Point OpenAI clients at `http://127.0.0.1:8080/v1` with `Authorization: Bearer <api_keys.value>` and `"model": "<models[].name>"`.
 
-Point Anthropic clients at `http://127.0.0.1:8080` with `x-api-key: <api_keys.value>` and the same `"model"` field. The model must have at least one `format: anthropic` provider.
+Point Anthropic clients at `http://127.0.0.1:8080` with `x-api-key: <api_keys.value>` and the same `"model"` field. The model must have at least one provider with an `anthropic` block.
 
 Open `http://127.0.0.1:8080/admin` to review token usage and call logs.
 
@@ -66,20 +66,17 @@ models:
         model: gpt-4o
         headers:
           Authorization: Bearer sk-REPLACE_ME
-      - name: backup
-        url: https://openrouter.ai/api/v1/chat/completions
-        model: openai/gpt-4o
-        headers:
-          Authorization: Bearer sk-or-REPLACE_ME
   - name: claude
     providers:
-      - name: anthropic
-        format: anthropic
-        url: https://api.anthropic.com/v1/messages
-        model: claude-sonnet-4-5
+      - name: openrouter
+        model: anthropic/claude-sonnet-4-5
         headers:
-          x-api-key: REPLACE_ME
+          Authorization: Bearer sk-or-REPLACE_ME
           anthropic-version: "2023-06-01"
+        openai:
+          url: https://openrouter.ai/api/v1/chat/completions
+        anthropic:
+          url: https://openrouter.ai/api/v1/messages
 ```
 
 | Field | Required | Meaning |
@@ -92,11 +89,15 @@ models:
 | `api_keys[].value` | yes | Secret the client must send |
 | `models[].name` | yes | Client-facing model id |
 | `models[].providers` | yes | Ordered upstream list |
-| `providers[].name` | yes | Identifier for this provider within a model (must be unique) |
-| `providers[].format` | no | `openai` (default) or `anthropic`. OpenAI routes only use `openai` providers; `POST /v1/messages` only uses `anthropic` providers |
-| `providers[].url` | yes | Full `http`/`https` upstream URL (not a base URL) |
-| `providers[].model` | no | Model string sent upstream; if empty, the client model is kept |
-| `providers[].headers` | no | Extra request headers, including upstream auth |
+| `providers[].name` | yes | Vendor name within a model (must be unique). Used for failover order and `llm_calls.provider` |
+| `providers[].model` | no | Default upstream model; a protocol block may override it. If both are empty, the client model is kept |
+| `providers[].headers` | no | Default extra headers (including upstream auth); a protocol block may override keys |
+| `providers[].openai` / `providers[].anthropic` | one of these, or legacy `url` | Protocol endpoint. OpenAI routes only use vendors with `openai`; `POST /v1/messages` only uses vendors with `anthropic` |
+| `openai.url` / `anthropic.url` | yes (when the block is present) | Full `http`/`https` upstream URL (not a base URL) |
+| `openai.model` / `anthropic.model` | no | Overrides the vendor-level `model` for that protocol |
+| `openai.headers` / `anthropic.headers` | no | Overlay on vendor-level `headers` (`Set` per key) |
+| `providers[].url` | legacy | Flat form: required when no protocol blocks are set. Normalized into `openai` (default) or `anthropic` |
+| `providers[].format` | no (legacy) | Flat form only: `openai` (default) or `anthropic`. Cannot be mixed with protocol blocks |
 
 Rules:
 
@@ -104,10 +105,11 @@ Rules:
 - MySQL DSN is required; timestamps are stored in UTC
 - At least one API key and one model
 - Model names unique; provider names unique **within** a model
+- Nested `openai`/`anthropic` blocks cannot be mixed with top-level `url`/`format` on the same vendor
 - API key names unique; API key values unique
 - Incoming `Authorization` / `X-Api-Key` / `Api-Key` are **not** forwarded
 - Request bodies larger than 64 MiB return `413`
-- nanollm does **not** convert OpenAI and Anthropic bodies. If a model has no provider for the inbound format, the request fails with `404`
+- nanollm does **not** convert OpenAI and Anthropic bodies. If a model has no vendor with a matching protocol block, the request fails with `404`
 - `config.yaml` is gitignored; commit `config.example.yaml` only
 
 See `config.example.yaml`.
@@ -126,7 +128,7 @@ The admin UI (`/admin`) uses `admin.username` / `admin.password` and an HttpOnly
 
 ## Failover
 
-For each request, providers with a matching `format` are attempted from first to last.
+For each request, vendors that have a matching protocol block are attempted from first to last. A vendor without that block is skipped; nanollm does not switch protocols on the same vendor.
 
 **Switch to the next provider only when the current one is catastrophically unavailable:**
 
@@ -155,14 +157,14 @@ This keeps prefix / prompt cache on the first healthy provider.
 | `POST` | `/v1/completions` | yes | Also `/completions` |
 | `POST` | `/v1/embeddings` | yes | Also `/embeddings` |
 | `POST` | `/v1/responses` | yes | |
-| `POST` | `/v1/messages` | yes | Anthropic Messages; only `format: anthropic` providers |
+| `POST` | `/v1/messages` | yes | Anthropic Messages; only providers with an `anthropic` block |
 | `GET` | `/admin` | cookie | Usage tables and Chart.js graphs |
 | `GET` | `/admin/calls` | cookie | Paginated call log |
 | `GET` | `/admin/calls/{id}` | cookie | Request/response JSON when retained |
 | `GET`/`POST` | `/admin/login` | no | Admin sign-in |
 | `POST` | `/admin/logout` | cookie | Clear admin cookie |
 
-The JSON body `model` field selects `models[].name`. nanollm rewrites only the top-level `model` (and, for OpenAI streaming, injects `stream_options.include_usage` when missing). Other JSON fields are copied as raw values and are not decoded into a typed tree. OpenAI routes never call `format: anthropic` providers, and `/v1/messages` never calls `format: openai` providers.
+The JSON body `model` field selects `models[].name`. nanollm rewrites only the top-level `model` (and, for OpenAI streaming, injects `stream_options.include_usage` when missing). Other JSON fields are copied as raw values and are not decoded into a typed tree. OpenAI routes never call a vendor's `anthropic` block, and `/v1/messages` never calls a vendor's `openai` block.
 
 Streaming (`"stream": true`) is copied through as SSE. Usage is parsed from a copy of the upstream body; the client still receives the original bytes. Anthropic bodies are not rewritten beyond `model`.
 

@@ -49,19 +49,72 @@ type ModelConfig struct {
 	Providers []Provider `yaml:"providers"`
 }
 
-type Provider struct {
-	Name    string            `yaml:"name"`
-	Format  string            `yaml:"format"`
+type ProviderEndpoint struct {
 	URL     string            `yaml:"url"`
 	Model   string            `yaml:"model"`
 	Headers map[string]string `yaml:"headers"`
 }
 
-func (p Provider) format() string {
-	if p.Format == "" {
-		return formatOpenAI
+type Provider struct {
+	Name      string            `yaml:"name"`
+	Model     string            `yaml:"model"`
+	Headers   map[string]string `yaml:"headers"`
+	OpenAI    *ProviderEndpoint `yaml:"openai"`
+	Anthropic *ProviderEndpoint `yaml:"anthropic"`
+	Format    string            `yaml:"format"`
+	URL       string            `yaml:"url"`
+}
+
+func (p Provider) endpoint(format string) *ProviderEndpoint {
+	if format == "" {
+		format = formatOpenAI
 	}
-	return p.Format
+	switch format {
+	case formatOpenAI:
+		if p.OpenAI != nil {
+			return p.OpenAI
+		}
+	case formatAnthropic:
+		if p.Anthropic != nil {
+			return p.Anthropic
+		}
+	}
+	if p.OpenAI == nil && p.Anthropic == nil && p.URL != "" {
+		legacy := strings.ToLower(strings.TrimSpace(p.Format))
+		if legacy == "" {
+			legacy = formatOpenAI
+		}
+		if legacy == format {
+			return &ProviderEndpoint{URL: p.URL, Model: p.Model, Headers: p.Headers}
+		}
+	}
+	return nil
+}
+
+func (p Provider) resolve(format string) (upstreamURL, model string, headers map[string]string, ok bool) {
+	ep := p.endpoint(format)
+	if ep == nil {
+		return "", "", nil, false
+	}
+	model = ep.Model
+	if model == "" {
+		model = p.Model
+	}
+	return ep.URL, model, mergeHeaders(p.Headers, ep.Headers), true
+}
+
+func mergeHeaders(base, over map[string]string) map[string]string {
+	if len(base) == 0 && len(over) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(base)+len(over))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range over {
+		out[k] = v
+	}
+	return out
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -125,24 +178,9 @@ func (c *Config) validate() error {
 				return fmt.Errorf("config: model %q has duplicate provider name %q", m.Name, p.Name)
 			}
 			seenProvider[p.Name] = struct{}{}
-			if p.URL == "" {
-				return fmt.Errorf("config: model %q provider %q url is required", m.Name, p.Name)
+			if err := c.Models[i].Providers[j].normalize(m.Name); err != nil {
+				return err
 			}
-			u, err := url.Parse(p.URL)
-			if err != nil {
-				return fmt.Errorf("config: model %q provider %q url is invalid: %w", m.Name, p.Name, err)
-			}
-			if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-				return fmt.Errorf("config: model %q provider %q url must be http or https with a host", m.Name, p.Name)
-			}
-			format := strings.ToLower(strings.TrimSpace(p.Format))
-			if format == "" {
-				format = formatOpenAI
-			}
-			if format != formatOpenAI && format != formatAnthropic {
-				return fmt.Errorf("config: model %q provider %q format must be openai or anthropic", m.Name, p.Name)
-			}
-			c.Models[i].Providers[j].Format = format
 		}
 	}
 	if strings.TrimSpace(c.MySQL.DSN) == "" {
@@ -160,6 +198,69 @@ func (c *Config) validate() error {
 	}
 	if c.Admin.Password == "" {
 		return fmt.Errorf("config: admin.password is required")
+	}
+	return nil
+}
+
+func (p *Provider) normalize(model string) error {
+	nested := p.OpenAI != nil || p.Anthropic != nil
+	if nested {
+		if p.URL != "" || strings.TrimSpace(p.Format) != "" {
+			return fmt.Errorf("config: model %q provider %q cannot mix top-level url/format with openai/anthropic blocks", model, p.Name)
+		}
+		if err := validateEndpoint(model, p.Name, formatOpenAI, p.OpenAI); err != nil {
+			return err
+		}
+		if err := validateEndpoint(model, p.Name, formatAnthropic, p.Anthropic); err != nil {
+			return err
+		}
+		return nil
+	}
+	if p.URL == "" {
+		return fmt.Errorf("config: model %q provider %q url is required", model, p.Name)
+	}
+	format := strings.ToLower(strings.TrimSpace(p.Format))
+	if format == "" {
+		format = formatOpenAI
+	}
+	if format != formatOpenAI && format != formatAnthropic {
+		return fmt.Errorf("config: model %q provider %q format must be openai or anthropic", model, p.Name)
+	}
+	if err := validateHTTPURL(model, p.Name, "", p.URL); err != nil {
+		return err
+	}
+	ep := &ProviderEndpoint{URL: p.URL}
+	if format == formatAnthropic {
+		p.Anthropic = ep
+	} else {
+		p.OpenAI = ep
+	}
+	p.URL = ""
+	p.Format = ""
+	return nil
+}
+
+func validateEndpoint(model, provider, format string, ep *ProviderEndpoint) error {
+	if ep == nil {
+		return nil
+	}
+	return validateHTTPURL(model, provider, format, ep.URL)
+}
+
+func validateHTTPURL(model, provider, format, raw string) error {
+	what := "url"
+	if format != "" {
+		what = format + " url"
+	}
+	if raw == "" {
+		return fmt.Errorf("config: model %q provider %q %s is required", model, provider, what)
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("config: model %q provider %q %s is invalid: %w", model, provider, what, err)
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("config: model %q provider %q %s must be http or https with a host", model, provider, what)
 	}
 	return nil
 }
@@ -191,7 +292,7 @@ func (c *Config) providersFor(model, format string) []Provider {
 	}
 	out := make([]Provider, 0, len(all))
 	for _, p := range all {
-		if p.format() == format {
+		if p.endpoint(format) != nil {
 			out = append(out, p)
 		}
 	}

@@ -561,6 +561,85 @@ func TestProxySkipsOtherFormatProviders(t *testing.T) {
 	require.Equal(t, int32(1), anthHits.Load())
 }
 
+func TestProxyNestedProviderFormats(t *testing.T) {
+	var openaiHits, anthHits atomic.Int32
+	openaiUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		openaiHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"choices":[{"message":{"content":"oai"}}]}`)
+	}))
+	t.Cleanup(openaiUp.Close)
+	anthUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		anthHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"type":"message","content":[{"type":"text","text":"anth"}]}`)
+	}))
+	t.Cleanup(anthUp.Close)
+
+	logger := &memoryCallLogger{}
+	cfg := &Config{
+		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
+		Models: []ModelConfig{{Name: "claude", Providers: []Provider{{
+			Name:      "openrouter",
+			Model:     "anthropic/claude-sonnet-4-5",
+			OpenAI:    &ProviderEndpoint{URL: openaiUp.URL},
+			Anthropic: &ProviderEndpoint{URL: anthUp.URL},
+		}}}},
+	}
+	h := NewServer(cfg, logger, nil).Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "claude"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "oai")
+	require.Equal(t, int32(1), openaiHits.Load())
+	require.Equal(t, int32(0), anthHits.Load())
+
+	req = httptest.NewRequest(http.MethodPost, "/v1/messages", jsonBody(map[string]any{
+		"model": "claude",
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hi"},
+		},
+	}))
+	req.Header.Set("X-Api-Key", testAPIKey)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "anth")
+	require.Equal(t, int32(1), openaiHits.Load())
+	require.Equal(t, int32(1), anthHits.Load())
+	require.Len(t, logger.calls, 2)
+	require.Equal(t, "openrouter", logger.calls[0].Provider)
+	require.Equal(t, "openrouter", logger.calls[1].Provider)
+}
+
+func TestProxySkipsProviderWithoutMatchingBlock(t *testing.T) {
+	var anthHits atomic.Int32
+	anthUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		anthHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"type":"message","content":[{"type":"text","text":"anth"}]}`)
+	}))
+	t.Cleanup(anthUp.Close)
+
+	cfg := &Config{
+		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
+		Models: []ModelConfig{{Name: "claude", Providers: []Provider{{
+			Name:      "anthropic",
+			Anthropic: &ProviderEndpoint{URL: anthUp.URL, Model: "claude-sonnet-4-5"},
+		}}}},
+	}
+	h := NewServer(cfg, nil, nil).Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "claude"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Contains(t, rec.Body.String(), "has no openai providers")
+	require.Equal(t, int32(0), anthHits.Load())
+}
+
 func TestProxyAnthropicMissingProviders(t *testing.T) {
 	h := testProxy(t, cfgFast(Provider{Name: "x", URL: "http://example.invalid", Model: "x"}))
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", jsonBody(map[string]any{"model": "fast"}))
