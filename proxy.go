@@ -16,13 +16,18 @@ import (
 
 var maxRequestBody int64 = 64 << 20
 
+// maxStatusBlob caps how much of an upstream error body is read (and stored)
+// before failing over on a catastrophic status; the full body is not worth
+// waiting for when the next provider should be tried promptly.
+const maxStatusBlob = 256 << 10
+
 var hopHeaders = map[string]bool{
 	"Connection":          true,
 	"Keep-Alive":          true,
 	"Proxy-Authenticate":  true,
 	"Proxy-Authorization": true,
 	"Te":                  true,
-	"Trailers":            true,
+	"Trailer":             true,
 	"Transfer-Encoding":   true,
 	"Upgrade":             true,
 	"Proxy-Connection":    true,
@@ -212,7 +217,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	sse := meta.Stream || isSSE(resp.Header.Get("Content-Type"))
 
 	if isCatastrophic(nil, resp.StatusCode) {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, int64(maxMediumBlob)))
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxStatusBlob))
 		rec.ResponseJSON = encodeResponseBlob(body, sse)
 		rec.Error = "upstream status " + resp.Status
 		p.logCall(rec)
@@ -323,6 +328,8 @@ func copyRequestHeaders(dst, src http.Header) {
 	skip["Authorization"] = true
 	skip["X-Api-Key"] = true
 	skip["Api-Key"] = true
+	// Never leak client cookies (e.g. nanollm_admin) to third-party upstreams.
+	skip["Cookie"] = true
 	skip["Host"] = true
 	skip["Content-Length"] = true
 	skip["Accept-Encoding"] = true
@@ -336,6 +343,8 @@ func copyRequestHeaders(dst, src http.Header) {
 
 func copyResponseHeaders(dst, src http.Header) {
 	skip := hopByHop(src)
+	// Do not let an upstream plant cookies on this proxy's origin.
+	skip["Set-Cookie"] = true
 	for k, vs := range src {
 		if skip[http.CanonicalHeaderKey(k)] {
 			continue

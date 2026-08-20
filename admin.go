@@ -18,6 +18,9 @@ import (
 const adminPageSize = 50
 const maxAdminPage = 1_000_000
 
+// adminLoginFailDelay slows failed password attempts to damp online brute force.
+const adminLoginFailDelay = time.Second
+
 type usageTotals struct {
 	Calls    int64
 	Input    int64
@@ -132,6 +135,7 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !s.checkAdminLogin(r.Form.Get("username"), r.Form.Get("password")) {
+			time.Sleep(adminLoginFailDelay)
 			// renderAdmin sets Content-Type after WriteHeader, so write it first.
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusUnauthorized)

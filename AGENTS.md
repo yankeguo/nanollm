@@ -34,7 +34,7 @@ Tests live next to the code (`*_test.go`). Use `github.com/stretchr/testify`. Pr
 - MySQL is required. DSN params `charset=utf8mb4`, `parseTime=true`, `loc=UTC`, `time_zone='UTC'` are forced. All DB timestamps are UTC.
 - `/admin` is a cookie-authenticated dashboard (HMAC, HttpOnly, SameSite=Lax; Secure when TLS or `X-Forwarded-Proto: https`). It is not API-key auth. `admin.username` and `admin.password` are required.
 - Every provider attempt (success, 4xx/5xx, failover, dial failure, rewrite error, client cancel) is inserted into `llm_calls`. Detail JSON blobs are kept only for the latest `mysql.detail_retain` rows (default 1000).
-- Incoming `Authorization` / `X-Api-Key` / `Api-Key` authenticate against `api_keys` and must not be copied upstream.
+- Incoming `Authorization` / `X-Api-Key` / `Api-Key` authenticate against `api_keys` and must not be copied upstream. Client `Cookie` is stripped from upstream requests; upstream `Set-Cookie` is dropped from responses.
 - At least one API key is required; missing/invalid keys → 401 except `GET /healthz` and `/admin*`.
 - Do not commit `config.yaml` (secrets). Change `config.example.yaml` and README when the config schema changes.
 - Images: `ghcr.io/${{ github.repository }}`. Push `main` → `latest`; push a git tag → that tag. Workflow: `.github/workflows/release.yml`.

@@ -112,7 +112,7 @@ Rules:
 - Model names unique; provider names unique **within** a model
 - Nested `openai`/`responses`/`anthropic` blocks cannot be mixed with top-level `url`/`format` on the same vendor
 - API key names unique; API key values unique
-- Incoming `Authorization` / `X-Api-Key` / `Api-Key` are **not** forwarded
+- Incoming `Authorization` / `X-Api-Key` / `Api-Key` are **not** forwarded; client `Cookie` is stripped from upstream requests and upstream `Set-Cookie` is dropped from responses
 - Request bodies larger than 64 MiB return `413`
 - nanollm does **not** convert bodies between chat completions, Responses, and Anthropic. If a model has no vendor with a matching protocol block, the request fails with `404`
 - `config.yaml` is gitignored; commit `config.example.yaml` only
@@ -129,7 +129,7 @@ LLM API routes except `GET /healthz` require a configured key:
 
 Unknown or missing keys return `401`. OpenAI routes use `{"error":{"type":"invalid_request_error","message":"invalid api key"}}`. Anthropic `POST /v1/messages` uses `{"type":"error","error":{"type":"authentication_error","message":"invalid api key"}}`.
 
-The admin UI (`/admin`) uses `admin.username` / `admin.password` and an HttpOnly cookie (`nanollm_admin`, 12h, SameSite=Lax). `Secure` is set when the request is TLS or `X-Forwarded-Proto: https`. `/admin/login` is unauthenticated.
+The admin UI (`/admin`) uses `admin.username` / `admin.password` and an HttpOnly cookie (`nanollm_admin`, 12h, SameSite=Lax). `Secure` is set when the request is TLS or `X-Forwarded-Proto: https`. `/admin/login` is unauthenticated; failed logins are delayed by 1s to damp brute force.
 
 ## Failover
 

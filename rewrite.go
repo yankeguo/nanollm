@@ -19,7 +19,10 @@ func parseRequest(body []byte) (*requestMeta, error) {
 		return nil, fmt.Errorf("invalid json body: %w", err)
 	}
 	model, err := rawJSONString(raw["model"])
-	if err != nil || model == "" {
+	if err != nil {
+		return nil, fmt.Errorf("request body model must be a string")
+	}
+	if model == "" {
 		return nil, fmt.Errorf("request body missing model")
 	}
 	stream, _ := rawJSONBool(raw["stream"])
