@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"time"
 )
 
 var maxSSEScan = 1 << 20
@@ -156,6 +157,13 @@ func parseUsageJSON(body []byte) tokenUsage {
 	return out
 }
 
+const sseComment = ":\n\n"
+
+// sseKeepaliveInterval is how often to emit an SSE comment while the upstream
+// body is idle. Thinking models can sit silent for minutes after HTTP 200;
+// without comments, clients and middle proxies idle-timeout and cancel us.
+var sseKeepaliveInterval = 15 * time.Second
+
 func parseUsageSSELine(line string) tokenUsage {
 	line = strings.TrimSpace(line)
 	if !strings.HasPrefix(line, "data:") {
@@ -169,38 +177,93 @@ func parseUsageSSELine(line string) tokenUsage {
 }
 
 func copyAndScanSSE(dst io.Writer, src io.Reader) (tokenUsage, error) {
+	return copySSE(dst, nil, src, 0)
+}
+
+func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (tokenUsage, error) {
+	if ping == nil {
+		ping = dst
+	}
 	var usage tokenUsage
-	buf := make([]byte, 32*1024)
 	var carry []byte
-	for {
-		n, err := src.Read(buf)
-		if n > 0 {
-			chunk := buf[:n]
-			if _, werr := dst.Write(chunk); werr != nil {
-				return usage, werr
+	buf := make([]byte, 32*1024)
+
+	consume := func(chunk []byte) error {
+		if _, err := dst.Write(chunk); err != nil {
+			return err
+		}
+		carry = append(carry, chunk...)
+		for {
+			i := bytes.IndexByte(carry, '\n')
+			if i < 0 {
+				break
 			}
-			carry = append(carry, chunk...)
-			for {
-				i := bytes.IndexByte(carry, '\n')
-				if i < 0 {
-					break
+			line := string(bytes.TrimRight(carry[:i], "\r"))
+			carry = carry[i+1:]
+			mergeUsage(&usage, parseUsageSSELine(line))
+		}
+		if len(carry) > maxSSEScan {
+			carry = carry[:0]
+		}
+		return nil
+	}
+
+	finish := func(err error) (tokenUsage, error) {
+		if err == nil || errors.Is(err, io.EOF) {
+			if len(carry) > 0 {
+				mergeUsage(&usage, parseUsageSSELine(string(carry)))
+			}
+			return usage, nil
+		}
+		return usage, err
+	}
+
+	if keepalive <= 0 {
+		for {
+			n, err := src.Read(buf)
+			if n > 0 {
+				if werr := consume(buf[:n]); werr != nil {
+					return usage, werr
 				}
-				line := string(bytes.TrimRight(carry[:i], "\r"))
-				carry = carry[i+1:]
-				mergeUsage(&usage, parseUsageSSELine(line))
 			}
-			if len(carry) > maxSSEScan {
-				carry = carry[:0]
+			if err != nil {
+				return finish(err)
 			}
 		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				if len(carry) > 0 {
-					mergeUsage(&usage, parseUsageSSELine(string(carry)))
+	}
+
+	type readOp struct {
+		n   int
+		err error
+	}
+	readc := make(chan readOp, 1)
+	startRead := func() {
+		go func() {
+			n, err := src.Read(buf)
+			readc <- readOp{n, err}
+		}()
+	}
+
+	ticker := time.NewTicker(keepalive)
+	defer ticker.Stop()
+	startRead()
+	for {
+		select {
+		case op := <-readc:
+			ticker.Reset(keepalive)
+			if op.n > 0 {
+				if err := consume(buf[:op.n]); err != nil {
+					return usage, err
 				}
-				return usage, nil
 			}
-			return usage, err
+			if op.err != nil {
+				return finish(op.err)
+			}
+			startRead()
+		case <-ticker.C:
+			if _, err := ping.Write([]byte(sseComment)); err != nil {
+				return usage, err
+			}
 		}
 	}
 }

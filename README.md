@@ -166,7 +166,7 @@ This keeps prefix / prompt cache on the first healthy provider.
 
 The JSON body `model` field selects `models[].name`. nanollm rewrites only the top-level `model` (and, for OpenAI streaming, injects `stream_options.include_usage` when missing). Other JSON fields are copied as raw values and are not decoded into a typed tree. OpenAI routes never call a vendor's `anthropic` block, and `/v1/messages` never calls a vendor's `openai` block.
 
-Streaming (`"stream": true`) is copied through as SSE. Usage is parsed from a copy of the upstream body; the client still receives the original bytes. Anthropic bodies are not rewritten beyond `model`.
+Streaming (`"stream": true`) is copied through as SSE. While the upstream is silent (long thinking / a long tool-using turn), nanollm writes SSE comments (`:` lines) so the client and any idle proxy do not time out. Usage is parsed from a copy of the upstream body; keepalive comments are not stored in the call-log blob. Anthropic bodies are not rewritten beyond `model`.
 
 ## Call log (MySQL)
 
@@ -175,7 +175,7 @@ Each provider attempt writes one row to `llm_calls`:
 - client model, provider name, upstream model, API key name
 - `input_tokens` / `output_tokens` / `cache_tokens` / `uncached_tokens` (0 when usage is missing)
 - `http_status` (0 if no HTTP response, e.g. dial failure)
-- `error` (transport / rewrite / canceled / catastrophic status; empty on a completed copy)
+- `error` (transport / rewrite / catastrophic status; `canceled` when the client hung up after the copy started; empty on a completed copy)
 - `request_json` / `response_json` (`MEDIUMBLOB`; SSE responses stored as a JSON string)
 
 Failures and failover hops are recorded so you can see which hop died. The synthetic “all upstreams unavailable” client error is not an extra row.

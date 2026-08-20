@@ -2,13 +2,17 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -192,6 +196,60 @@ func TestProxyStreamPassthrough(t *testing.T) {
 	h.ServeHTTP(rec, authed(req))
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), "[DONE]")
+}
+
+func TestProxyLogsCanceledAfter200(t *testing.T) {
+	started := make(chan struct{})
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		close(started)
+		<-r.Context().Done()
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(Provider{Name: "m", URL: up.URL, Model: "m"}), logger, nil).Handler()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
+		"model":  "fast",
+		"stream": true,
+	})).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.ServeHTTP(rec, authed(req))
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("upstream did not start")
+	}
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler did not return")
+	}
+
+	require.Len(t, logger.calls, 1)
+	require.Equal(t, http.StatusOK, logger.calls[0].HTTPStatus)
+	require.Equal(t, errCanceled, logger.calls[0].Error)
+}
+
+func TestCopyErrText(t *testing.T) {
+	require.Empty(t, copyErrText(nil))
+	require.Equal(t, errCanceled, copyErrText(context.Canceled))
+	require.Equal(t, errCanceled, copyErrText(fmt.Errorf("wrap: %w", context.Canceled)))
+	require.Equal(t, "boom", copyErrText(errors.New("boom")))
 }
 
 func TestModelsEndpoint(t *testing.T) {

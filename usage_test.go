@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -57,6 +59,23 @@ func TestCopyAndScanSSE(t *testing.T) {
 	require.Equal(t, int64(3), u.Uncached)
 	require.Equal(t, "gpt-4o", u.ResponseModel)
 	require.Contains(t, dst.String(), "[DONE]")
+}
+
+func TestCopySSEKeepalive(t *testing.T) {
+	pr, pw := io.Pipe()
+	t.Cleanup(func() { _ = pr.Close(); _ = pw.Close() })
+	go func() {
+		time.Sleep(40 * time.Millisecond)
+		_, _ = pw.Write([]byte("data: {\"usage\":{\"prompt_tokens\":2}}\n\n"))
+		_ = pw.Close()
+	}()
+	var data, pings bytes.Buffer
+	u, err := copySSE(&data, &pings, pr, 10*time.Millisecond)
+	require.NoError(t, err)
+	require.Contains(t, pings.String(), ":")
+	require.NotContains(t, data.String(), sseComment)
+	require.Contains(t, data.String(), "prompt_tokens")
+	require.Equal(t, int64(2), u.Input)
 }
 
 func TestCopyAndScanSSECapsScanBuffer(t *testing.T) {

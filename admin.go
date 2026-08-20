@@ -364,6 +364,16 @@ func inputBar(input, cache int64) template.HTML {
 		`%"></i></div><div class="sub">` + formatInt64(cache) + ` cached · ` + strconv.FormatInt(pct, 10) + `%</div>`)
 }
 
+func callErrorClass(status int, err string) string {
+	if err == "" {
+		return ""
+	}
+	if err == errCanceled && status >= 200 && status < 300 {
+		return "muted"
+	}
+	return "err"
+}
+
 func formatNum(n any) string {
 	switch t := n.(type) {
 	case int:

@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -75,11 +76,12 @@ var defaultClient = &http.Client{
 		MaxIdleConnsPerHost:   16,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 120 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
+		// No ResponseHeaderTimeout: thinking models may not send headers until
+		// the first token. Wait as long as the client stays connected.
 	},
 	// No total Timeout: streaming responses stay open as long as the upstream
-	// keeps sending; ResponseHeaderTimeout bounds the wait for the first byte.
+	// keeps sending. SSE comments keep the client from idle-timing out.
 }
 
 func (p *Proxy) client() *http.Client {
@@ -223,7 +225,8 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	buf := &capBuffer{max: maxMediumBlob}
 	var usage tokenUsage
 	if sse {
-		usage, err = copyAndScanSSE(io.MultiWriter(newFlushWriter(w), buf), resp.Body)
+		fw := newFlushWriter(w)
+		usage, err = copySSE(io.MultiWriter(fw, buf), fw, resp.Body, sseKeepaliveInterval)
 	} else {
 		_, err = io.Copy(io.MultiWriter(w, buf), resp.Body)
 		usage = parseUsageJSON(buf.Bytes())
@@ -234,7 +237,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	rec.CacheTokens = usage.CacheRead
 	rec.UncachedTokens = usage.Uncached
 	if err != nil {
-		rec.Error = err.Error()
+		rec.Error = copyErrText(err)
 	}
 	p.logCall(rec)
 	return resp.StatusCode, err
@@ -343,6 +346,35 @@ func copyResponseHeaders(dst, src http.Header) {
 
 func isSSE(contentType string) bool {
 	return strings.Contains(strings.ToLower(contentType), "text/event-stream")
+}
+
+const errCanceled = "canceled"
+
+func copyErrText(err error) string {
+	if err == nil {
+		return ""
+	}
+	if isClientDisconnect(err) {
+		return errCanceled
+	}
+	return err.Error()
+}
+
+func isClientDisconnect(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, net.ErrClosed) || errors.Is(err, io.ErrClosedPipe) {
+		return true
+	}
+	var op *net.OpError
+	if errors.As(err, &op) {
+		if errors.Is(op.Err, syscall.EPIPE) || errors.Is(op.Err, syscall.ECONNRESET) {
+			return true
+		}
+	}
+	s := err.Error()
+	return strings.Contains(s, "broken pipe") || strings.Contains(s, "connection reset by peer") || strings.Contains(s, "use of closed network connection")
 }
 
 func statusFromErr(err error) int {

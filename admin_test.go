@@ -176,6 +176,13 @@ func TestAdminTrailingSlashRedirect(t *testing.T) {
 	require.Equal(t, "/admin", rec.Header().Get("Location"))
 }
 
+func TestCallErrorClass(t *testing.T) {
+	require.Equal(t, "", callErrorClass(200, ""))
+	require.Equal(t, "muted", callErrorClass(200, errCanceled))
+	require.Equal(t, "err", callErrorClass(0, errCanceled))
+	require.Equal(t, "err", callErrorClass(200, "upstream status 502"))
+}
+
 func TestFormatNum(t *testing.T) {
 	require.Equal(t, "0", formatNum(0))
 	require.Equal(t, "999", formatNum(999))

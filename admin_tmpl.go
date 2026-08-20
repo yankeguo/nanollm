@@ -9,6 +9,7 @@ import (
 var adminFS embed.FS
 
 var adminTmpl = template.Must(template.New("").Funcs(template.FuncMap{
-	"formatNum": formatNum,
-	"inputBar":  inputBar,
+	"formatNum":      formatNum,
+	"inputBar":       inputBar,
+	"callErrorClass": callErrorClass,
 }).ParseFS(adminFS, "admin/*.html"))
