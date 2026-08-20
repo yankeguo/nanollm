@@ -41,15 +41,6 @@ type usageBucket struct {
 	Uncached int64
 }
 
-type usageNamed struct {
-	Name     string
-	Calls    int64
-	Input    int64
-	Output   int64
-	Cache    int64
-	Uncached int64
-}
-
 type usageChart struct {
 	Labels   []string `json:"labels"`
 	Calls    []int64  `json:"calls"`
@@ -316,24 +307,6 @@ func adminKindPath(kind string) string {
 	return "/admin"
 }
 
-func setFilter(f adminFilter, key, val string) adminFilter {
-	switch key {
-	case "model":
-		f.Model = val
-	case "provider":
-		f.Provider = val
-	case "api_key":
-		f.APIKey = val
-	case "outcome":
-		f.Outcome = parseOutcome(val)
-	}
-	return f
-}
-
-func filterPath(kind string, f adminFilter) string {
-	return f.path(kind, adminKindPath(kind))
-}
-
 func (f adminFilter) forUsage() adminFilter {
 	g := f
 	if g.Range == "all" || g.Range == "" {
@@ -390,24 +363,6 @@ func (s *Server) handleAdminUsage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "query failed", http.StatusInternalServerError)
 		return
 	}
-	byModel, err := queryUsageBreakdown(s.DB, f, "model")
-	if err != nil {
-		log.Println("admin usage model:", err)
-		http.Error(w, "query failed", http.StatusInternalServerError)
-		return
-	}
-	byProvider, err := queryUsageBreakdown(s.DB, f, "provider")
-	if err != nil {
-		log.Println("admin usage provider:", err)
-		http.Error(w, "query failed", http.StatusInternalServerError)
-		return
-	}
-	byKey, err := queryUsageBreakdown(s.DB, f, "api_key_name")
-	if err != nil {
-		log.Println("admin usage api_key:", err)
-		http.Error(w, "query failed", http.StatusInternalServerError)
-		return
-	}
 	opts, err := queryFilterOptions(s.DB, f)
 	if err != nil {
 		log.Println("admin usage options:", err)
@@ -446,18 +401,11 @@ func (s *Server) handleAdminUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := adminNavData("usage", f)
-	data["Window"] = f.window()
 	data["Filter"] = f
 	data["Kind"] = "usage"
 	data["FilterAction"] = "/admin"
 	data["Totals"] = totals
-	data["Series"] = series
 	data["ChartJSON"] = template.JS(raw)
-	data["Breakdowns"] = []map[string]any{
-		{"Title": "model", "Param": "model", "Rows": byModel},
-		{"Title": "provider", "Param": "provider", "Rows": byProvider},
-		{"Title": "api key", "Param": "api_key", "Rows": byKey},
-	}
 	mergeFilterView(data, f, "usage", opts)
 	s.renderAdmin(w, "usage.html", data)
 }
@@ -864,29 +812,6 @@ ORDER BY bucket`, args...).Scan(&rows).Error
 		return nil, err
 	}
 	return rows, nil
-}
-
-func queryUsageBreakdown(db *gorm.DB, f adminFilter, col string) ([]usageNamed, error) {
-	switch col {
-	case "model", "provider", "api_key_name":
-	default:
-		return nil, nil
-	}
-	extra, extraArgs := adminFilterSQL(f, "")
-	var rows []usageNamed
-	err := db.Raw(`
-SELECT COALESCE(`+col+`, '') AS name,
-       COUNT(*) AS calls,
-       COALESCE(SUM(input_tokens), 0) AS input,
-       COALESCE(SUM(output_tokens), 0) AS output,
-       COALESCE(SUM(cache_tokens), 0) AS cache,
-       COALESCE(SUM(uncached_tokens), 0) AS uncached
-FROM llm_calls
-WHERE 1=1`+extra+`
-GROUP BY name
-ORDER BY input DESC, calls DESC
-LIMIT 50`, extraArgs...).Scan(&rows).Error
-	return rows, err
 }
 
 func queryFilterOptions(db *gorm.DB, f adminFilter) (filterOptions, error) {

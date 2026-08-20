@@ -379,13 +379,6 @@ func TestAdminFilterCrossLinks(t *testing.T) {
 
 	require.Equal(t, "/admin/calls?model=fast", pagerURL(fromCalls, 1))
 	require.Equal(t, "/admin/calls?model=fast&page=2", pagerURL(fromCalls, 2))
-
-	g := setFilter(f, "provider", "openai")
-	require.Equal(t, "openai", g.Provider)
-	require.Equal(t, "fast", g.Model)
-	cleared := setFilter(g, "model", "")
-	require.Empty(t, cleared.Model)
-	require.Equal(t, "openai", cleared.Provider)
 }
 
 func TestOutcomeSQL(t *testing.T) {
@@ -491,15 +484,10 @@ func TestAdminTemplatesRender(t *testing.T) {
 	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
 	f := parseAdminFilter(url.Values{"model": []string{"fast"}}, now, "usage")
 	data := adminNavData("usage", f)
-	data["Window"] = f.window()
 	data["Kind"] = "usage"
 	data["FilterAction"] = "/admin"
 	data["Totals"] = usageTotals{Calls: 1, Input: 2, Output: 3}
-	data["Series"] = []usageBucket{{Bucket: "2026-08-20", Calls: 1, Input: 2, Output: 3}}
 	data["ChartJSON"] = template.JS(`{"labels":["2026-08-20"],"calls":[1],"input":[2],"output":[3],"cache":[0],"uncached":[2]}`)
-	data["Breakdowns"] = []map[string]any{
-		{"Title": "model", "Param": "model", "Rows": []usageNamed{{Name: "fast", Calls: 1, Input: 2, Output: 3}}},
-	}
 	mergeFilterView(data, f, "usage", filterOptions{Models: []string{"fast"}})
 	var buf bytes.Buffer
 	require.NoError(t, adminTmpl.ExecuteTemplate(&buf, "usage.html", data))
@@ -507,7 +495,7 @@ func TestAdminTemplatesRender(t *testing.T) {
 	require.Contains(t, body, `href="/admin?model=fast"`)
 	require.Contains(t, body, `/admin/calls?`)
 	require.Contains(t, body, "model=fast")
-	require.Contains(t, body, "By model")
+	require.Contains(t, body, "Tokens by period")
 
 	cf := parseAdminFilter(url.Values{"model": []string{"fast"}}, now, "calls")
 	cdata := adminNavData("calls", cf)

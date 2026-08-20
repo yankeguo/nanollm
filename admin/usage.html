@@ -36,43 +36,6 @@
         <canvas id="callsChart"></canvas>
       </div></div></div>
     </div>
-    <div class="vstack gap-4 mb-4">
-      <div class="card"><div class="card-body">
-        <h2 class="card-title h6">Time series (UTC)</h2>
-        <table class="table table-sm align-middle tnum mb-0">
-          <thead><tr><th>Bucket</th><th class="text-end">Calls</th><th class="text-end">In <i class="bi bi-arrow-down"></i></th><th><i class="bi bi-arrow-up"></i> Out</th></tr></thead>
-          <tbody>
-          {{range .Series}}<tr><td>{{.Bucket}}</td><td class="text-end">{{formatNum .Calls}}</td><td class="text-end">{{formatNum .Input}}<i class="bi bi-arrow-down dir"></i>{{inputBar .Input .Cache}}</td><td><i class="bi bi-arrow-up dir"></i>{{formatNum .Output}}{{outputBar .Input .Output}}</td></tr>{{else}}<tr><td colspan="4" class="text-secondary">No calls in this window</td></tr>{{end}}
-          </tbody>
-        </table>
-      </div></div>
-      {{range .Breakdowns}}
-      {{$param := .Param}}
-      <div class="card"><div class="card-body">
-        <h2 class="card-title h6">By {{.Title}}</h2>
-        <table class="table table-sm table-hover align-middle tnum mb-0">
-          <thead><tr><th>Name</th><th class="text-end">Calls</th><th class="text-end">In <i class="bi bi-arrow-down"></i></th><th><i class="bi bi-arrow-up"></i> Out</th></tr></thead>
-          <tbody>
-          {{range .Rows}}
-          <tr>
-            <td>
-              {{if .Name}}
-              <div class="d-flex align-items-center gap-2">
-                <a href="{{filterPath "usage" (setFilter $.Filter $param .Name)}}">{{.Name}}</a>
-                <a class="small text-secondary" href="{{filterPath "calls" (setFilter $.Filter $param .Name)}}">list</a>
-              </div>
-              {{else}}<span class="text-secondary">(empty)</span>{{end}}
-            </td>
-            <td class="text-end">{{formatNum .Calls}}</td>
-            <td class="text-end">{{formatNum .Input}}<i class="bi bi-arrow-down dir"></i>{{inputBar .Input .Cache}}</td>
-            <td><i class="bi bi-arrow-up dir"></i>{{formatNum .Output}}{{outputBar .Input .Output}}</td>
-          </tr>
-          {{else}}<tr><td colspan="4" class="text-secondary">None</td></tr>{{end}}
-          </tbody>
-        </table>
-      </div></div>
-      {{end}}
-    </div>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"
     integrity="sha384-T/4KgSWuZEPozpPz7rnnp/5lDSnpY1VPJCojf1S81uTHS1E38qgLfMgVsAeRCWc4"
