@@ -72,9 +72,11 @@ func main() {
 		log.Println("shutting down")
 	}
 
-	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	err = srv.Shutdown(sctx)
+	// Unregister SIGINT/SIGTERM so a second signal uses the default terminate
+	// action. Shutdown has no deadline: in-flight LLM streams must be allowed
+	// to finish (or the client to disconnect).
+	stop()
+	err = srv.Shutdown(context.Background())
 }
 
 func envOr(key, fallback string) string {

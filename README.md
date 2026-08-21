@@ -14,6 +14,7 @@ Providers for a model are tried **in order**, but only those that have a protoco
 - No body conversion between protocols; each inbound API only uses matching providers
 - Incoming API keys (`api_keys[].{name,value}`)
 - Streaming SSE pass-through
+- SIGINT/SIGTERM stops accepting connections and waits indefinitely for in-flight requests (including long LLM streams); a second signal terminates
 - Failover only on dial/DNS/TLS failure or HTTP 502/503/504
 - Every upstream attempt (including failures) is stored in MySQL
 - Admin UI at `/admin` (cookie login) for usage charts and call details
