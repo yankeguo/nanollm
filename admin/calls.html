@@ -28,7 +28,7 @@
             <td>{{.Model}}</td>
             <td>{{.Provider}}</td>
             <td>{{.APIKeyName}}</td>
-            <td class="text-end"><span class="badge {{statusClass .HTTPStatus}}">{{if eq .HTTPStatus 0}}—{{else}}{{.HTTPStatus}}{{end}}</span>{{if .Error}} <i class="bi bi-exclamation-triangle {{callErrorClass .HTTPStatus .Error}}" title="{{.Error}}"></i>{{end}}</td>
+            <td class="text-end">{{if not (and (eq .HTTPStatus 0) .Error)}}<span class="badge {{statusClass .HTTPStatus}}">{{if eq .HTTPStatus 0}}—{{else}}{{.HTTPStatus}}{{end}}</span> {{end}}{{template "callError" .}}</td>
             <td class="text-end">{{formatNum .InputTokens}}<i class="bi bi-arrow-down dir"></i>{{inputBar .InputTokens .CacheTokens}}</td>
             <td><i class="bi bi-arrow-up dir"></i>{{formatNum .OutputTokens}}{{outputBar .InputTokens .OutputTokens}}</td>
             <td>{{if .HasDetail}}<a href="/admin/calls/{{.ID}}{{if $.ListQuery}}?{{$.ListQuery}}{{end}}"><i class="bi bi-eye"></i> view</a>{{else}}<span class="text-secondary">—</span>{{end}}</td>
@@ -44,6 +44,8 @@
   {{template "localtime" .}}
 </body>
 </html>
+
+{{define "callError"}}{{if .Error}}<i class="bi bi-exclamation-triangle {{callErrorClass .HTTPStatus .Error}}" title="{{.Error}}"></i>{{end}}{{end}}
 
 {{define "pager"}}
 {{if gt .TotalPages 1}}
