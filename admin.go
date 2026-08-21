@@ -438,12 +438,19 @@ func (s *Server) handleAdminCalls(w http.ResponseWriter, r *http.Request) {
 	if offset+len(rows) < int(total) {
 		next = pagerURL(f, page+1)
 	}
+	totalPages := int((total + adminPageSize - 1) / adminPageSize)
+	if totalPages < 1 {
+		totalPages = 1
+	}
 	data := adminNavData("calls", f)
 	data["Filter"] = f
 	data["Kind"] = "calls"
 	data["FilterAction"] = "/admin/calls"
 	data["Rows"] = rows
 	data["Total"] = total
+	data["Page"] = page
+	data["TotalPages"] = totalPages
+	data["Pages"] = pagerItems(f, page, totalPages)
 	data["Prev"] = prev
 	data["Next"] = next
 	lv := f.values("calls")
@@ -567,6 +574,40 @@ func pagerURL(f adminFilter, page int) string {
 		return "/admin/calls"
 	}
 	return "/admin/calls?" + enc
+}
+
+// pagerItem is one slot of the calls pager: either a numbered page link or an
+// ellipsis gap.
+type pagerItem struct {
+	Num    int
+	URL    template.URL
+	Active bool
+	Gap    bool
+}
+
+// pagerItems builds a compact numbered window around page: the first and last
+// page plus current ±2, with ellipsis gaps between runs.
+func pagerItems(f adminFilter, page, totalPages int) []pagerItem {
+	show := map[int]bool{1: true, totalPages: true}
+	for p := page - 2; p <= page+2; p++ {
+		if p >= 1 && p <= totalPages {
+			show[p] = true
+		}
+	}
+	var items []pagerItem
+	prev := 0
+	for p := 1; p <= totalPages; p++ {
+		if !show[p] {
+			continue
+		}
+		if prev > 0 && p-prev > 1 {
+			items = append(items, pagerItem{Gap: true})
+		}
+		// template.URL: built by pagerURL from our own params, same as ListQuery.
+		items = append(items, pagerItem{Num: p, URL: template.URL(pagerURL(f, p)), Active: p == page})
+		prev = p
+	}
+	return items
 }
 
 func prettyJSON(raw []byte) string {

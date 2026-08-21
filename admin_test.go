@@ -503,14 +503,54 @@ func TestAdminTemplatesRender(t *testing.T) {
 	cdata["Kind"] = "calls"
 	cdata["FilterAction"] = "/admin/calls"
 	cdata["Rows"] = []callListRow{{ID: 7, Model: "fast", HasDetail: true}}
-	cdata["Total"] = int64(0)
+	cdata["Total"] = int64(250)
+	cdata["Page"] = 2
+	cdata["TotalPages"] = 5
+	cdata["Pages"] = pagerItems(cf, 2, 5)
+	cdata["Prev"] = pagerURL(cf, 1)
+	cdata["Next"] = pagerURL(cf, 3)
 	lv := cf.values("calls")
 	lv.Set("page", "2")
 	cdata["ListQuery"] = template.URL(lv.Encode())
 	mergeFilterView(cdata, cf, "calls", filterOptions{Models: []string{"fast"}})
 	buf.Reset()
 	require.NoError(t, adminTmpl.ExecuteTemplate(&buf, "calls.html", cdata))
-	require.Contains(t, buf.String(), `name="model"`)
-	require.Contains(t, buf.String(), "all")
-	require.Contains(t, buf.String(), `/admin/calls/7?model=fast&amp;page=2`)
+	cbody := buf.String()
+	require.Contains(t, cbody, `name="model"`)
+	require.Contains(t, cbody, "all")
+	require.Contains(t, cbody, `/admin/calls/7?model=fast&amp;page=2`)
+	require.Contains(t, cbody, `aria-label="Newer"`)
+	require.Contains(t, cbody, `aria-label="Older"`)
+	require.Contains(t, cbody, `aria-current="page"`)
+	require.Contains(t, cbody, "Page 2 of 5")
+	require.Contains(t, cbody, `/admin/calls?model=fast&amp;page=3`)
+}
+
+func TestPagerItems(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	f := parseAdminFilter(url.Values{"model": []string{"fast"}}, now, "calls")
+
+	pageNums := func(items []pagerItem) []any {
+		out := make([]any, 0, len(items))
+		for _, it := range items {
+			if it.Gap {
+				out = append(out, "…")
+			} else {
+				out = append(out, it.Num)
+			}
+		}
+		return out
+	}
+
+	require.Equal(t, []any{1}, pageNums(pagerItems(f, 1, 1)))
+	require.Equal(t, []any{1, 2, 3, 4, 5}, pageNums(pagerItems(f, 3, 5)))
+	require.Equal(t, []any{1, 2, 3, "…", 10}, pageNums(pagerItems(f, 1, 10)))
+	require.Equal(t, []any{1, "…", 8, 9, 10}, pageNums(pagerItems(f, 10, 10)))
+	require.Equal(t, []any{1, "…", 3, 4, 5, 6, 7, "…", 10}, pageNums(pagerItems(f, 5, 10)))
+
+	items := pagerItems(f, 2, 3)
+	require.Len(t, items, 3)
+	require.True(t, items[1].Active)
+	require.Equal(t, template.URL("/admin/calls?model=fast"), items[0].URL)
+	require.Equal(t, template.URL("/admin/calls?model=fast&page=3"), items[2].URL)
 }
