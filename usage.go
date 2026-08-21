@@ -84,15 +84,6 @@ type openaiUsage struct {
 }
 
 func (u openaiUsage) asTokenUsage() tokenUsage {
-	in := u.PromptTokens
-	if in == 0 {
-		in = u.InputTokens
-	}
-	out := u.CompletionTokens
-	if out == 0 {
-		out = u.OutputTokens
-	}
-
 	cacheRead := u.CacheReadInputTokens
 	if cacheRead == 0 {
 		cacheRead = u.PromptCacheHitTokens
@@ -110,6 +101,19 @@ func (u openaiUsage) asTokenUsage() tokenUsage {
 	cacheCreation := u.CacheCreationInputTokens
 	if cacheCreation == 0 && u.CacheCreation != nil {
 		cacheCreation = u.CacheCreation.Ephemeral5mInputTokens + u.CacheCreation.Ephemeral1hInputTokens
+	}
+
+	in := u.PromptTokens
+	if in == 0 {
+		in = u.InputTokens
+		// Anthropic reports input_tokens excluding cache reads/creations,
+		// while OpenAI's prompt_tokens includes them. Fold the Anthropic
+		// cache parts back so Input is always the full prompt size.
+		in += u.CacheReadInputTokens + cacheCreation
+	}
+	out := u.CompletionTokens
+	if out == 0 {
+		out = u.OutputTokens
 	}
 
 	usage := tokenUsage{

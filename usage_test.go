@@ -40,10 +40,10 @@ func TestParseUsageJSONDeepSeekCache(t *testing.T) {
 
 func TestParseUsageJSONAnthropicCache(t *testing.T) {
 	u := parseUsageJSON([]byte(`{"usage":{"input_tokens":120,"output_tokens":9,"cache_read_input_tokens":90,"cache_creation_input_tokens":10}}`))
-	require.Equal(t, int64(120), u.Input)
+	require.Equal(t, int64(220), u.Input)
 	require.Equal(t, int64(90), u.CacheRead)
 	require.Equal(t, int64(10), u.CacheCreation)
-	require.Equal(t, int64(20), u.Uncached)
+	require.Equal(t, int64(120), u.Uncached)
 }
 
 func TestCopyAndScanSSE(t *testing.T) {
@@ -129,10 +129,10 @@ func TestEncodeResponseBlob(t *testing.T) {
 
 func TestParseUsageJSONAnthropicMessageStart(t *testing.T) {
 	u := parseUsageJSON([]byte(`{"type":"message_start","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":12,"cache_read_input_tokens":4,"cache_creation_input_tokens":1}}}`))
-	require.Equal(t, int64(12), u.Input)
+	require.Equal(t, int64(17), u.Input)
 	require.Equal(t, int64(4), u.CacheRead)
 	require.Equal(t, int64(1), u.CacheCreation)
-	require.Equal(t, int64(7), u.Uncached)
+	require.Equal(t, int64(12), u.Uncached)
 	require.Equal(t, "claude-sonnet-4-5", u.ResponseModel)
 }
 
@@ -153,10 +153,10 @@ func TestParseUsageSSEAnthropic(t *testing.T) {
 		"event: message_delta\n" +
 		"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":3}}\n\n")
 	u := parseUsageSSE(body)
-	require.Equal(t, int64(10), u.Input)
+	require.Equal(t, int64(12), u.Input)
 	require.Equal(t, int64(3), u.Output)
 	require.Equal(t, int64(2), u.CacheRead)
-	require.Equal(t, int64(8), u.Uncached)
+	require.Equal(t, int64(10), u.Uncached)
 	require.Equal(t, "claude-sonnet-4-5", u.ResponseModel)
 }
 
