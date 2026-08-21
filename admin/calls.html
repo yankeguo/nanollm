@@ -17,7 +17,7 @@
         <thead>
           <tr>
             <th>Time (<span data-tz>UTC</span>)</th><th>Model</th><th>Provider</th><th>API key</th>
-            <th class="text-end">Status</th><th class="text-end">In <i class="bi bi-arrow-down"></i></th><th><i class="bi bi-arrow-up"></i> Out</th>
+            <th class="text-center">Status</th><th class="text-end">In <i class="bi bi-arrow-down"></i></th><th><i class="bi bi-arrow-up"></i> Out</th>
             <th>Detail</th>
           </tr>
         </thead>
@@ -28,7 +28,7 @@
             <td>{{.Model}}</td>
             <td>{{.Provider}}</td>
             <td>{{.APIKeyName}}</td>
-            <td class="text-end">{{if not (and (eq .HTTPStatus 0) .Error)}}<span class="badge {{statusClass .HTTPStatus}}">{{if eq .HTTPStatus 0}}—{{else}}{{.HTTPStatus}}{{end}}</span> {{end}}{{template "callError" .}}</td>
+            <td class="text-center">{{if not .Error}}<span class="badge {{statusClass .HTTPStatus}}">{{if eq .HTTPStatus 0}}—{{else}}{{.HTTPStatus}}{{end}}</span>{{end}}{{template "callError" .}}</td>
             <td class="text-end">{{formatNum .InputTokens}}<i class="bi bi-arrow-down dir"></i>{{inputBar .InputTokens .CacheTokens}}</td>
             <td><i class="bi bi-arrow-up dir"></i>{{formatNum .OutputTokens}}{{outputBar .InputTokens .OutputTokens}}</td>
             <td>{{if .HasDetail}}<a href="/admin/calls/{{.ID}}{{if $.ListQuery}}?{{$.ListQuery}}{{end}}"><i class="bi bi-eye"></i> view</a>{{else}}<span class="text-secondary">—</span>{{end}}</td>
