@@ -4,6 +4,9 @@ OpenAI- and Anthropic-compatible reverse proxy for LLM APIs. Point coding tools 
 
 Providers for a model are tried **in order**, but only those that have a protocol block matching the inbound API (`openai`, `responses`, or `anthropic`). The next provider is used only when the current one is catastrophically unavailable. Rate limits, 4xx, and ordinary 5xx stay on the same provider so prompt cache is not thrown away.
 
+> [!WARNING]
+> Protocol conversion is intentionally **not** supported: nanollm never rewrites a body between Chat Completions, Responses, and Anthropic Messages. This is a deliberate design choice to maximize field-level compatibility (every non-`model` field is forwarded untouched) and forwarding performance. If a model has no vendor with a matching protocol block, the request fails with `404` instead of being converted.
+
 ## Features
 
 - Standard `net/http` server: OpenAI `/v1/chat/completions` (plus completions, embeddings), OpenAI `/v1/responses`, and Anthropic `/v1/messages`
