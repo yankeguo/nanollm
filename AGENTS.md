@@ -2,7 +2,7 @@
 
 Reply in the same language as the user.
 
-nanollm is a small Go (1.26+) OpenAI- and Anthropic-compatible LLM reverse proxy. Treat the code as source of truth. Keep changes focused; do not add frameworks or extra services unless asked.
+nanollm is a small Go (1.27+) OpenAI- and Anthropic-compatible LLM reverse proxy. Treat the code as source of truth. Keep changes focused; do not add frameworks or extra services unless asked.
 
 ## Layout
 
