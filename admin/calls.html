@@ -12,6 +12,7 @@
     {{template "filters" .}}
     <div class="card"><div class="card-body">
       <h2 class="card-title h6">Calls <span class="text-secondary">({{formatNum .Total}})</span></h2>
+      {{template "pager" .}}
       <table class="table table-hover align-middle tnum">
         <thead>
           <tr>
@@ -37,22 +38,26 @@
         {{end}}
         </tbody>
       </table>
-      {{if gt .TotalPages 1}}
-      <div class="d-flex flex-wrap align-items-center gap-3">
-        <nav aria-label="Calls pages">
-          <ul class="pagination pagination-sm mb-0">
-            <li class="page-item{{if not .Prev}} disabled{{end}}"><a class="page-link" href="{{or .Prev "#"}}" aria-label="Newer"><i class="bi bi-chevron-left"></i></a></li>
-            {{range .Pages}}
-              {{if .Gap}}<li class="page-item disabled"><span class="page-link">&hellip;</span></li>{{else}}<li class="page-item{{if .Active}} active{{end}}"{{if .Active}} aria-current="page"{{end}}><a class="page-link" href="{{.URL}}">{{.Num}}</a></li>{{end}}
-            {{end}}
-            <li class="page-item{{if not .Next}} disabled{{end}}"><a class="page-link" href="{{or .Next "#"}}" aria-label="Older"><i class="bi bi-chevron-right"></i></a></li>
-          </ul>
-        </nav>
-        <span class="text-secondary small">Page {{formatNum .Page}} of {{formatNum .TotalPages}}</span>
-      </div>
-      {{end}}
+      {{template "pager" .}}
     </div></div>
   </main>
   {{template "localtime" .}}
 </body>
 </html>
+
+{{define "pager"}}
+{{if gt .TotalPages 1}}
+<div class="d-flex flex-wrap align-items-center justify-content-center gap-3 my-3">
+  <nav aria-label="Calls pages">
+    <ul class="pagination pagination-sm mb-0">
+      <li class="page-item{{if not .Prev}} disabled{{end}}"><a class="page-link" href="{{or .Prev "#"}}" aria-label="Newer"><i class="bi bi-chevron-left"></i></a></li>
+      {{range .Pages}}
+        {{if .Gap}}<li class="page-item disabled"><span class="page-link">&hellip;</span></li>{{else}}<li class="page-item{{if .Active}} active{{end}}"{{if .Active}} aria-current="page"{{end}}><a class="page-link" href="{{.URL}}">{{.Num}}</a></li>{{end}}
+      {{end}}
+      <li class="page-item{{if not .Next}} disabled{{end}}"><a class="page-link" href="{{or .Next "#"}}" aria-label="Older"><i class="bi bi-chevron-right"></i></a></li>
+    </ul>
+  </nav>
+  <span class="text-secondary small">Page {{formatNum .Page}} of {{formatNum .TotalPages}}</span>
+</div>
+{{end}}
+{{end}}

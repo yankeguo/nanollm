@@ -519,10 +519,11 @@ func TestAdminTemplatesRender(t *testing.T) {
 	require.Contains(t, cbody, `name="model"`)
 	require.Contains(t, cbody, "all")
 	require.Contains(t, cbody, `/admin/calls/7?model=fast&amp;page=2`)
-	require.Contains(t, cbody, `aria-label="Newer"`)
-	require.Contains(t, cbody, `aria-label="Older"`)
-	require.Contains(t, cbody, `aria-current="page"`)
-	require.Contains(t, cbody, "Page 2 of 5")
+	require.Equal(t, 2, strings.Count(cbody, `aria-label="Newer"`))
+	require.Equal(t, 2, strings.Count(cbody, `aria-label="Older"`))
+	require.Equal(t, 2, strings.Count(cbody, `aria-current="page"`))
+	require.Equal(t, 2, strings.Count(cbody, "Page 2 of 5"))
+	require.Equal(t, 2, strings.Count(cbody, "justify-content-center"))
 	require.Contains(t, cbody, `/admin/calls?model=fast&amp;page=3`)
 }
 
