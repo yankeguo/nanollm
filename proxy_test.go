@@ -245,6 +245,54 @@ func TestProxyLogsCanceledAfter200(t *testing.T) {
 	require.Equal(t, errCanceled, logger.calls[0].Error)
 }
 
+func TestProxyLogsCanceledBeforeResponse(t *testing.T) {
+	started := make(chan struct{})
+	block := make(chan struct{})
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		// Wait for test end instead of r.Context(): the server cannot detect
+		// a client disconnect while the request body is unread.
+		<-block
+	}))
+	t.Cleanup(up.Close)
+	t.Cleanup(func() { close(block) })
+
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(
+		Provider{Name: "m", URL: up.URL, Model: "m"},
+		Provider{Name: "m2", URL: up.URL, Model: "m"},
+	), logger, nil).Handler()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
+		"model": "fast",
+	})).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.ServeHTTP(rec, authed(req))
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("upstream did not start")
+	}
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler did not return")
+	}
+
+	// pre-response client cancel: logged as canceled, no failover attempt
+	require.Len(t, logger.calls, 1)
+	require.Equal(t, 0, logger.calls[0].HTTPStatus)
+	require.Equal(t, errCanceled, logger.calls[0].Error)
+}
+
 func TestCopyErrText(t *testing.T) {
 	require.Empty(t, copyErrText(nil))
 	require.Equal(t, errCanceled, copyErrText(context.Canceled))

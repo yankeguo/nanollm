@@ -735,10 +735,10 @@ func commaDigits(s string) string {
 }
 
 // outcomeSQL maps an outcome filter to a WHERE clause. The four outcomes
-// partition llm_calls: ok (2xx, no error), canceled (client disconnected
-// after the response started), no_response (no HTTP status ever arrived,
-// e.g. transport failure or pre-response cancel), error (anything else with
-// an HTTP status: 4xx/5xx, rewrite failures, mid-stream copy errors).
+// partition llm_calls: ok (2xx, no error), canceled (client disconnected,
+// before or after the response started), no_response (no HTTP status ever
+// arrived, e.g. transport failure), error (anything else with an HTTP
+// status: 4xx/5xx, rewrite failures, mid-stream copy errors).
 func outcomeSQL(outcome string) (string, []any) {
 	switch outcome {
 	case "ok":

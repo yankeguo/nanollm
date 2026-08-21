@@ -208,7 +208,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 
 	resp, err := p.client().Do(req)
 	if err != nil {
-		rec.Error = err.Error()
+		rec.Error = copyErrText(err)
 		p.logCall(rec)
 		return 0, err
 	}
