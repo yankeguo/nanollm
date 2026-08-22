@@ -60,7 +60,7 @@ models:
 	require.NotNil(t, cfg.providers("fast")[0].OpenAICompletions)
 	require.Equal(t, "http://primary.example/v1/chat/completions", cfg.providers("fast")[0].OpenAICompletions.URL)
 	require.Len(t, cfg.providersFor("fast", formatOpenAICompletions), 2)
-	require.Empty(t, cfg.providersFor("fast", formatAnthropic))
+	require.Empty(t, cfg.providersFor("fast", formatAnthropicMessages))
 }
 
 func TestLoadConfigRejectsEmpty(t *testing.T) {
@@ -286,7 +286,7 @@ models:
         url: http://a.example
 `), 0o644))
 	_, err := loadConfig(path)
-	require.ErrorContains(t, err, "must set openai_completions, openai_responses, or anthropic")
+	require.ErrorContains(t, err, "must set openai_completions, openai_responses, or anthropic_messages")
 }
 
 func TestLoadConfigNestedProviderEndpoints(t *testing.T) {
@@ -316,11 +316,11 @@ models:
         openai_responses:
           url: https://openrouter.ai/api/v1/responses
           model: openai/gpt-4o
-        anthropic:
+        anthropic_messages:
           url: https://openrouter.ai/api/v1/messages
           model: anthropic/claude-override
       - name: anthropic-only
-        anthropic:
+        anthropic_messages:
           url: https://api.anthropic.com/v1/messages
           model: claude-sonnet-4-5
 `), 0o644))
@@ -331,7 +331,7 @@ models:
 	require.Equal(t, "openrouter", or.Name)
 	require.NotNil(t, or.OpenAICompletions)
 	require.NotNil(t, or.OpenAIResponses)
-	require.NotNil(t, or.Anthropic)
+	require.NotNil(t, or.AnthropicMessages)
 
 	openai := cfg.providersFor("claude", formatOpenAICompletions)
 	require.Len(t, openai, 1)
@@ -353,11 +353,11 @@ models:
 	require.Equal(t, "Bearer sk-or", headers["Authorization"])
 	require.Equal(t, "top", headers["X-Shared"])
 
-	anth := cfg.providersFor("claude", formatAnthropic)
+	anth := cfg.providersFor("claude", formatAnthropicMessages)
 	require.Len(t, anth, 2)
 	require.Equal(t, "openrouter", anth[0].Name)
 	require.Equal(t, "anthropic-only", anth[1].Name)
-	u, model, headers, ok = anth[0].resolve(formatAnthropic)
+	u, model, headers, ok = anth[0].resolve(formatAnthropicMessages)
 	require.True(t, ok)
 	require.Equal(t, "https://openrouter.ai/api/v1/messages", u)
 	require.Equal(t, "anthropic/claude-override", model)

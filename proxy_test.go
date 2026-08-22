@@ -677,7 +677,7 @@ func TestProxySkipsOtherFormatProviders(t *testing.T) {
 	cfg := &Config{
 		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
 		Models: []ModelConfig{{Name: "claude", Providers: []Provider{
-			{Name: "anthropic", Model: "claude-sonnet-4-5", Anthropic: ep(anthUp.URL)},
+			{Name: "anthropic", Model: "claude-sonnet-4-5", AnthropicMessages: ep(anthUp.URL)},
 			{Name: "openrouter", Model: "anthropic/claude-sonnet-4-5", OpenAICompletions: ep(openaiUp.URL)},
 		}}},
 	}
@@ -728,7 +728,7 @@ func TestProxyNestedProviderFormats(t *testing.T) {
 			Name:              "openrouter",
 			Model:             "anthropic/claude-sonnet-4-5",
 			OpenAICompletions: ep(openaiUp.URL),
-			Anthropic:         ep(anthUp.URL),
+			AnthropicMessages: ep(anthUp.URL),
 		}}}},
 	}
 	h := NewServer(cfg, logger, nil).Handler()
@@ -771,8 +771,8 @@ func TestProxySkipsProviderWithoutMatchingBlock(t *testing.T) {
 	cfg := &Config{
 		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
 		Models: []ModelConfig{{Name: "claude", Providers: []Provider{{
-			Name:      "anthropic",
-			Anthropic: &ProviderEndpoint{URL: anthUp.URL, Model: "claude-sonnet-4-5"},
+			Name:              "anthropic",
+			AnthropicMessages: &ProviderEndpoint{URL: anthUp.URL, Model: "claude-sonnet-4-5"},
 		}}}},
 	}
 	h := NewServer(cfg, nil, nil).Handler()
@@ -793,7 +793,7 @@ func TestProxyAnthropicMissingProviders(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	require.Contains(t, rec.Body.String(), `"type":"error"`)
-	require.Contains(t, rec.Body.String(), "has no anthropic providers")
+	require.Contains(t, rec.Body.String(), "has no anthropic_messages providers")
 	require.NotContains(t, rec.Body.String(), "invalid_request_error")
 }
 
@@ -801,7 +801,7 @@ func TestProxyOpenAIMissingProviders(t *testing.T) {
 	h := testProxy(t, &Config{
 		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
 		Models: []ModelConfig{{Name: "claude", Providers: []Provider{
-			{Name: "anthropic", Model: "claude-sonnet-4-5", Anthropic: ep("http://example.invalid")},
+			{Name: "anthropic", Model: "claude-sonnet-4-5", AnthropicMessages: ep("http://example.invalid")},
 		}}},
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "claude"}))
@@ -828,9 +828,9 @@ func TestProxyAnthropicRewritesModelAndStripsClientKey(t *testing.T) {
 	cfg := &Config{
 		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
 		Models: []ModelConfig{{Name: "claude", Providers: []Provider{{
-			Name:      "anthropic",
-			Model:     "claude-sonnet-4-5",
-			Anthropic: ep(up.URL),
+			Name:              "anthropic",
+			Model:             "claude-sonnet-4-5",
+			AnthropicMessages: ep(up.URL),
 			Headers: map[string]string{
 				"x-api-key":         "sk-up",
 				"anthropic-version": "2023-06-01",
@@ -873,7 +873,7 @@ func TestProxyAnthropicStreamUsage(t *testing.T) {
 	cfg := &Config{
 		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
 		Models: []ModelConfig{{Name: "claude", Providers: []Provider{{
-			Name: "anthropic", Model: "claude-sonnet-4-5", Anthropic: ep(up.URL),
+			Name: "anthropic", Model: "claude-sonnet-4-5", AnthropicMessages: ep(up.URL),
 		}}}},
 	}
 	h := NewServer(cfg, logger, nil).Handler()

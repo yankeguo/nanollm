@@ -43,12 +43,12 @@ models:
           url: https://openrouter.ai/api/v1/chat/completions
         openai_responses:
           url: https://openrouter.ai/api/v1/responses
-        anthropic:
+        anthropic_messages:
           url: https://openrouter.ai/api/v1/messages
       - name: anthropic
         model: claude-sonnet-4-5
         headers:
           x-api-key: REPLACE_ME
           anthropic-version: "2023-06-01"
-        anthropic:
+        anthropic_messages:
           url: https://api.anthropic.com/v1/messages

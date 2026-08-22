@@ -61,7 +61,7 @@ func (s *Server) Handler() http.Handler {
 	resp := auth(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Format: formatOpenAIResponses})
 	mux.Handle("POST /v1/responses", resp)
 	mux.Handle("POST /responses", resp)
-	anth := s.requireAPIKey(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Format: formatAnthropic}, formatAnthropic)
+	anth := s.requireAPIKey(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Format: formatAnthropicMessages}, formatAnthropicMessages)
 	mux.Handle("POST /v1/messages", anth)
 	return withSecurityHeaders(mux)
 }
@@ -152,7 +152,7 @@ func writeAPIError(w http.ResponseWriter, status int, typ, message string) {
 }
 
 func writeFormatError(w http.ResponseWriter, format string, status int, typ, message string) {
-	if format == formatAnthropic {
+	if format == formatAnthropicMessages {
 		writeJSON(w, status, map[string]any{
 			"type": "error",
 			"error": map[string]any{

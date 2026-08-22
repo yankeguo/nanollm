@@ -56,7 +56,7 @@ func (p *Proxy) writeError(w http.ResponseWriter, status int, typ, message strin
 }
 
 func (p *Proxy) clientErrorType(notFound bool) string {
-	if p.format() != formatAnthropic {
+	if p.format() != formatAnthropicMessages {
 		return "invalid_request_error"
 	}
 	if notFound {
@@ -66,7 +66,7 @@ func (p *Proxy) clientErrorType(notFound bool) string {
 }
 
 func (p *Proxy) upstreamErrorType() string {
-	if p.format() == formatAnthropic {
+	if p.format() == formatAnthropicMessages {
 		return "api_error"
 	}
 	return "upstream_error"

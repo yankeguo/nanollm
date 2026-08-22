@@ -13,7 +13,7 @@ const (
 	defaultDetailRetain     = 1000
 	formatOpenAICompletions = "openai_completions"
 	formatOpenAIResponses   = "openai_responses"
-	formatAnthropic         = "anthropic"
+	formatAnthropicMessages = "anthropic_messages"
 )
 
 type Config struct {
@@ -62,7 +62,7 @@ type Provider struct {
 	Headers           map[string]string `yaml:"headers"`
 	OpenAICompletions *ProviderEndpoint `yaml:"openai_completions"`
 	OpenAIResponses   *ProviderEndpoint `yaml:"openai_responses"`
-	Anthropic         *ProviderEndpoint `yaml:"anthropic"`
+	AnthropicMessages *ProviderEndpoint `yaml:"anthropic_messages"`
 }
 
 func (p Provider) endpoint(format string) *ProviderEndpoint {
@@ -74,8 +74,8 @@ func (p Provider) endpoint(format string) *ProviderEndpoint {
 		return p.OpenAICompletions
 	case formatOpenAIResponses:
 		return p.OpenAIResponses
-	case formatAnthropic:
-		return p.Anthropic
+	case formatAnthropicMessages:
+		return p.AnthropicMessages
 	}
 	return nil
 }
@@ -192,8 +192,8 @@ func (c *Config) validate() error {
 }
 
 func (p *Provider) validate(model string) error {
-	if p.OpenAICompletions == nil && p.OpenAIResponses == nil && p.Anthropic == nil {
-		return fmt.Errorf("config: model %q provider %q must set openai_completions, openai_responses, or anthropic", model, p.Name)
+	if p.OpenAICompletions == nil && p.OpenAIResponses == nil && p.AnthropicMessages == nil {
+		return fmt.Errorf("config: model %q provider %q must set openai_completions, openai_responses, or anthropic_messages", model, p.Name)
 	}
 	if err := validateEndpointURL(model, p.Name, formatOpenAICompletions, p.OpenAICompletions); err != nil {
 		return err
@@ -201,7 +201,7 @@ func (p *Provider) validate(model string) error {
 	if err := validateEndpointURL(model, p.Name, formatOpenAIResponses, p.OpenAIResponses); err != nil {
 		return err
 	}
-	if err := validateEndpointURL(model, p.Name, formatAnthropic, p.Anthropic); err != nil {
+	if err := validateEndpointURL(model, p.Name, formatAnthropicMessages, p.AnthropicMessages); err != nil {
 		return err
 	}
 	return nil

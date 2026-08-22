@@ -71,11 +71,11 @@ func (s *Server) requireAPIKey(next http.Handler, format string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := s.Config.lookupAPIKey(extractAPIKey(r))
 		if key == nil {
-			if format != formatAnthropic {
+			if format != formatAnthropicMessages {
 				w.Header().Set("WWW-Authenticate", `Bearer realm="nanollm"`)
 			}
 			typ := "invalid_request_error"
-			if format == formatAnthropic {
+			if format == formatAnthropicMessages {
 				typ = "authentication_error"
 			}
 			writeFormatError(w, format, http.StatusUnauthorized, typ, "invalid api key")

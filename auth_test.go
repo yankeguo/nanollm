@@ -89,7 +89,7 @@ func TestLookupAPIKeyScansAllKeys(t *testing.T) {
 }
 
 func TestAnthropicAPIKeyUnauthorized(t *testing.T) {
-	h := testProxy(t, cfgFast(Provider{Name: "x", Model: "x", Anthropic: ep("http://example.invalid")}))
+	h := testProxy(t, cfgFast(Provider{Name: "x", Model: "x", AnthropicMessages: ep("http://example.invalid")}))
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", jsonBody(map[string]any{"model": "x"}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -105,7 +105,7 @@ func TestAnthropicAPIKeyAcceptsXApiKey(t *testing.T) {
 		io.WriteString(w, `{"type":"message","content":[]}`)
 	}))
 	t.Cleanup(up.Close)
-	cfg := cfgFast(Provider{Name: "x", Model: "x", Anthropic: ep(up.URL)})
+	cfg := cfgFast(Provider{Name: "x", Model: "x", AnthropicMessages: ep(up.URL)})
 	cfg.Models[0].Name = "claude"
 	h := NewServer(cfg, nil, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", jsonBody(map[string]any{"model": "claude"}))
