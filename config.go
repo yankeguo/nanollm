@@ -13,6 +13,7 @@ const (
 	defaultDetailRetain     = 1000
 	formatOpenAICompletions = "openai_completions"
 	formatOpenAIResponses   = "openai_responses"
+	formatOpenAIEmbeddings  = "openai_embeddings"
 	formatAnthropicMessages = "anthropic_messages"
 )
 
@@ -62,6 +63,7 @@ type Provider struct {
 	Headers           map[string]string `yaml:"headers"`
 	OpenAICompletions *ProviderEndpoint `yaml:"openai_completions"`
 	OpenAIResponses   *ProviderEndpoint `yaml:"openai_responses"`
+	OpenAIEmbeddings  *ProviderEndpoint `yaml:"openai_embeddings"`
 	AnthropicMessages *ProviderEndpoint `yaml:"anthropic_messages"`
 }
 
@@ -74,6 +76,8 @@ func (p Provider) endpoint(format string) *ProviderEndpoint {
 		return p.OpenAICompletions
 	case formatOpenAIResponses:
 		return p.OpenAIResponses
+	case formatOpenAIEmbeddings:
+		return p.OpenAIEmbeddings
 	case formatAnthropicMessages:
 		return p.AnthropicMessages
 	}
@@ -192,13 +196,16 @@ func (c *Config) validate() error {
 }
 
 func (p *Provider) validate(model string) error {
-	if p.OpenAICompletions == nil && p.OpenAIResponses == nil && p.AnthropicMessages == nil {
-		return fmt.Errorf("config: model %q provider %q must set openai_completions, openai_responses, or anthropic_messages", model, p.Name)
+	if p.OpenAICompletions == nil && p.OpenAIResponses == nil && p.OpenAIEmbeddings == nil && p.AnthropicMessages == nil {
+		return fmt.Errorf("config: model %q provider %q must set openai_completions, openai_responses, openai_embeddings, or anthropic_messages", model, p.Name)
 	}
 	if err := validateEndpointURL(model, p.Name, formatOpenAICompletions, p.OpenAICompletions); err != nil {
 		return err
 	}
 	if err := validateEndpointURL(model, p.Name, formatOpenAIResponses, p.OpenAIResponses); err != nil {
+		return err
+	}
+	if err := validateEndpointURL(model, p.Name, formatOpenAIEmbeddings, p.OpenAIEmbeddings); err != nil {
 		return err
 	}
 	if err := validateEndpointURL(model, p.Name, formatAnthropicMessages, p.AnthropicMessages); err != nil {

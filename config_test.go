@@ -40,7 +40,7 @@ models:
     providers:
       - name: openai
         model: text-embedding-3-small
-        openai_completions:
+        openai_embeddings:
           url: http://embed.example/v1/embeddings
 `), 0o644))
 
@@ -61,6 +61,10 @@ models:
 	require.Equal(t, "http://primary.example/v1/chat/completions", cfg.providers("fast")[0].OpenAICompletions.URL)
 	require.Len(t, cfg.providersFor("fast", formatOpenAICompletions), 2)
 	require.Empty(t, cfg.providersFor("fast", formatAnthropicMessages))
+	require.NotNil(t, cfg.providers("embed")[0].OpenAIEmbeddings)
+	require.Equal(t, "http://embed.example/v1/embeddings", cfg.providers("embed")[0].OpenAIEmbeddings.URL)
+	require.Len(t, cfg.providersFor("embed", formatOpenAIEmbeddings), 1)
+	require.Empty(t, cfg.providersFor("embed", formatOpenAICompletions))
 }
 
 func TestLoadConfigRejectsEmpty(t *testing.T) {
@@ -286,7 +290,7 @@ models:
         url: http://a.example
 `), 0o644))
 	_, err := loadConfig(path)
-	require.ErrorContains(t, err, "must set openai_completions, openai_responses, or anthropic_messages")
+	require.ErrorContains(t, err, "must set openai_completions, openai_responses, openai_embeddings, or anthropic_messages")
 }
 
 func TestLoadConfigNestedProviderEndpoints(t *testing.T) {
@@ -363,6 +367,42 @@ models:
 	require.Equal(t, "anthropic/claude-override", model)
 	require.Equal(t, "Bearer sk-or", headers["Authorization"])
 	require.Equal(t, "top", headers["X-Shared"])
+}
+
+func TestLoadConfigAllowsEmbeddingsWithCompletions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+admin:
+  username: admin
+  password: REPLACE_ME
+api_keys:
+  - name: alice
+    value: sk-alice
+models:
+  - name: dual
+    providers:
+      - name: openai
+        openai_completions:
+          url: https://api.openai.com/v1/chat/completions
+        openai_embeddings:
+          url: https://api.openai.com/v1/embeddings
+          model: text-embedding-3-small
+`), 0o644))
+	cfg, err := loadConfig(path)
+	require.NoError(t, err)
+
+	p := cfg.providers("dual")[0]
+	require.NotNil(t, p.OpenAICompletions)
+	require.NotNil(t, p.OpenAIEmbeddings)
+	require.Len(t, cfg.providersFor("dual", formatOpenAICompletions), 1)
+	require.Len(t, cfg.providersFor("dual", formatOpenAIEmbeddings), 1)
+	u, model, _, ok := p.resolve(formatOpenAIEmbeddings)
+	require.True(t, ok)
+	require.Equal(t, "https://api.openai.com/v1/embeddings", u)
+	require.Equal(t, "text-embedding-3-small", model)
 }
 
 func TestLoadConfigRequiresEndpointURL(t *testing.T) {

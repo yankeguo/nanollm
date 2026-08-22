@@ -1083,6 +1083,27 @@ func TestProxyResponsesDoesNotUseOpenAIURL(t *testing.T) {
 	require.Equal(t, int32(0), openaiHits.Load())
 }
 
+func TestProxyEmbeddingsDoesNotUseCompletionsURL(t *testing.T) {
+	var openaiHits atomic.Int32
+	openaiUp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		openaiHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"choices":[{"message":{"content":"oai"}}]}`)
+	}))
+	t.Cleanup(openaiUp.Close)
+
+	h := testProxy(t, cfgFast(Provider{
+		Name:              "openai",
+		OpenAICompletions: &ProviderEndpoint{URL: openaiUp.URL, Model: "gpt-4o"},
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", jsonBody(map[string]any{"model": "fast", "input": "hi"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Contains(t, rec.Body.String(), "has no openai_embeddings providers")
+	require.Equal(t, int32(0), openaiHits.Load())
+}
+
 func TestProxyResponsesAliasPath(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -1151,7 +1172,7 @@ func TestProxyEmbeddingsDoesNotInjectStreamOptions(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	h := testProxy(t, cfgFast(Provider{Name: "m", Model: "text-embedding-3-small", OpenAICompletions: ep(up.URL)}))
+	h := testProxy(t, cfgFast(Provider{Name: "m", Model: "text-embedding-3-small", OpenAIEmbeddings: ep(up.URL)}))
 	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", jsonBody(map[string]any{
 		"model":  "fast",
 		"input":  "hi",

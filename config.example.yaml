@@ -32,6 +32,14 @@ models:
           Authorization: Bearer ollama
         openai_completions:
           url: http://127.0.0.1:11434/v1/chat/completions
+  - name: text-embedding-3-small
+    providers:
+      - name: openai
+        model: text-embedding-3-small
+        headers:
+          Authorization: Bearer sk-REPLACE_ME
+        openai_embeddings:
+          url: https://api.openai.com/v1/embeddings
   - name: claude
     providers:
       - name: openrouter
