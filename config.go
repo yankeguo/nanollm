@@ -18,10 +18,11 @@ const (
 )
 
 type Config struct {
-	MySQL   MySQLConfig   `yaml:"mysql"`
-	Admin   AdminConfig   `yaml:"admin"`
-	APIKeys []APIKey      `yaml:"api_keys"`
-	Models  []ModelConfig `yaml:"models"`
+	MySQL     MySQLConfig   `yaml:"mysql"`
+	Admin     AdminConfig   `yaml:"admin"`
+	APIKeys   []APIKey      `yaml:"api_keys"`
+	Providers []Provider    `yaml:"providers"`
+	Models    []ModelConfig `yaml:"models"`
 }
 
 type AdminConfig struct {
@@ -47,8 +48,14 @@ type APIKey struct {
 }
 
 type ModelConfig struct {
-	Name      string     `yaml:"name"`
-	Providers []Provider `yaml:"providers"`
+	Name      string          `yaml:"name"`
+	Providers []ModelProvider `yaml:"providers"`
+}
+
+type ModelProvider struct {
+	Name      string   `yaml:"name"`
+	Model     string   `yaml:"model"`
+	Protocols []string `yaml:"protocols"`
 }
 
 type ProviderEndpoint struct {
@@ -67,6 +74,15 @@ type Provider struct {
 	AnthropicMessages *ProviderEndpoint `yaml:"anthropic_messages"`
 }
 
+func isKnownFormat(format string) bool {
+	switch format {
+	case formatOpenAICompletions, formatOpenAIResponses, formatOpenAIEmbeddings, formatAnthropicMessages:
+		return true
+	default:
+		return false
+	}
+}
+
 func (p Provider) endpoint(format string) *ProviderEndpoint {
 	if format == "" {
 		format = formatOpenAICompletions
@@ -82,6 +98,47 @@ func (p Provider) endpoint(format string) *ProviderEndpoint {
 		return p.AnthropicMessages
 	}
 	return nil
+}
+
+func (p Provider) protocols() []string {
+	out := make([]string, 0, 4)
+	if p.OpenAICompletions != nil {
+		out = append(out, formatOpenAICompletions)
+	}
+	if p.OpenAIResponses != nil {
+		out = append(out, formatOpenAIResponses)
+	}
+	if p.OpenAIEmbeddings != nil {
+		out = append(out, formatOpenAIEmbeddings)
+	}
+	if p.AnthropicMessages != nil {
+		out = append(out, formatAnthropicMessages)
+	}
+	return out
+}
+
+func (p Provider) bind(ref ModelProvider) Provider {
+	out := p
+	if ref.Model != "" {
+		out.Model = ref.Model
+	}
+	allowed := make(map[string]struct{}, len(ref.Protocols))
+	for _, format := range ref.Protocols {
+		allowed[format] = struct{}{}
+	}
+	if _, ok := allowed[formatOpenAICompletions]; !ok {
+		out.OpenAICompletions = nil
+	}
+	if _, ok := allowed[formatOpenAIResponses]; !ok {
+		out.OpenAIResponses = nil
+	}
+	if _, ok := allowed[formatOpenAIEmbeddings]; !ok {
+		out.OpenAIEmbeddings = nil
+	}
+	if _, ok := allowed[formatAnthropicMessages]; !ok {
+		out.AnthropicMessages = nil
+	}
+	return out
 }
 
 func (p Provider) resolve(format string) (upstreamURL, model string, headers map[string]string, ok bool) {
@@ -147,6 +204,25 @@ func (c *Config) validate() error {
 		seenKeyName[k.Name] = struct{}{}
 		seenKeyValue[k.Value] = struct{}{}
 	}
+	if len(c.Providers) == 0 {
+		return fmt.Errorf("config: at least one provider is required")
+	}
+	seenProvider := make(map[string]struct{}, len(c.Providers))
+	byName := make(map[string]*Provider, len(c.Providers))
+	for i := range c.Providers {
+		p := &c.Providers[i]
+		if p.Name == "" {
+			return fmt.Errorf("config: providers[%d] name is required", i)
+		}
+		if _, dup := seenProvider[p.Name]; dup {
+			return fmt.Errorf("config: duplicate provider name %q", p.Name)
+		}
+		seenProvider[p.Name] = struct{}{}
+		if err := p.validate(); err != nil {
+			return err
+		}
+		byName[p.Name] = p
+	}
 	if len(c.Models) == 0 {
 		return fmt.Errorf("config: at least one model is required")
 	}
@@ -162,17 +238,34 @@ func (c *Config) validate() error {
 		if len(m.Providers) == 0 {
 			return fmt.Errorf("config: model %q has no providers", m.Name)
 		}
-		seenProvider := make(map[string]struct{}, len(m.Providers))
-		for j, p := range m.Providers {
-			if p.Name == "" {
+		seenRef := make(map[string]struct{}, len(m.Providers))
+		for j, ref := range m.Providers {
+			if ref.Name == "" {
 				return fmt.Errorf("config: model %q providers[%d] name is required", m.Name, j)
 			}
-			if _, dup := seenProvider[p.Name]; dup {
-				return fmt.Errorf("config: model %q has duplicate provider name %q", m.Name, p.Name)
+			if _, dup := seenRef[ref.Name]; dup {
+				return fmt.Errorf("config: model %q has duplicate provider name %q", m.Name, ref.Name)
 			}
-			seenProvider[p.Name] = struct{}{}
-			if err := c.Models[i].Providers[j].validate(m.Name); err != nil {
-				return err
+			seenRef[ref.Name] = struct{}{}
+			p := byName[ref.Name]
+			if p == nil {
+				return fmt.Errorf("config: model %q references unknown provider %q", m.Name, ref.Name)
+			}
+			if len(ref.Protocols) == 0 {
+				return fmt.Errorf("config: model %q provider %q protocols is required", m.Name, ref.Name)
+			}
+			seenProto := make(map[string]struct{}, len(ref.Protocols))
+			for k, format := range ref.Protocols {
+				if !isKnownFormat(format) {
+					return fmt.Errorf("config: model %q provider %q protocols[%d] %q is invalid", m.Name, ref.Name, k, format)
+				}
+				if _, dup := seenProto[format]; dup {
+					return fmt.Errorf("config: model %q provider %q has duplicate protocol %q", m.Name, ref.Name, format)
+				}
+				seenProto[format] = struct{}{}
+				if p.endpoint(format) == nil {
+					return fmt.Errorf("config: model %q provider %q protocols lists %s, but provider has no %s block", m.Name, ref.Name, format, format)
+				}
 			}
 		}
 	}
@@ -195,46 +288,46 @@ func (c *Config) validate() error {
 	return nil
 }
 
-func (p *Provider) validate(model string) error {
+func (p *Provider) validate() error {
 	if p.OpenAICompletions == nil && p.OpenAIResponses == nil && p.OpenAIEmbeddings == nil && p.AnthropicMessages == nil {
-		return fmt.Errorf("config: model %q provider %q must set openai_completions, openai_responses, openai_embeddings, or anthropic_messages", model, p.Name)
+		return fmt.Errorf("config: provider %q must set openai_completions, openai_responses, openai_embeddings, or anthropic_messages", p.Name)
 	}
-	if err := validateEndpointURL(model, p.Name, formatOpenAICompletions, p.OpenAICompletions); err != nil {
+	if err := validateEndpointURL(p.Name, formatOpenAICompletions, p.OpenAICompletions); err != nil {
 		return err
 	}
-	if err := validateEndpointURL(model, p.Name, formatOpenAIResponses, p.OpenAIResponses); err != nil {
+	if err := validateEndpointURL(p.Name, formatOpenAIResponses, p.OpenAIResponses); err != nil {
 		return err
 	}
-	if err := validateEndpointURL(model, p.Name, formatOpenAIEmbeddings, p.OpenAIEmbeddings); err != nil {
+	if err := validateEndpointURL(p.Name, formatOpenAIEmbeddings, p.OpenAIEmbeddings); err != nil {
 		return err
 	}
-	if err := validateEndpointURL(model, p.Name, formatAnthropicMessages, p.AnthropicMessages); err != nil {
+	if err := validateEndpointURL(p.Name, formatAnthropicMessages, p.AnthropicMessages); err != nil {
 		return err
 	}
 	return nil
 }
 
-func validateEndpointURL(model, provider, format string, ep *ProviderEndpoint) error {
+func validateEndpointURL(provider, format string, ep *ProviderEndpoint) error {
 	if ep == nil {
 		return nil
 	}
-	return validateHTTPURL(model, provider, format, ep.URL)
+	return validateHTTPURL(provider, format, ep.URL)
 }
 
-func validateHTTPURL(model, provider, format, raw string) error {
+func validateHTTPURL(provider, format, raw string) error {
 	what := "url"
 	if format != "" {
 		what = format + " url"
 	}
 	if raw == "" {
-		return fmt.Errorf("config: model %q provider %q %s is required", model, provider, what)
+		return fmt.Errorf("config: provider %q %s is required", provider, what)
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
-		return fmt.Errorf("config: model %q provider %q %s is invalid: %w", model, provider, what, err)
+		return fmt.Errorf("config: provider %q %s is invalid: %w", provider, what, err)
 	}
 	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("config: model %q provider %q %s must be http or https with a host", model, provider, what)
+		return fmt.Errorf("config: provider %q %s must be http or https with a host", provider, what)
 	}
 	return nil
 }
@@ -251,12 +344,32 @@ func (c *Config) model(name string) *ModelConfig {
 	return nil
 }
 
+func (c *Config) provider(name string) *Provider {
+	if c == nil {
+		return nil
+	}
+	for i := range c.Providers {
+		if c.Providers[i].Name == name {
+			return &c.Providers[i]
+		}
+	}
+	return nil
+}
+
 func (c *Config) providers(model string) []Provider {
 	m := c.model(model)
 	if m == nil {
 		return nil
 	}
-	return m.Providers
+	out := make([]Provider, 0, len(m.Providers))
+	for _, ref := range m.Providers {
+		p := c.provider(ref.Name)
+		if p == nil {
+			continue
+		}
+		out = append(out, p.bind(ref))
+	}
+	return out
 }
 
 func (c *Config) providersFor(model, format string) []Provider {

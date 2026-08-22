@@ -28,10 +28,23 @@ func testProxy(t *testing.T, cfg *Config) http.Handler {
 }
 
 func cfgFast(providers ...Provider) *Config {
-	return &Config{
-		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
-		Models:  []ModelConfig{{Name: "fast", Providers: providers}},
+	return cfgWith("fast", providers...)
+}
+
+func cfgWith(model string, providers ...Provider) *Config {
+	refs := make([]ModelProvider, len(providers))
+	for i, p := range providers {
+		refs[i] = modelProviderRef(p)
 	}
+	return &Config{
+		APIKeys:   []APIKey{{Name: "test", Value: testAPIKey}},
+		Providers: providers,
+		Models:    []ModelConfig{{Name: model, Providers: refs}},
+	}
+}
+
+func modelProviderRef(p Provider) ModelProvider {
+	return ModelProvider{Name: p.Name, Model: p.Model, Protocols: p.protocols()}
 }
 
 func ep(url string) *ProviderEndpoint {
@@ -305,10 +318,15 @@ func TestCopyErrText(t *testing.T) {
 }
 
 func TestModelsEndpoint(t *testing.T) {
-	h := testProxy(t, &Config{Models: []ModelConfig{
-		{Name: "fast", Providers: []Provider{{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}}},
-		{Name: "code", Providers: []Provider{{Name: "y", Model: "y", OpenAICompletions: ep("http://example.invalid")}}},
-	}})
+	x := Provider{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}
+	y := Provider{Name: "y", Model: "y", OpenAICompletions: ep("http://example.invalid")}
+	h := testProxy(t, &Config{
+		Providers: []Provider{x, y},
+		Models: []ModelConfig{
+			{Name: "fast", Providers: []ModelProvider{modelProviderRef(x)}},
+			{Name: "code", Providers: []ModelProvider{modelProviderRef(y)}},
+		},
+	})
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, authed(req))
@@ -394,10 +412,15 @@ func TestProxyBodyTooLarge(t *testing.T) {
 }
 
 func TestModelEndpoint(t *testing.T) {
-	h := testProxy(t, &Config{Models: []ModelConfig{
-		{Name: "fast", Providers: []Provider{{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}}},
-		{Name: "org/code", Providers: []Provider{{Name: "y", Model: "y", OpenAICompletions: ep("http://example.invalid")}}},
-	}})
+	x := Provider{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}
+	y := Provider{Name: "y", Model: "y", OpenAICompletions: ep("http://example.invalid")}
+	h := testProxy(t, &Config{
+		Providers: []Provider{x, y},
+		Models: []ModelConfig{
+			{Name: "fast", Providers: []ModelProvider{modelProviderRef(x)}},
+			{Name: "org/code", Providers: []ModelProvider{modelProviderRef(y)}},
+		},
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/models/fast", nil)
 	rec := httptest.NewRecorder()
@@ -674,13 +697,10 @@ func TestProxySkipsOtherFormatProviders(t *testing.T) {
 	}))
 	t.Cleanup(anthUp.Close)
 
-	cfg := &Config{
-		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
-		Models: []ModelConfig{{Name: "claude", Providers: []Provider{
-			{Name: "anthropic", Model: "claude-sonnet-4-5", AnthropicMessages: ep(anthUp.URL)},
-			{Name: "openrouter", Model: "anthropic/claude-sonnet-4-5", OpenAICompletions: ep(openaiUp.URL)},
-		}}},
-	}
+	cfg := cfgWith("claude",
+		Provider{Name: "anthropic", Model: "claude-sonnet-4-5", AnthropicMessages: ep(anthUp.URL)},
+		Provider{Name: "openrouter", Model: "anthropic/claude-sonnet-4-5", OpenAICompletions: ep(openaiUp.URL)},
+	)
 	h := NewServer(cfg, nil, nil).Handler()
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "claude"}))
@@ -722,15 +742,12 @@ func TestProxyNestedProviderFormats(t *testing.T) {
 	t.Cleanup(anthUp.Close)
 
 	logger := &memoryCallLogger{}
-	cfg := &Config{
-		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
-		Models: []ModelConfig{{Name: "claude", Providers: []Provider{{
-			Name:              "openrouter",
-			Model:             "anthropic/claude-sonnet-4-5",
-			OpenAICompletions: ep(openaiUp.URL),
-			AnthropicMessages: ep(anthUp.URL),
-		}}}},
-	}
+	cfg := cfgWith("claude", Provider{
+		Name:              "openrouter",
+		Model:             "anthropic/claude-sonnet-4-5",
+		OpenAICompletions: ep(openaiUp.URL),
+		AnthropicMessages: ep(anthUp.URL),
+	})
 	h := NewServer(cfg, logger, nil).Handler()
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "claude"}))
@@ -768,13 +785,10 @@ func TestProxySkipsProviderWithoutMatchingBlock(t *testing.T) {
 	}))
 	t.Cleanup(anthUp.Close)
 
-	cfg := &Config{
-		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
-		Models: []ModelConfig{{Name: "claude", Providers: []Provider{{
-			Name:              "anthropic",
-			AnthropicMessages: &ProviderEndpoint{URL: anthUp.URL, Model: "claude-sonnet-4-5"},
-		}}}},
-	}
+	cfg := cfgWith("claude", Provider{
+		Name:              "anthropic",
+		AnthropicMessages: &ProviderEndpoint{URL: anthUp.URL, Model: "claude-sonnet-4-5"},
+	})
 	h := NewServer(cfg, nil, nil).Handler()
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "claude"}))
@@ -798,12 +812,7 @@ func TestProxyAnthropicMissingProviders(t *testing.T) {
 }
 
 func TestProxyOpenAIMissingProviders(t *testing.T) {
-	h := testProxy(t, &Config{
-		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
-		Models: []ModelConfig{{Name: "claude", Providers: []Provider{
-			{Name: "anthropic", Model: "claude-sonnet-4-5", AnthropicMessages: ep("http://example.invalid")},
-		}}},
-	})
+	h := testProxy(t, cfgWith("claude", Provider{Name: "anthropic", Model: "claude-sonnet-4-5", AnthropicMessages: ep("http://example.invalid")}))
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "claude"}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, authed(req))
@@ -825,18 +834,15 @@ func TestProxyAnthropicRewritesModelAndStripsClientKey(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	logger := &memoryCallLogger{}
-	cfg := &Config{
-		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
-		Models: []ModelConfig{{Name: "claude", Providers: []Provider{{
-			Name:              "anthropic",
-			Model:             "claude-sonnet-4-5",
-			AnthropicMessages: ep(up.URL),
-			Headers: map[string]string{
-				"x-api-key":         "sk-up",
-				"anthropic-version": "2023-06-01",
-			},
-		}}}},
-	}
+	cfg := cfgWith("claude", Provider{
+		Name:              "anthropic",
+		Model:             "claude-sonnet-4-5",
+		AnthropicMessages: ep(up.URL),
+		Headers: map[string]string{
+			"x-api-key":         "sk-up",
+			"anthropic-version": "2023-06-01",
+		},
+	})
 	h := NewServer(cfg, logger, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", jsonBody(map[string]any{
 		"model":  "claude",
@@ -870,12 +876,7 @@ func TestProxyAnthropicStreamUsage(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	logger := &memoryCallLogger{}
-	cfg := &Config{
-		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
-		Models: []ModelConfig{{Name: "claude", Providers: []Provider{{
-			Name: "anthropic", Model: "claude-sonnet-4-5", AnthropicMessages: ep(up.URL),
-		}}}},
-	}
+	cfg := cfgWith("claude", Provider{Name: "anthropic", Model: "claude-sonnet-4-5", AnthropicMessages: ep(up.URL)})
 	h := NewServer(cfg, logger, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", jsonBody(map[string]any{
 		"model":  "claude",
@@ -984,18 +985,15 @@ func TestProxyResponsesRewritesModelWithoutStreamOptions(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	logger := &memoryCallLogger{}
-	cfg := &Config{
-		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
-		Models: []ModelConfig{{Name: "fast", Providers: []Provider{{
-			Name:  "openai",
-			Model: "gpt-4o",
-			Headers: map[string]string{
-				"Authorization": "Bearer sk-up",
-			},
-			OpenAICompletions: ep(up.URL + "/v1/chat/completions"),
-			OpenAIResponses:   ep(up.URL + "/v1/responses"),
-		}}}},
-	}
+	cfg := cfgFast(Provider{
+		Name:  "openai",
+		Model: "gpt-4o",
+		Headers: map[string]string{
+			"Authorization": "Bearer sk-up",
+		},
+		OpenAICompletions: ep(up.URL + "/v1/chat/completions"),
+		OpenAIResponses:   ep(up.URL + "/v1/responses"),
+	})
 	h := NewServer(cfg, logger, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", jsonBody(map[string]any{
 		"model":  "fast",
@@ -1027,13 +1025,10 @@ func TestProxyResponsesStreamUsage(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	logger := &memoryCallLogger{}
-	cfg := &Config{
-		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
-		Models: []ModelConfig{{Name: "fast", Providers: []Provider{{
-			Name:            "openai",
-			OpenAIResponses: &ProviderEndpoint{URL: up.URL, Model: "gpt-4o"},
-		}}}},
-	}
+	cfg := cfgFast(Provider{
+		Name:            "openai",
+		OpenAIResponses: &ProviderEndpoint{URL: up.URL, Model: "gpt-4o"},
+	})
 	h := NewServer(cfg, logger, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", jsonBody(map[string]any{
 		"model":  "fast",
@@ -1068,13 +1063,10 @@ func TestProxyResponsesDoesNotUseOpenAIURL(t *testing.T) {
 	}))
 	t.Cleanup(openaiUp.Close)
 
-	cfg := &Config{
-		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
-		Models: []ModelConfig{{Name: "fast", Providers: []Provider{{
-			Name:              "openai",
-			OpenAICompletions: &ProviderEndpoint{URL: openaiUp.URL, Model: "gpt-4o"},
-		}}}},
-	}
+	cfg := cfgFast(Provider{
+		Name:              "openai",
+		OpenAICompletions: &ProviderEndpoint{URL: openaiUp.URL, Model: "gpt-4o"},
+	})
 	h := NewServer(cfg, nil, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", jsonBody(map[string]any{"model": "fast", "input": "hi"}))
 	rec := httptest.NewRecorder()
@@ -1112,12 +1104,7 @@ func TestProxyResponsesAliasPath(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	logger := &memoryCallLogger{}
-	cfg := &Config{
-		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
-		Models: []ModelConfig{{Name: "fast", Providers: []Provider{{
-			Name: "openai", Model: "gpt-4o", OpenAIResponses: ep(up.URL),
-		}}}},
-	}
+	cfg := cfgFast(Provider{Name: "openai", Model: "gpt-4o", OpenAIResponses: ep(up.URL)})
 	h := NewServer(cfg, logger, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/responses", jsonBody(map[string]any{"model": "fast", "input": "hi"}))
 	rec := httptest.NewRecorder()

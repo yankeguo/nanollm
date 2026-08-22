@@ -20,28 +20,35 @@ admin:
 api_keys:
   - name: alice
     value: sk-alice
+providers:
+  - name: primary
+    headers:
+      Authorization: Bearer sk-primary
+      X-Extra: one
+    openai_completions:
+      url: http://primary.example/v1/chat/completions
+  - name: backup
+    headers:
+      Authorization: Bearer sk-backup
+    openai_completions:
+      url: http://backup.example/v1/chat/completions
+  - name: openai
+    openai_embeddings:
+      url: http://embed.example/v1/embeddings
 models:
   - name: fast
     providers:
       - name: primary
         model: gpt-4o-mini
-        headers:
-          Authorization: Bearer sk-primary
-          X-Extra: one
-        openai_completions:
-          url: http://primary.example/v1/chat/completions
+        protocols: [openai_completions]
       - name: backup
         model: llama3
-        headers:
-          Authorization: Bearer sk-backup
-        openai_completions:
-          url: http://backup.example/v1/chat/completions
+        protocols: [openai_completions]
   - name: embed
     providers:
       - name: openai
         model: text-embedding-3-small
-        openai_embeddings:
-          url: http://embed.example/v1/embeddings
+        protocols: [openai_embeddings]
 `), 0o644))
 
 	cfg, err := loadConfig(path)
@@ -75,25 +82,51 @@ func TestLoadConfigRejectsEmpty(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestLoadConfigRejectsDuplicateNames(t *testing.T) {
+func TestLoadConfigRejectsDuplicateProviderNames(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(`
 api_keys:
   - name: alice
     value: sk-alice
+providers:
+  - name: a
+    openai_completions:
+      url: http://a.example
+  - name: a
+    openai_completions:
+      url: http://b.example
 models:
   - name: fast
     providers:
       - name: a
-        openai_completions:
-          url: http://a.example
-      - name: a
-        openai_completions:
-          url: http://b.example
+        protocols: [openai_completions]
 `), 0o644))
 	_, err := loadConfig(path)
-	require.Error(t, err)
+	require.ErrorContains(t, err, "duplicate provider name")
+}
+
+func TestLoadConfigRejectsDuplicateModelProviderRefs(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+api_keys:
+  - name: alice
+    value: sk-alice
+providers:
+  - name: a
+    openai_completions:
+      url: http://a.example
+models:
+  - name: fast
+    providers:
+      - name: a
+        protocols: [openai_completions]
+      - name: a
+        protocols: [openai_completions]
+`), 0o644))
+	_, err := loadConfig(path)
+	require.ErrorContains(t, err, "duplicate provider name")
 }
 
 func TestLoadConfigRejectsDuplicateKeyValues(t *testing.T) {
@@ -105,12 +138,15 @@ api_keys:
     value: sk-same
   - name: bob
     value: sk-same
+providers:
+  - name: a
+    openai_completions:
+      url: http://a.example
 models:
   - name: fast
     providers:
       - name: a
-        openai_completions:
-          url: http://a.example
+        protocols: [openai_completions]
 `), 0o644))
 	_, err := loadConfig(path)
 	require.Error(t, err)
@@ -123,12 +159,15 @@ func TestLoadConfigRejectsNonHTTPURL(t *testing.T) {
 api_keys:
   - name: alice
     value: sk-alice
+providers:
+  - name: a
+    openai_completions:
+      url: ftp://files.example/model
 models:
   - name: fast
     providers:
       - name: a
-        openai_completions:
-          url: ftp://files.example/model
+        protocols: [openai_completions]
 `), 0o644))
 	_, err := loadConfig(path)
 	require.ErrorContains(t, err, "http or https")
@@ -142,8 +181,7 @@ models:
   - name: fast
     providers:
       - name: a
-        openai_completions:
-          url: http://a.example
+        protocols: [openai_completions]
 `), 0o644))
 	_, err := loadConfig(path)
 	require.ErrorContains(t, err, "api_key")
@@ -156,12 +194,15 @@ func TestLoadConfigRequiresMySQLDSN(t *testing.T) {
 api_keys:
   - name: alice
     value: sk-alice
+providers:
+  - name: a
+    openai_completions:
+      url: http://a.example
 models:
   - name: fast
     providers:
       - name: a
-        openai_completions:
-          url: http://a.example
+        protocols: [openai_completions]
 `), 0o644))
 	_, err := loadConfig(path)
 	require.ErrorContains(t, err, "mysql.dsn")
@@ -180,12 +221,15 @@ admin:
 api_keys:
   - name: alice
     value: sk-alice
+providers:
+  - name: a
+    openai_completions:
+      url: http://a.example
 models:
   - name: fast
     providers:
       - name: a
-        openai_completions:
-          url: http://a.example
+        protocols: [openai_completions]
 `), 0o644))
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
@@ -198,12 +242,15 @@ mysql:
 api_keys:
   - name: alice
     value: sk-alice
+providers:
+  - name: a
+    openai_completions:
+      url: http://a.example
 models:
   - name: fast
     providers:
       - name: a
-        openai_completions:
-          url: http://a.example
+        protocols: [openai_completions]
 `), 0o644))
 	_, err = loadConfig(path)
 	require.ErrorContains(t, err, "detail_retain")
@@ -218,12 +265,15 @@ mysql:
 api_keys:
   - name: alice
     value: sk-alice
+providers:
+  - name: a
+    openai_completions:
+      url: http://a.example
 models:
   - name: fast
     providers:
       - name: a
-        openai_completions:
-          url: http://a.example
+        protocols: [openai_completions]
 `), 0o644))
 	_, err := loadConfig(path)
 	require.ErrorContains(t, err, "admin.username")
@@ -236,12 +286,15 @@ admin:
 api_keys:
   - name: alice
     value: sk-alice
+providers:
+  - name: a
+    openai_completions:
+      url: http://a.example
 models:
   - name: fast
     providers:
       - name: a
-        openai_completions:
-          url: http://a.example
+        protocols: [openai_completions]
 `), 0o644))
 	_, err = loadConfig(path)
 	require.ErrorContains(t, err, "admin.password")
@@ -259,12 +312,15 @@ admin:
 api_keys:
   - name: alice
     value: sk-alice
+providers:
+  - name: a
+    openai_completions:
+      url: http://a.example
 models:
   - name: fast
     providers:
       - name: a
-        openai_completions:
-          url: http://a.example
+        protocols: [openai_completions]
 `), 0o644))
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
@@ -283,11 +339,14 @@ admin:
 api_keys:
   - name: alice
     value: sk-alice
+providers:
+  - name: a
+    url: http://a.example
 models:
   - name: claude
     providers:
       - name: a
-        url: http://a.example
+        protocols: [openai_completions]
 `), 0o644))
 	_, err := loadConfig(path)
 	require.ErrorContains(t, err, "must set openai_completions, openai_responses, openai_embeddings, or anthropic_messages")
@@ -305,28 +364,33 @@ admin:
 api_keys:
   - name: alice
     value: sk-alice
+providers:
+  - name: openrouter
+    headers:
+      Authorization: Bearer sk-or
+      X-Shared: top
+    openai_completions:
+      url: https://openrouter.ai/api/v1/chat/completions
+      headers:
+        X-Shared: openai
+    openai_responses:
+      url: https://openrouter.ai/api/v1/responses
+      model: openai/gpt-4o
+    anthropic_messages:
+      url: https://openrouter.ai/api/v1/messages
+      model: anthropic/claude-override
+  - name: anthropic-only
+    anthropic_messages:
+      url: https://api.anthropic.com/v1/messages
+      model: claude-sonnet-4-5
 models:
   - name: claude
     providers:
       - name: openrouter
         model: anthropic/claude-sonnet-4-5
-        headers:
-          Authorization: Bearer sk-or
-          X-Shared: top
-        openai_completions:
-          url: https://openrouter.ai/api/v1/chat/completions
-          headers:
-            X-Shared: openai
-        openai_responses:
-          url: https://openrouter.ai/api/v1/responses
-          model: openai/gpt-4o
-        anthropic_messages:
-          url: https://openrouter.ai/api/v1/messages
-          model: anthropic/claude-override
+        protocols: [openai_completions, openai_responses, anthropic_messages]
       - name: anthropic-only
-        anthropic_messages:
-          url: https://api.anthropic.com/v1/messages
-          model: claude-sonnet-4-5
+        protocols: [anthropic_messages]
 `), 0o644))
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
@@ -381,15 +445,18 @@ admin:
 api_keys:
   - name: alice
     value: sk-alice
+providers:
+  - name: openai
+    openai_completions:
+      url: https://api.openai.com/v1/chat/completions
+    openai_embeddings:
+      url: https://api.openai.com/v1/embeddings
+      model: text-embedding-3-small
 models:
   - name: dual
     providers:
       - name: openai
-        openai_completions:
-          url: https://api.openai.com/v1/chat/completions
-        openai_embeddings:
-          url: https://api.openai.com/v1/embeddings
-          model: text-embedding-3-small
+        protocols: [openai_completions, openai_embeddings]
 `), 0o644))
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
@@ -405,6 +472,162 @@ models:
 	require.Equal(t, "text-embedding-3-small", model)
 }
 
+func TestLoadConfigSharedProviderProtocolSubset(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+admin:
+  username: admin
+  password: REPLACE_ME
+api_keys:
+  - name: alice
+    value: sk-alice
+providers:
+  - name: openai
+    headers:
+      Authorization: Bearer sk-up
+    openai_completions:
+      url: http://chat.example/v1/chat/completions
+    openai_embeddings:
+      url: http://embed.example/v1/embeddings
+models:
+  - name: gpt-4o
+    providers:
+      - name: openai
+        model: gpt-4o
+        protocols: [openai_completions]
+  - name: embed
+    providers:
+      - name: openai
+        model: text-embedding-3-small
+        protocols: [openai_embeddings]
+`), 0o644))
+	cfg, err := loadConfig(path)
+	require.NoError(t, err)
+
+	chat := cfg.providers("gpt-4o")
+	require.Len(t, chat, 1)
+	require.Equal(t, "gpt-4o", chat[0].Model)
+	require.NotNil(t, chat[0].OpenAICompletions)
+	require.Nil(t, chat[0].OpenAIEmbeddings)
+	require.Len(t, cfg.providersFor("gpt-4o", formatOpenAICompletions), 1)
+	require.Empty(t, cfg.providersFor("gpt-4o", formatOpenAIEmbeddings))
+
+	embed := cfg.providers("embed")
+	require.Len(t, embed, 1)
+	require.Equal(t, "text-embedding-3-small", embed[0].Model)
+	require.Nil(t, embed[0].OpenAICompletions)
+	require.NotNil(t, embed[0].OpenAIEmbeddings)
+	require.Empty(t, cfg.providersFor("embed", formatOpenAICompletions))
+	require.Len(t, cfg.providersFor("embed", formatOpenAIEmbeddings), 1)
+	require.Equal(t, "Bearer sk-up", embed[0].Headers["Authorization"])
+}
+
+func TestLoadConfigRejectsUnknownProviderRef(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+admin:
+  username: admin
+  password: REPLACE_ME
+api_keys:
+  - name: alice
+    value: sk-alice
+providers:
+  - name: openai
+    openai_completions:
+      url: http://a.example
+models:
+  - name: fast
+    providers:
+      - name: missing
+        protocols: [openai_completions]
+`), 0o644))
+	_, err := loadConfig(path)
+	require.ErrorContains(t, err, "unknown provider")
+}
+
+func TestLoadConfigRejectsProtocolNotOnProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+admin:
+  username: admin
+  password: REPLACE_ME
+api_keys:
+  - name: alice
+    value: sk-alice
+providers:
+  - name: openai
+    openai_completions:
+      url: http://a.example
+models:
+  - name: fast
+    providers:
+      - name: openai
+        protocols: [openai_embeddings]
+`), 0o644))
+	_, err := loadConfig(path)
+	require.ErrorContains(t, err, "has no openai_embeddings block")
+}
+
+func TestLoadConfigRejectsMissingProtocols(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+admin:
+  username: admin
+  password: REPLACE_ME
+api_keys:
+  - name: alice
+    value: sk-alice
+providers:
+  - name: openai
+    openai_completions:
+      url: http://a.example
+models:
+  - name: fast
+    providers:
+      - name: openai
+`), 0o644))
+	_, err := loadConfig(path)
+	require.ErrorContains(t, err, "protocols is required")
+}
+
+func TestLoadConfigRejectsInvalidProtocol(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+admin:
+  username: admin
+  password: REPLACE_ME
+api_keys:
+  - name: alice
+    value: sk-alice
+providers:
+  - name: openai
+    openai_completions:
+      url: http://a.example
+models:
+  - name: fast
+    providers:
+      - name: openai
+        protocols: [not_a_protocol]
+`), 0o644))
+	_, err := loadConfig(path)
+	require.ErrorContains(t, err, "is invalid")
+}
+
 func TestLoadConfigRequiresEndpointURL(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
@@ -417,11 +640,14 @@ admin:
 api_keys:
   - name: alice
     value: sk-alice
+providers:
+  - name: a
+    openai_completions: {}
 models:
   - name: claude
     providers:
       - name: a
-        openai_completions: {}
+        protocols: [openai_completions]
 `), 0o644))
 	_, err := loadConfig(path)
 	require.ErrorContains(t, err, "openai_completions url is required")

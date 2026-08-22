@@ -7,56 +7,62 @@ admin:
 api_keys:
   - name: default
     value: sk-REPLACE_ME
+providers:
+  - name: openai
+    headers:
+      Authorization: Bearer sk-REPLACE_ME
+    openai_completions:
+      url: https://api.openai.com/v1/chat/completions
+    openai_responses:
+      url: https://api.openai.com/v1/responses
+    openai_embeddings:
+      url: https://api.openai.com/v1/embeddings
+  - name: openrouter
+    headers:
+      Authorization: Bearer sk-or-REPLACE_ME
+    openai_completions:
+      url: https://openrouter.ai/api/v1/chat/completions
+    openai_responses:
+      url: https://openrouter.ai/api/v1/responses
+    anthropic_messages:
+      url: https://openrouter.ai/api/v1/messages
+      headers:
+        anthropic-version: "2023-06-01"
+  - name: ollama
+    headers:
+      Authorization: Bearer ollama
+    openai_completions:
+      url: http://127.0.0.1:11434/v1/chat/completions
+  - name: anthropic
+    headers:
+      x-api-key: REPLACE_ME
+      anthropic-version: "2023-06-01"
+    anthropic_messages:
+      url: https://api.anthropic.com/v1/messages
 models:
   - name: gpt-4o
     providers:
       - name: openai
         model: gpt-4o
-        headers:
-          Authorization: Bearer sk-REPLACE_ME
-        openai_completions:
-          url: https://api.openai.com/v1/chat/completions
-        openai_responses:
-          url: https://api.openai.com/v1/responses
+        protocols: [openai_completions, openai_responses]
       - name: openrouter
         model: openai/gpt-4o
-        headers:
-          Authorization: Bearer sk-or-REPLACE_ME
-        openai_completions:
-          url: https://openrouter.ai/api/v1/chat/completions
+        protocols: [openai_completions]
   - name: fast
     providers:
       - name: ollama
         model: llama3.1
-        headers:
-          Authorization: Bearer ollama
-        openai_completions:
-          url: http://127.0.0.1:11434/v1/chat/completions
+        protocols: [openai_completions]
   - name: text-embedding-3-small
     providers:
       - name: openai
         model: text-embedding-3-small
-        headers:
-          Authorization: Bearer sk-REPLACE_ME
-        openai_embeddings:
-          url: https://api.openai.com/v1/embeddings
+        protocols: [openai_embeddings]
   - name: claude
     providers:
       - name: openrouter
         model: anthropic/claude-sonnet-4-5
-        headers:
-          Authorization: Bearer sk-or-REPLACE_ME
-          anthropic-version: "2023-06-01"
-        openai_completions:
-          url: https://openrouter.ai/api/v1/chat/completions
-        openai_responses:
-          url: https://openrouter.ai/api/v1/responses
-        anthropic_messages:
-          url: https://openrouter.ai/api/v1/messages
+        protocols: [openai_completions, openai_responses, anthropic_messages]
       - name: anthropic
         model: claude-sonnet-4-5
-        headers:
-          x-api-key: REPLACE_ME
-          anthropic-version: "2023-06-01"
-        anthropic_messages:
-          url: https://api.anthropic.com/v1/messages
+        protocols: [anthropic_messages]

@@ -2,15 +2,15 @@
 
 OpenAI- and Anthropic-compatible reverse proxy for LLM APIs. Point coding tools at nanollm and map one client-facing model name to one or more upstream providers.
 
-Providers for a model are tried **in order**, but only those that have a protocol block matching the inbound API (`openai_completions`, `openai_responses`, `openai_embeddings`, or `anthropic_messages`). The next provider is used only when the current one is catastrophically unavailable. Rate limits, 4xx, and ordinary 5xx stay on the same provider so prompt cache is not thrown away.
+Providers for a model are tried **in order**, but only those whose `protocols` list matches the inbound API (`openai_completions`, `openai_responses`, `openai_embeddings`, or `anthropic_messages`). The next provider is used only when the current one is catastrophically unavailable. Rate limits, 4xx, and ordinary 5xx stay on the same provider so prompt cache is not thrown away.
 
 > [!WARNING]
-> Protocol conversion is intentionally **not** supported: nanollm never rewrites a body between Chat Completions, Responses, and Anthropic Messages. This is a deliberate design choice to maximize field-level compatibility (every non-`model` field is forwarded untouched) and forwarding performance. If a model has no vendor with a matching protocol block, the request fails with `404` instead of being converted.
+> Protocol conversion is intentionally **not** supported: nanollm never rewrites a body between Chat Completions, Responses, and Anthropic Messages. This is a deliberate design choice to maximize field-level compatibility (every non-`model` field is forwarded untouched) and forwarding performance. If a model has no associated vendor listing the matching protocol, the request fails with `404` instead of being converted.
 
 ## Features
 
 - Standard `net/http` server: OpenAI `/v1/chat/completions` (plus completions, embeddings), OpenAI `/v1/responses`, and Anthropic `/v1/messages`
-- YAML config: named models, named vendors, required `openai_completions` / `openai_responses` / `openai_embeddings` / `anthropic_messages` endpoint blocks, auth merged into `headers`
+- YAML config: top-level named vendors, named models that associate vendors plus a `protocols` subset, auth merged into `headers`
 - No body conversion between protocols; each inbound API only uses matching providers
 - Incoming API keys (`api_keys[].{name,value}`)
 - Streaming SSE pass-through
@@ -23,7 +23,7 @@ Providers for a model are tried **in order**, but only those that have a protoco
 
 ```bash
 cp config.example.yaml config.yaml
-# edit mysql.dsn, admin password, api_keys, models, and upstream headers
+# edit mysql.dsn, admin password, api_keys, providers, and models
 go run . -config config.yaml -listen :8080
 ```
 
@@ -37,7 +37,7 @@ docker run --rm -p 8080:8080 \
 
 Point OpenAI clients at `http://127.0.0.1:8080/v1` with `Authorization: Bearer <api_keys.value>` and `"model": "<models[].name>"`. Chat Completions uses the vendor `openai_completions` block; the Responses API (`POST /v1/responses`) uses the `openai_responses` block; embeddings (`POST /v1/embeddings`) uses the `openai_embeddings` block.
 
-Point Anthropic clients at `http://127.0.0.1:8080` with `x-api-key: <api_keys.value>` and the same `"model"` field. The model must have at least one provider with an `anthropic_messages` block.
+Point Anthropic clients at `http://127.0.0.1:8080` with `x-api-key: <api_keys.value>` and the same `"model"` field. The model must list `anthropic_messages` on at least one associated provider.
 
 Open `http://127.0.0.1:8080/admin` to review token usage and call logs.
 
@@ -62,38 +62,46 @@ admin:
 api_keys:
   - name: alice
     value: sk-alice
+providers:
+  - name: openai
+    headers:
+      Authorization: Bearer sk-REPLACE_ME
+    openai_completions:
+      url: https://api.openai.com/v1/chat/completions
+    openai_responses:
+      url: https://api.openai.com/v1/responses
+    openai_embeddings:
+      url: https://api.openai.com/v1/embeddings
+  - name: openrouter
+    headers:
+      Authorization: Bearer sk-or-REPLACE_ME
+    openai_completions:
+      url: https://openrouter.ai/api/v1/chat/completions
+    openai_responses:
+      url: https://openrouter.ai/api/v1/responses
+    anthropic_messages:
+      url: https://openrouter.ai/api/v1/messages
+      headers:
+        anthropic-version: "2023-06-01"
 models:
   - name: gpt-4o
     providers:
       - name: openai
         model: gpt-4o
-        headers:
-          Authorization: Bearer sk-REPLACE_ME
-        openai_completions:
-          url: https://api.openai.com/v1/chat/completions
-        openai_responses:
-          url: https://api.openai.com/v1/responses
+        protocols: [openai_completions, openai_responses]
+      - name: openrouter
+        model: openai/gpt-4o
+        protocols: [openai_completions]
   - name: text-embedding-3-small
     providers:
       - name: openai
         model: text-embedding-3-small
-        headers:
-          Authorization: Bearer sk-REPLACE_ME
-        openai_embeddings:
-          url: https://api.openai.com/v1/embeddings
+        protocols: [openai_embeddings]
   - name: claude
     providers:
       - name: openrouter
         model: anthropic/claude-sonnet-4-5
-        headers:
-          Authorization: Bearer sk-or-REPLACE_ME
-          anthropic-version: "2023-06-01"
-        openai_completions:
-          url: https://openrouter.ai/api/v1/chat/completions
-        openai_responses:
-          url: https://openrouter.ai/api/v1/responses
-        anthropic_messages:
-          url: https://openrouter.ai/api/v1/messages
+        protocols: [openai_completions, openai_responses, anthropic_messages]
 ```
 
 | Field | Required | Meaning |
@@ -104,27 +112,31 @@ models:
 | `admin.password` | yes | Admin UI login password |
 | `api_keys[].name` | yes | Identifier for this key (must be unique) |
 | `api_keys[].value` | yes | Secret the client must send |
-| `models[].name` | yes | Client-facing model id |
-| `models[].providers` | yes | Ordered upstream list |
-| `providers[].name` | yes | Vendor name within a model (must be unique). Used for failover order and `llm_calls.provider` |
-| `providers[].model` | no | Default upstream model; a protocol block may override it. If both are empty, the client model is kept |
+| `providers[].name` | yes | Vendor name (globally unique). Used for `llm_calls.provider` |
+| `providers[].model` | no | Default upstream model for associations that omit `model` |
 | `providers[].headers` | no | Default extra headers (including upstream auth); a protocol block may override keys |
-| `providers[].openai_completions` / `providers[].openai_responses` / `providers[].openai_embeddings` / `providers[].anthropic_messages` | at least one | Protocol endpoint. Chat/completions only use vendors with `openai_completions`; `POST /v1/embeddings` only uses vendors with `openai_embeddings`; `POST /v1/responses` only uses vendors with `openai_responses`; `POST /v1/messages` only uses vendors with `anthropic_messages` |
+| `providers[].openai_completions` / `providers[].openai_responses` / `providers[].openai_embeddings` / `providers[].anthropic_messages` | at least one | Protocol endpoint URLs. A model only uses a vendor for an inbound API when that protocol is listed on the association |
 | `openai_completions.url` / `openai_responses.url` / `openai_embeddings.url` / `anthropic_messages.url` | yes (when the block is present) | Full `http`/`https` upstream URL (not a base URL) |
-| `openai_completions.model` / `openai_responses.model` / `openai_embeddings.model` / `anthropic_messages.model` | no | Overrides the vendor-level `model` for that protocol |
+| `openai_completions.model` / `openai_responses.model` / `openai_embeddings.model` / `anthropic_messages.model` | no | Overrides the bound `model` for that protocol |
 | `openai_completions.headers` / `openai_responses.headers` / `openai_embeddings.headers` / `anthropic_messages.headers` | no | Overlay on vendor-level `headers` (`Set` per key) |
+| `models[].name` | yes | Client-facing model id |
+| `models[].providers` | yes | Ordered vendor associations (failover order) |
+| `models[].providers[].name` | yes | References a top-level `providers[].name` (unique within the model) |
+| `models[].providers[].model` | no | Upstream model for this association; overrides `providers[].model`. If both are empty, the client model is kept |
+| `models[].providers[].protocols` | yes | Non-empty subset of the vendor's protocol blocks. Chat/completions only use associations that list `openai_completions`; `POST /v1/embeddings` only uses `openai_embeddings`; `POST /v1/responses` only uses `openai_responses`; `POST /v1/messages` only uses `anthropic_messages` |
 
 Rules:
 
 - Admin username and password are required
 - MySQL DSN is required; timestamps are stored in UTC
-- At least one API key and one model
-- Model names unique; provider names unique **within** a model
-- Each vendor **must** set at least one of `openai_completions`, `openai_responses`, `openai_embeddings`, or `anthropic_messages`. Inference and embeddings blocks may coexist on the same vendor; nanollm does not enforce that split.
+- At least one API key, one provider, and one model
+- Provider names unique globally; model names unique; association names unique **within** a model
+- Each vendor **must** set at least one of `openai_completions`, `openai_responses`, `openai_embeddings`, or `anthropic_messages`. Inference and embeddings blocks may coexist on the same vendor; nanollm does not enforce that split. Unused top-level vendors are allowed.
+- Each association's `protocols` must be a non-empty subset of that vendor's defined blocks
 - API key names unique; API key values unique
 - Incoming `Authorization` / `X-Api-Key` / `Api-Key` are **not** forwarded; client `Cookie` is stripped from upstream requests and upstream `Set-Cookie` is dropped from responses
 - Request bodies larger than 64 MiB return `413`
-- nanollm does **not** convert bodies between chat completions, Responses, and Anthropic. If a model has no vendor with a matching protocol block, the request fails with `404`
+- nanollm does **not** convert bodies between chat completions, Responses, and Anthropic. If a model has no association listing the matching protocol, the request fails with `404`
 - `config.yaml` is gitignored; commit `config.example.yaml` only
 
 See `config.example.yaml`.
@@ -143,7 +155,7 @@ The admin UI (`/admin`) uses `admin.username` / `admin.password` and an HttpOnly
 
 ## Failover
 
-For each request, vendors that have a matching protocol block are attempted from first to last. A vendor without that block is skipped; nanollm does not switch protocols on the same vendor.
+For each request, associated vendors that list the matching protocol are attempted from first to last. An association that does not list that protocol is skipped; nanollm does not switch protocols on the same vendor.
 
 **Switch to the next provider only when the current one is catastrophically unavailable:**
 
@@ -170,9 +182,9 @@ This keeps prefix / prompt cache on the first healthy provider.
 | `GET` | `/v1/models/{model}` | yes | Single configured model (ids may contain `/`) |
 | `POST` | `/v1/chat/completions` | yes | Also `/chat/completions` |
 | `POST` | `/v1/completions` | yes | Also `/completions` |
-| `POST` | `/v1/embeddings` | yes | Also `/embeddings`. Only providers with an `openai_embeddings` block |
-| `POST` | `/v1/responses` | yes | Also `/responses`. Only providers with an `openai_responses` block |
-| `POST` | `/v1/messages` | yes | Anthropic Messages; only providers with an `anthropic_messages` block |
+| `POST` | `/v1/embeddings` | yes | Also `/embeddings`. Only associations that list `openai_embeddings` |
+| `POST` | `/v1/responses` | yes | Also `/responses`. Only associations that list `openai_responses` |
+| `POST` | `/v1/messages` | yes | Anthropic Messages; only associations that list `anthropic_messages` |
 | `GET` | `/admin` | cookie | Usage tables and Chart.js graphs |
 | `GET` | `/admin/calls` | cookie | Paginated call log |
 | `GET` | `/admin/calls/{id}` | cookie | Request/response JSON when retained; inline previews of extracted files |
@@ -180,7 +192,7 @@ This keeps prefix / prompt cache on the first healthy provider.
 | `GET`/`POST` | `/admin/login` | no | Admin sign-in |
 | `POST` | `/admin/logout` | cookie | Clear admin cookie |
 
-The JSON body `model` field selects `models[].name`. nanollm rewrites only the top-level `model` (and, for OpenAI Chat Completions and Completions streaming, injects `stream_options.include_usage` when missing). Responses `stream_options` only documents `include_obfuscation`; Anthropic has no `stream_options`; embeddings are not given that field. Other JSON fields are copied as raw values and are not decoded into a typed tree. Each inbound path only uses vendors with the matching protocol block: chat/completions → `openai_completions`, `/v1/embeddings` → `openai_embeddings`, `/v1/responses` → `openai_responses`, `/v1/messages` → `anthropic_messages`.
+The JSON body `model` field selects `models[].name`. nanollm rewrites only the top-level `model` (and, for OpenAI Chat Completions and Completions streaming, injects `stream_options.include_usage` when missing). Responses `stream_options` only documents `include_obfuscation`; Anthropic has no `stream_options`; embeddings are not given that field. Other JSON fields are copied as raw values and are not decoded into a typed tree. Each inbound path only uses associations that list the matching protocol: chat/completions → `openai_completions`, `/v1/embeddings` → `openai_embeddings`, `/v1/responses` → `openai_responses`, `/v1/messages` → `anthropic_messages`.
 
 Streaming (`"stream": true` with `Content-Type: text/event-stream`) is copied through as SSE. JSON error bodies on a `stream: true` request stay JSON (no SSE comments). While the upstream SSE body is silent (long thinking / a long tool-using turn), nanollm writes SSE comments (`:` lines) so the client and any idle proxy do not time out; `Content-Length` is dropped on that path so the extra comments cannot desync HTTP/1.1 clients. Usage is parsed from a copy of the upstream body (including Responses `response.usage` on `response.completed`, whose payload can be larger than a single thinking delta, and embeddings `prompt_tokens` / `total_tokens`); keepalive comments are not stored in the call-log blob. Consecutive same-type text/argument deltas are coalesced in that blob only (Chat Completions `delta.content` / tool-call `arguments` / legacy `function_call.arguments`, Completions `choices[].text`, Anthropic `content_block_delta`, Responses `*.delta` strings); the client still receives the raw stream. Anthropic and Responses bodies are not rewritten beyond `model`.
 
