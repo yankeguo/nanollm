@@ -55,7 +55,7 @@ func rewriteRequest(body []byte, upstreamModel string, stream, injectStreamUsage
 }
 
 func ensureIncludeUsage(opts json.RawMessage) (json.RawMessage, error) {
-	if len(bytes.TrimSpace(opts)) == 0 || bytes.Equal(bytes.TrimSpace(opts), []byte("null")) {
+	if jsonBlank(opts) {
 		return json.RawMessage(`{"include_usage":true}`), nil
 	}
 	nested, err := decodeJSONRawObject(opts)
@@ -67,6 +67,11 @@ func ensureIncludeUsage(opts json.RawMessage) (json.RawMessage, error) {
 	}
 	nested["include_usage"] = json.RawMessage("true")
 	return encodeJSONRawObject(nested)
+}
+
+func jsonBlank(raw json.RawMessage) bool {
+	s := bytes.TrimSpace(raw)
+	return len(s) == 0 || bytes.Equal(s, []byte("null"))
 }
 
 func decodeJSONRawObject(body []byte) (map[string]json.RawMessage, error) {
@@ -106,7 +111,7 @@ func encodeJSONValue(v any) ([]byte, error) {
 }
 
 func rawJSONString(raw json.RawMessage) (string, error) {
-	if len(bytes.TrimSpace(raw)) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+	if jsonBlank(raw) {
 		return "", nil
 	}
 	var s string
@@ -117,7 +122,7 @@ func rawJSONString(raw json.RawMessage) (string, error) {
 }
 
 func rawJSONBool(raw json.RawMessage) (bool, error) {
-	if len(bytes.TrimSpace(raw)) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+	if jsonBlank(raw) {
 		return false, nil
 	}
 	var b bool

@@ -232,7 +232,7 @@ Workflow: `.github/workflows/release.yml`.
 go test ./...
 ```
 
-Go 1.26+. `config.yaml` holds secrets and is gitignored.
+Go 1.27+. `config.yaml` holds secrets and is gitignored.
 
 ## License
 

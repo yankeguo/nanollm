@@ -576,8 +576,7 @@ func copyLastField(dst, src map[string]json.RawMessage, key string) {
 }
 
 func unmarshalRawArray(raw json.RawMessage) ([]json.RawMessage, error) {
-	raw = bytes.TrimSpace(raw)
-	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+	if jsonBlank(raw) {
 		return nil, nil
 	}
 	var arr []json.RawMessage

@@ -68,11 +68,11 @@ func (u *tokenUsage) fillUncached() {
 type jsonInt64 int64
 
 func (n *jsonInt64) UnmarshalJSON(b []byte) error {
-	b = bytes.TrimSpace(b)
-	if len(b) == 0 || bytes.Equal(b, []byte("null")) {
+	if jsonBlank(b) {
 		*n = 0
 		return nil
 	}
+	b = bytes.TrimSpace(b)
 	if b[0] == '"' {
 		var s string
 		if err := json.Unmarshal(b, &s); err != nil {
@@ -97,7 +97,7 @@ func (n *jsonInt64) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-type openaiUsage struct {
+type usageFields struct {
 	PromptTokens             jsonInt64 `json:"prompt_tokens"`
 	CompletionTokens         jsonInt64 `json:"completion_tokens"`
 	TotalTokens              jsonInt64 `json:"total_tokens"`
@@ -120,7 +120,7 @@ type openaiUsage struct {
 	} `json:"cache_creation"`
 }
 
-func (u openaiUsage) asTokenUsage() tokenUsage {
+func (u usageFields) asTokenUsage() tokenUsage {
 	cacheRead := int64(u.CacheReadInputTokens)
 	if cacheRead == 0 {
 		cacheRead = int64(u.PromptCacheHitTokens)
@@ -178,19 +178,19 @@ func (u openaiUsage) asTokenUsage() tokenUsage {
 	return usage
 }
 
-type openaiNestedUsage struct {
+type nestedUsage struct {
 	Model string       `json:"model"`
-	Usage *openaiUsage `json:"usage"`
+	Usage *usageFields `json:"usage"`
 }
 
-type openaiResponse struct {
-	Model    string             `json:"model"`
-	Usage    *openaiUsage       `json:"usage"`
-	Message  *openaiNestedUsage `json:"message"`
-	Response *openaiNestedUsage `json:"response"`
+type usageEnvelope struct {
+	Model    string       `json:"model"`
+	Usage    *usageFields `json:"usage"`
+	Message  *nestedUsage `json:"message"`
+	Response *nestedUsage `json:"response"`
 }
 
-func mergeNestedUsage(out *tokenUsage, nested *openaiNestedUsage) {
+func mergeNestedUsage(out *tokenUsage, nested *nestedUsage) {
 	if nested == nil {
 		return
 	}
@@ -208,7 +208,7 @@ func mergeNestedUsage(out *tokenUsage, nested *openaiNestedUsage) {
 }
 
 func parseUsageJSON(body []byte) tokenUsage {
-	var resp openaiResponse
+	var resp usageEnvelope
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return tokenUsage{}
 	}
@@ -231,7 +231,7 @@ const sseComment = ":\n\n"
 // sseKeepaliveInterval is how often to emit an SSE comment while the upstream
 // body is idle. Thinking models can sit silent for minutes after HTTP 200;
 // without comments, clients and middle proxies idle-timeout and cancel us.
-var sseKeepaliveInterval = 15 * time.Second
+const sseKeepaliveInterval = 15 * time.Second
 
 func parseUsageSSELine(line []byte) tokenUsage {
 	line = bytes.TrimSpace(line)
@@ -243,10 +243,6 @@ func parseUsageSSELine(line []byte) tokenUsage {
 		return tokenUsage{}
 	}
 	return parseUsageJSON(payload)
-}
-
-func copyAndScanSSE(dst io.Writer, src io.Reader) (tokenUsage, error) {
-	return copySSE(dst, nil, src, 0)
 }
 
 func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (tokenUsage, error) {

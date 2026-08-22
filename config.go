@@ -10,11 +10,12 @@ import (
 )
 
 const (
-	defaultDetailRetain     = 1000
-	formatOpenAICompletions = "openai_completions"
-	formatOpenAIResponses   = "openai_responses"
-	formatOpenAIEmbeddings  = "openai_embeddings"
-	formatAnthropicMessages = "anthropic_messages"
+	defaultDetailRetain = 1000
+
+	protocolOpenAICompletions = "openai_completions"
+	protocolOpenAIResponses   = "openai_responses"
+	protocolOpenAIEmbeddings  = "openai_embeddings"
+	protocolAnthropicMessages = "anthropic_messages"
 )
 
 type Config struct {
@@ -48,11 +49,12 @@ type APIKey struct {
 }
 
 type ModelConfig struct {
-	Name      string          `yaml:"name"`
-	Providers []ModelProvider `yaml:"providers"`
+	Name      string        `yaml:"name"`
+	Providers []ProviderRef `yaml:"providers"`
 }
 
-type ModelProvider struct {
+// ProviderRef associates a named vendor with a client-facing model.
+type ProviderRef struct {
 	Name      string   `yaml:"name"`
 	Model     string   `yaml:"model"`
 	Protocols []string `yaml:"protocols"`
@@ -74,27 +76,31 @@ type Provider struct {
 	AnthropicMessages *ProviderEndpoint `yaml:"anthropic_messages"`
 }
 
-func isKnownFormat(format string) bool {
-	switch format {
-	case formatOpenAICompletions, formatOpenAIResponses, formatOpenAIEmbeddings, formatAnthropicMessages:
+func normalizeProtocol(protocol string) string {
+	if protocol == "" {
+		return protocolOpenAICompletions
+	}
+	return protocol
+}
+
+func isKnownProtocol(protocol string) bool {
+	switch protocol {
+	case protocolOpenAICompletions, protocolOpenAIResponses, protocolOpenAIEmbeddings, protocolAnthropicMessages:
 		return true
 	default:
 		return false
 	}
 }
 
-func (p Provider) endpoint(format string) *ProviderEndpoint {
-	if format == "" {
-		format = formatOpenAICompletions
-	}
-	switch format {
-	case formatOpenAICompletions:
+func (p Provider) endpoint(protocol string) *ProviderEndpoint {
+	switch normalizeProtocol(protocol) {
+	case protocolOpenAICompletions:
 		return p.OpenAICompletions
-	case formatOpenAIResponses:
+	case protocolOpenAIResponses:
 		return p.OpenAIResponses
-	case formatOpenAIEmbeddings:
+	case protocolOpenAIEmbeddings:
 		return p.OpenAIEmbeddings
-	case formatAnthropicMessages:
+	case protocolAnthropicMessages:
 		return p.AnthropicMessages
 	}
 	return nil
@@ -103,46 +109,46 @@ func (p Provider) endpoint(format string) *ProviderEndpoint {
 func (p Provider) protocols() []string {
 	out := make([]string, 0, 4)
 	if p.OpenAICompletions != nil {
-		out = append(out, formatOpenAICompletions)
+		out = append(out, protocolOpenAICompletions)
 	}
 	if p.OpenAIResponses != nil {
-		out = append(out, formatOpenAIResponses)
+		out = append(out, protocolOpenAIResponses)
 	}
 	if p.OpenAIEmbeddings != nil {
-		out = append(out, formatOpenAIEmbeddings)
+		out = append(out, protocolOpenAIEmbeddings)
 	}
 	if p.AnthropicMessages != nil {
-		out = append(out, formatAnthropicMessages)
+		out = append(out, protocolAnthropicMessages)
 	}
 	return out
 }
 
-func (p Provider) bind(ref ModelProvider) Provider {
+func (p Provider) bind(ref ProviderRef) Provider {
 	out := p
 	if ref.Model != "" {
 		out.Model = ref.Model
 	}
 	allowed := make(map[string]struct{}, len(ref.Protocols))
-	for _, format := range ref.Protocols {
-		allowed[format] = struct{}{}
+	for _, protocol := range ref.Protocols {
+		allowed[protocol] = struct{}{}
 	}
-	if _, ok := allowed[formatOpenAICompletions]; !ok {
+	if _, ok := allowed[protocolOpenAICompletions]; !ok {
 		out.OpenAICompletions = nil
 	}
-	if _, ok := allowed[formatOpenAIResponses]; !ok {
+	if _, ok := allowed[protocolOpenAIResponses]; !ok {
 		out.OpenAIResponses = nil
 	}
-	if _, ok := allowed[formatOpenAIEmbeddings]; !ok {
+	if _, ok := allowed[protocolOpenAIEmbeddings]; !ok {
 		out.OpenAIEmbeddings = nil
 	}
-	if _, ok := allowed[formatAnthropicMessages]; !ok {
+	if _, ok := allowed[protocolAnthropicMessages]; !ok {
 		out.AnthropicMessages = nil
 	}
 	return out
 }
 
-func (p Provider) resolve(format string) (upstreamURL, model string, headers map[string]string, ok bool) {
-	ep := p.endpoint(format)
+func (p Provider) resolve(protocol string) (upstreamURL, model string, headers map[string]string, ok bool) {
+	ep := p.endpoint(protocol)
 	if ep == nil {
 		return "", "", nil, false
 	}
@@ -255,16 +261,16 @@ func (c *Config) validate() error {
 				return fmt.Errorf("config: model %q provider %q protocols is required", m.Name, ref.Name)
 			}
 			seenProto := make(map[string]struct{}, len(ref.Protocols))
-			for k, format := range ref.Protocols {
-				if !isKnownFormat(format) {
-					return fmt.Errorf("config: model %q provider %q protocols[%d] %q is invalid", m.Name, ref.Name, k, format)
+			for k, protocol := range ref.Protocols {
+				if !isKnownProtocol(protocol) {
+					return fmt.Errorf("config: model %q provider %q protocols[%d] %q is invalid", m.Name, ref.Name, k, protocol)
 				}
-				if _, dup := seenProto[format]; dup {
-					return fmt.Errorf("config: model %q provider %q has duplicate protocol %q", m.Name, ref.Name, format)
+				if _, dup := seenProto[protocol]; dup {
+					return fmt.Errorf("config: model %q provider %q has duplicate protocol %q", m.Name, ref.Name, protocol)
 				}
-				seenProto[format] = struct{}{}
-				if p.endpoint(format) == nil {
-					return fmt.Errorf("config: model %q provider %q protocols lists %s, but provider has no %s block", m.Name, ref.Name, format, format)
+				seenProto[protocol] = struct{}{}
+				if p.endpoint(protocol) == nil {
+					return fmt.Errorf("config: model %q provider %q protocols lists %s, but provider has no %s block", m.Name, ref.Name, protocol, protocol)
 				}
 			}
 		}
@@ -292,32 +298,33 @@ func (p *Provider) validate() error {
 	if p.OpenAICompletions == nil && p.OpenAIResponses == nil && p.OpenAIEmbeddings == nil && p.AnthropicMessages == nil {
 		return fmt.Errorf("config: provider %q must set openai_completions, openai_responses, openai_embeddings, or anthropic_messages", p.Name)
 	}
-	if err := validateEndpointURL(p.Name, formatOpenAICompletions, p.OpenAICompletions); err != nil {
-		return err
-	}
-	if err := validateEndpointURL(p.Name, formatOpenAIResponses, p.OpenAIResponses); err != nil {
-		return err
-	}
-	if err := validateEndpointURL(p.Name, formatOpenAIEmbeddings, p.OpenAIEmbeddings); err != nil {
-		return err
-	}
-	if err := validateEndpointURL(p.Name, formatAnthropicMessages, p.AnthropicMessages); err != nil {
-		return err
+	for _, item := range []struct {
+		protocol string
+		ep       *ProviderEndpoint
+	}{
+		{protocolOpenAICompletions, p.OpenAICompletions},
+		{protocolOpenAIResponses, p.OpenAIResponses},
+		{protocolOpenAIEmbeddings, p.OpenAIEmbeddings},
+		{protocolAnthropicMessages, p.AnthropicMessages},
+	} {
+		if err := validateEndpointURL(p.Name, item.protocol, item.ep); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func validateEndpointURL(provider, format string, ep *ProviderEndpoint) error {
+func validateEndpointURL(provider, protocol string, ep *ProviderEndpoint) error {
 	if ep == nil {
 		return nil
 	}
-	return validateHTTPURL(provider, format, ep.URL)
+	return validateHTTPURL(provider, protocol, ep.URL)
 }
 
-func validateHTTPURL(provider, format, raw string) error {
+func validateHTTPURL(provider, protocol, raw string) error {
 	what := "url"
-	if format != "" {
-		what = format + " url"
+	if protocol != "" {
+		what = protocol + " url"
 	}
 	if raw == "" {
 		return fmt.Errorf("config: provider %q %s is required", provider, what)
@@ -372,14 +379,12 @@ func (c *Config) providers(model string) []Provider {
 	return out
 }
 
-func (c *Config) providersFor(model, format string) []Provider {
+func (c *Config) providersFor(model, protocol string) []Provider {
 	all := c.providers(model)
-	if format == "" {
-		format = formatOpenAICompletions
-	}
+	protocol = normalizeProtocol(protocol)
 	out := make([]Provider, 0, len(all))
 	for _, p := range all {
-		if p.endpoint(format) != nil {
+		if p.endpoint(protocol) != nil {
 			out = append(out, p)
 		}
 	}

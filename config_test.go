@@ -66,12 +66,12 @@ models:
 	require.Equal(t, "REPLACE_ME", cfg.Admin.Password)
 	require.NotNil(t, cfg.providers("fast")[0].OpenAICompletions)
 	require.Equal(t, "http://primary.example/v1/chat/completions", cfg.providers("fast")[0].OpenAICompletions.URL)
-	require.Len(t, cfg.providersFor("fast", formatOpenAICompletions), 2)
-	require.Empty(t, cfg.providersFor("fast", formatAnthropicMessages))
+	require.Len(t, cfg.providersFor("fast", protocolOpenAICompletions), 2)
+	require.Empty(t, cfg.providersFor("fast", protocolAnthropicMessages))
 	require.NotNil(t, cfg.providers("embed")[0].OpenAIEmbeddings)
 	require.Equal(t, "http://embed.example/v1/embeddings", cfg.providers("embed")[0].OpenAIEmbeddings.URL)
-	require.Len(t, cfg.providersFor("embed", formatOpenAIEmbeddings), 1)
-	require.Empty(t, cfg.providersFor("embed", formatOpenAICompletions))
+	require.Len(t, cfg.providersFor("embed", protocolOpenAIEmbeddings), 1)
+	require.Empty(t, cfg.providersFor("embed", protocolOpenAICompletions))
 }
 
 func TestLoadConfigRejectsEmpty(t *testing.T) {
@@ -106,7 +106,7 @@ models:
 	require.ErrorContains(t, err, "duplicate provider name")
 }
 
-func TestLoadConfigRejectsDuplicateModelProviderRefs(t *testing.T) {
+func TestLoadConfigRejectsDuplicateProviderRefs(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(`
@@ -401,31 +401,31 @@ models:
 	require.NotNil(t, or.OpenAIResponses)
 	require.NotNil(t, or.AnthropicMessages)
 
-	openai := cfg.providersFor("claude", formatOpenAICompletions)
+	openai := cfg.providersFor("claude", protocolOpenAICompletions)
 	require.Len(t, openai, 1)
 	require.Equal(t, "openrouter", openai[0].Name)
-	u, model, headers, ok := openai[0].resolve(formatOpenAICompletions)
+	u, model, headers, ok := openai[0].resolve(protocolOpenAICompletions)
 	require.True(t, ok)
 	require.Equal(t, "https://openrouter.ai/api/v1/chat/completions", u)
 	require.Equal(t, "anthropic/claude-sonnet-4-5", model)
 	require.Equal(t, "Bearer sk-or", headers["Authorization"])
 	require.Equal(t, "openai", headers["X-Shared"])
 
-	responses := cfg.providersFor("claude", formatOpenAIResponses)
+	responses := cfg.providersFor("claude", protocolOpenAIResponses)
 	require.Len(t, responses, 1)
 	require.Equal(t, "openrouter", responses[0].Name)
-	u, model, headers, ok = responses[0].resolve(formatOpenAIResponses)
+	u, model, headers, ok = responses[0].resolve(protocolOpenAIResponses)
 	require.True(t, ok)
 	require.Equal(t, "https://openrouter.ai/api/v1/responses", u)
 	require.Equal(t, "openai/gpt-4o", model)
 	require.Equal(t, "Bearer sk-or", headers["Authorization"])
 	require.Equal(t, "top", headers["X-Shared"])
 
-	anth := cfg.providersFor("claude", formatAnthropicMessages)
+	anth := cfg.providersFor("claude", protocolAnthropicMessages)
 	require.Len(t, anth, 2)
 	require.Equal(t, "openrouter", anth[0].Name)
 	require.Equal(t, "anthropic-only", anth[1].Name)
-	u, model, headers, ok = anth[0].resolve(formatAnthropicMessages)
+	u, model, headers, ok = anth[0].resolve(protocolAnthropicMessages)
 	require.True(t, ok)
 	require.Equal(t, "https://openrouter.ai/api/v1/messages", u)
 	require.Equal(t, "anthropic/claude-override", model)
@@ -464,9 +464,9 @@ models:
 	p := cfg.providers("dual")[0]
 	require.NotNil(t, p.OpenAICompletions)
 	require.NotNil(t, p.OpenAIEmbeddings)
-	require.Len(t, cfg.providersFor("dual", formatOpenAICompletions), 1)
-	require.Len(t, cfg.providersFor("dual", formatOpenAIEmbeddings), 1)
-	u, model, _, ok := p.resolve(formatOpenAIEmbeddings)
+	require.Len(t, cfg.providersFor("dual", protocolOpenAICompletions), 1)
+	require.Len(t, cfg.providersFor("dual", protocolOpenAIEmbeddings), 1)
+	u, model, _, ok := p.resolve(protocolOpenAIEmbeddings)
 	require.True(t, ok)
 	require.Equal(t, "https://api.openai.com/v1/embeddings", u)
 	require.Equal(t, "text-embedding-3-small", model)
@@ -512,16 +512,16 @@ models:
 	require.Equal(t, "gpt-4o", chat[0].Model)
 	require.NotNil(t, chat[0].OpenAICompletions)
 	require.Nil(t, chat[0].OpenAIEmbeddings)
-	require.Len(t, cfg.providersFor("gpt-4o", formatOpenAICompletions), 1)
-	require.Empty(t, cfg.providersFor("gpt-4o", formatOpenAIEmbeddings))
+	require.Len(t, cfg.providersFor("gpt-4o", protocolOpenAICompletions), 1)
+	require.Empty(t, cfg.providersFor("gpt-4o", protocolOpenAIEmbeddings))
 
 	embed := cfg.providers("embed")
 	require.Len(t, embed, 1)
 	require.Equal(t, "text-embedding-3-small", embed[0].Model)
 	require.Nil(t, embed[0].OpenAICompletions)
 	require.NotNil(t, embed[0].OpenAIEmbeddings)
-	require.Empty(t, cfg.providersFor("embed", formatOpenAICompletions))
-	require.Len(t, cfg.providersFor("embed", formatOpenAIEmbeddings), 1)
+	require.Empty(t, cfg.providersFor("embed", protocolOpenAICompletions))
+	require.Len(t, cfg.providersFor("embed", protocolOpenAIEmbeddings), 1)
 	require.Equal(t, "Bearer sk-up", embed[0].Headers["Authorization"])
 }
 

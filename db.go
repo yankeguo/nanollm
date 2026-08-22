@@ -262,6 +262,15 @@ func (l *gormCallLogger) prune() error {
 	return l.pruneFiles(pruneFileScope(l.retain, cutoff))
 }
 
+// pruneFileScope says how llm_call_files should be cleared during prune:
+// all joins when retain is disabled, otherwise joins with call_id < cutoff.
+func pruneFileScope(retain int, cutoff uint64) (before uint64, all bool) {
+	if retain <= 0 {
+		return 0, true
+	}
+	return cutoff, false
+}
+
 func (l *gormCallLogger) pruneFiles(before uint64, all bool) error {
 	q := l.db
 	if all {

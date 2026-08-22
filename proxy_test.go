@@ -32,9 +32,9 @@ func cfgFast(providers ...Provider) *Config {
 }
 
 func cfgWith(model string, providers ...Provider) *Config {
-	refs := make([]ModelProvider, len(providers))
+	refs := make([]ProviderRef, len(providers))
 	for i, p := range providers {
-		refs[i] = modelProviderRef(p)
+		refs[i] = providerRef(p)
 	}
 	return &Config{
 		APIKeys:   []APIKey{{Name: "test", Value: testAPIKey}},
@@ -43,8 +43,8 @@ func cfgWith(model string, providers ...Provider) *Config {
 	}
 }
 
-func modelProviderRef(p Provider) ModelProvider {
-	return ModelProvider{Name: p.Name, Model: p.Model, Protocols: p.protocols()}
+func providerRef(p Provider) ProviderRef {
+	return ProviderRef{Name: p.Name, Model: p.Model, Protocols: p.protocols()}
 }
 
 func ep(url string) *ProviderEndpoint {
@@ -323,8 +323,8 @@ func TestModelsEndpoint(t *testing.T) {
 	h := testProxy(t, &Config{
 		Providers: []Provider{x, y},
 		Models: []ModelConfig{
-			{Name: "fast", Providers: []ModelProvider{modelProviderRef(x)}},
-			{Name: "code", Providers: []ModelProvider{modelProviderRef(y)}},
+			{Name: "fast", Providers: []ProviderRef{providerRef(x)}},
+			{Name: "code", Providers: []ProviderRef{providerRef(y)}},
 		},
 	})
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
@@ -417,8 +417,8 @@ func TestModelEndpoint(t *testing.T) {
 	h := testProxy(t, &Config{
 		Providers: []Provider{x, y},
 		Models: []ModelConfig{
-			{Name: "fast", Providers: []ModelProvider{modelProviderRef(x)}},
-			{Name: "org/code", Providers: []ModelProvider{modelProviderRef(y)}},
+			{Name: "fast", Providers: []ProviderRef{providerRef(x)}},
+			{Name: "org/code", Providers: []ProviderRef{providerRef(y)}},
 		},
 	})
 

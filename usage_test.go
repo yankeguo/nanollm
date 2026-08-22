@@ -52,7 +52,7 @@ func TestCopyAndScanSSE(t *testing.T) {
 		"data: {\"model\":\"gpt-4o\",\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":2,\"prompt_tokens_details\":{\"cached_tokens\":6}}}\n\n" +
 		"data: [DONE]\n\n")
 	var dst bytes.Buffer
-	u, err := copyAndScanSSE(&dst, src)
+	u, err := copySSE(&dst, nil, src, 0)
 	require.NoError(t, err)
 	require.Equal(t, int64(9), u.Input)
 	require.Equal(t, int64(2), u.Output)
@@ -86,14 +86,14 @@ func TestCopyAndScanSSECapsScanBuffer(t *testing.T) {
 
 	src := bytes.NewBuffer(bytes.Repeat([]byte("x"), 1000))
 	var dst bytes.Buffer
-	u, err := copyAndScanSSE(&dst, src)
+	u, err := copySSE(&dst, nil, src, 0)
 	require.NoError(t, err)
 	require.True(t, u.empty())
 	require.Equal(t, 1000, dst.Len())
 }
 
 // parseUsageSSE parses an entire SSE transcript; the production path streams
-// through copyAndScanSSE, so this helper lives only in tests.
+// through copySSE, so this helper lives only in tests.
 func parseUsageSSE(body []byte) tokenUsage {
 	var usage tokenUsage
 	for {
@@ -229,7 +229,7 @@ func TestCopyAndScanSSEResponsesLargeCompleted(t *testing.T) {
 	payload := `{"type":"response.completed","response":{"model":"gpt-4o","output":[{"content":[{"text":"` + strings.Repeat("x", 64*1024) + `"}]}],"usage":{"input_tokens":9,"output_tokens":2}}}`
 	src := bytes.NewBufferString("event: response.completed\ndata: " + payload + "\n\n")
 	var dst bytes.Buffer
-	u, err := copyAndScanSSE(&dst, src)
+	u, err := copySSE(&dst, nil, src, 0)
 	require.NoError(t, err)
 	require.Equal(t, int64(9), u.Input)
 	require.Equal(t, int64(2), u.Output)

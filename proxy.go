@@ -34,29 +34,26 @@ var hopHeaders = map[string]bool{
 }
 
 type Proxy struct {
-	Config *Config
-	Client *http.Client
-	Logger CallLogger
-	Format string
+	Config   *Config
+	Client   *http.Client
+	Logger   CallLogger
+	Protocol string
 	// InjectStreamUsage adds stream_options.include_usage for OpenAI Chat
 	// Completions and Completions (legacy) streaming. Responses, Anthropic,
 	// and embeddings must not receive that field.
 	InjectStreamUsage bool
 }
 
-func (p *Proxy) format() string {
-	if p.Format == "" {
-		return formatOpenAICompletions
-	}
-	return p.Format
+func (p *Proxy) protocol() string {
+	return normalizeProtocol(p.Protocol)
 }
 
 func (p *Proxy) writeError(w http.ResponseWriter, status int, typ, message string) {
-	writeFormatError(w, p.format(), status, typ, message)
+	writeProtocolError(w, p.protocol(), status, typ, message)
 }
 
 func (p *Proxy) clientErrorType(notFound bool) string {
-	if p.format() != formatAnthropicMessages {
+	if p.protocol() != protocolAnthropicMessages {
 		return "invalid_request_error"
 	}
 	if notFound {
@@ -66,7 +63,7 @@ func (p *Proxy) clientErrorType(notFound bool) string {
 }
 
 func (p *Proxy) upstreamErrorType() string {
-	if p.format() == formatAnthropicMessages {
+	if p.protocol() == protocolAnthropicMessages {
 		return "api_error"
 	}
 	return "upstream_error"
@@ -129,9 +126,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.writeError(w, http.StatusNotFound, p.clientErrorType(true), "the model `"+meta.Model+"` does not exist")
 		return
 	}
-	providers := p.Config.providersFor(meta.Model, p.format())
+	providers := p.Config.providersFor(meta.Model, p.protocol())
 	if len(providers) == 0 {
-		p.writeError(w, http.StatusNotFound, p.clientErrorType(true), "the model `"+meta.Model+"` has no "+p.format()+" providers")
+		p.writeError(w, http.StatusNotFound, p.clientErrorType(true), "the model `"+meta.Model+"` has no "+p.protocol()+" providers")
 		return
 	}
 
@@ -139,7 +136,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var lastErr error
 
 	for _, provider := range providers {
-		_, err := p.forward(tw, r, meta, provider)
+		err := p.forward(tw, r, meta, provider)
 		if tw.wrote {
 			return
 		}
@@ -158,10 +155,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.writeError(w, http.StatusBadGateway, p.upstreamErrorType(), "all upstreams unavailable: "+lastErr.Error())
 }
 
-func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMeta, provider Provider) (int, error) {
-	upstreamURL, providerModel, headers, ok := provider.resolve(p.format())
+func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMeta, provider Provider) error {
+	upstreamURL, providerModel, headers, ok := provider.resolve(p.protocol())
 	if !ok {
-		err := fmt.Errorf("provider %q has no %s endpoint", provider.Name, p.format())
+		err := fmt.Errorf("provider %q has no %s endpoint", provider.Name, p.protocol())
 		rec := CallRecord{
 			Model:       meta.Model,
 			Provider:    provider.Name,
@@ -170,7 +167,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 			Error:       err.Error(),
 		}
 		p.logCall(rec)
-		return 0, err
+		return err
 	}
 
 	rec := CallRecord{
@@ -190,7 +187,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 		rec.Error = err.Error()
 		p.logCall(rec)
 		p.writeError(w, http.StatusBadRequest, p.clientErrorType(false), err.Error())
-		return http.StatusBadRequest, err
+		return err
 	}
 	rec.RequestJSON = payload
 
@@ -198,7 +195,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	if err != nil {
 		rec.Error = err.Error()
 		p.logCall(rec)
-		return 0, err
+		return err
 	}
 	copyRequestHeaders(req.Header, r.Header)
 	for k, v := range headers {
@@ -214,7 +211,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	if err != nil {
 		rec.Error = copyErrText(err)
 		p.logCall(rec)
-		return 0, err
+		return err
 	}
 	defer resp.Body.Close()
 	rec.HTTPStatus = resp.StatusCode
@@ -225,7 +222,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 		rec.ResponseJSON = encodeResponseBlob(body, sse)
 		rec.Error = "upstream status " + resp.Status
 		p.logCall(rec)
-		return resp.StatusCode, fmt.Errorf("upstream status %s", resp.Status)
+		return fmt.Errorf("upstream status %s", resp.Status)
 	}
 
 	copyResponseHeaders(w.Header(), resp.Header)
@@ -260,7 +257,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 		rec.Error = copyErrText(err)
 	}
 	p.logCall(rec)
-	return resp.StatusCode, err
+	return err
 }
 
 type writeTracker struct {

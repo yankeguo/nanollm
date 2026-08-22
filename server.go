@@ -47,21 +47,21 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /admin/calls/{id}", s.requireAdmin(http.HandlerFunc(s.handleAdminCall)))
 	mux.Handle("GET /admin/files/{sha}", s.requireAdmin(http.HandlerFunc(s.handleAdminFile)))
 
-	auth := func(h http.Handler) http.Handler { return s.requireAPIKey(h, formatOpenAICompletions) }
+	auth := func(h http.Handler) http.Handler { return s.requireAPIKey(h, protocolOpenAICompletions) }
 	mux.Handle("GET /v1/models", auth(http.HandlerFunc(s.handleModels)))
 	mux.Handle("GET /v1/models/{model...}", auth(http.HandlerFunc(s.handleModel)))
-	chat := auth(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Format: formatOpenAICompletions, InjectStreamUsage: true})
+	chat := auth(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Protocol: protocolOpenAICompletions, InjectStreamUsage: true})
 	mux.Handle("POST /v1/chat/completions", chat)
 	mux.Handle("POST /chat/completions", chat)
 	mux.Handle("POST /v1/completions", chat)
 	mux.Handle("POST /completions", chat)
-	embed := auth(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Format: formatOpenAIEmbeddings})
+	embed := auth(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Protocol: protocolOpenAIEmbeddings})
 	mux.Handle("POST /v1/embeddings", embed)
 	mux.Handle("POST /embeddings", embed)
-	resp := auth(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Format: formatOpenAIResponses})
+	resp := auth(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Protocol: protocolOpenAIResponses})
 	mux.Handle("POST /v1/responses", resp)
 	mux.Handle("POST /responses", resp)
-	anth := s.requireAPIKey(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Format: formatAnthropicMessages}, formatAnthropicMessages)
+	anth := s.requireAPIKey(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Protocol: protocolAnthropicMessages}, protocolAnthropicMessages)
 	mux.Handle("POST /v1/messages", anth)
 	return withSecurityHeaders(mux)
 }
@@ -151,8 +151,8 @@ func writeAPIError(w http.ResponseWriter, status int, typ, message string) {
 	})
 }
 
-func writeFormatError(w http.ResponseWriter, format string, status int, typ, message string) {
-	if format == formatAnthropicMessages {
+func writeProtocolError(w http.ResponseWriter, protocol string, status int, typ, message string) {
+	if protocol == protocolAnthropicMessages {
 		writeJSON(w, status, map[string]any{
 			"type": "error",
 			"error": map[string]any{

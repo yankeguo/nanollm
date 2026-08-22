@@ -374,12 +374,3 @@ func decodeBase64Payload(s string) ([]byte, bool) {
 	}
 	return data, true
 }
-
-// pruneFileScope says how llm_call_files should be cleared during prune:
-// all joins when retain is disabled, otherwise joins with call_id < cutoff.
-func pruneFileScope(retain int, cutoff uint64) (before uint64, all bool) {
-	if retain <= 0 {
-		return 0, true
-	}
-	return cutoff, false
-}
