@@ -1163,16 +1163,17 @@ func TestProxyCompletionsInjectsStreamOptions(t *testing.T) {
 	require.Equal(t, true, opts["include_usage"])
 }
 
-func TestProxyEmbeddingsDoesNotInjectStreamOptions(t *testing.T) {
+func TestProxyEmbeddingsRewritesModelAndLogsUsage(t *testing.T) {
 	var gotBody []byte
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"object":"list","data":[{"embedding":[0.1],"index":0}],"usage":{"prompt_tokens":2,"total_tokens":2}}`)
+		io.WriteString(w, `{"object":"list","model":"text-embedding-3-small","data":[{"embedding":[0.1],"index":0}],"usage":{"prompt_tokens":2,"total_tokens":2}}`)
 	}))
 	t.Cleanup(up.Close)
 
-	h := testProxy(t, cfgFast(Provider{Name: "m", Model: "text-embedding-3-small", OpenAIEmbeddings: ep(up.URL)}))
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(Provider{Name: "m", Model: "text-embedding-3-small", OpenAIEmbeddings: ep(up.URL)}), logger, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", jsonBody(map[string]any{
 		"model":  "fast",
 		"input":  "hi",
@@ -1181,11 +1182,24 @@ func TestProxyEmbeddingsDoesNotInjectStreamOptions(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, authed(req))
 	require.Equal(t, http.StatusOK, rec.Code)
+
 	var sent map[string]any
 	require.NoError(t, json.Unmarshal(gotBody, &sent))
+	require.Equal(t, "text-embedding-3-small", sent["model"])
+	require.Equal(t, "hi", sent["input"])
 	_, has := sent["stream_options"]
 	require.False(t, has)
-	require.Equal(t, "text-embedding-3-small", sent["model"])
+
+	require.Len(t, logger.calls, 1)
+	got := logger.calls[0]
+	require.Equal(t, "fast", got.Model)
+	require.Equal(t, "text-embedding-3-small", got.ProviderModel)
+	require.Equal(t, int64(2), got.InputTokens)
+	require.Equal(t, int64(0), got.OutputTokens)
+	require.Equal(t, int64(2), got.UncachedTokens)
+	require.Equal(t, int64(0), got.CacheTokens)
+	require.Contains(t, string(got.RequestJSON), `"model":"text-embedding-3-small"`)
+	require.Contains(t, string(got.ResponseJSON), `"prompt_tokens":2`)
 }
 
 func TestProxyStreamJSONErrorIsNotSSE(t *testing.T) {

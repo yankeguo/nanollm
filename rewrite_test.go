@@ -105,6 +105,7 @@ func TestRewriteRequestEmbeddingsDoesNotInjectStreamOptions(t *testing.T) {
 	require.NoError(t, err)
 	var raw map[string]any
 	require.NoError(t, json.Unmarshal(out, &raw))
+	require.Equal(t, "text-embedding-3-small", raw["model"])
 	_, has := raw["stream_options"]
 	require.False(t, has)
 	require.Equal(t, rawObjectField(t, body, "input"), rawObjectField(t, out, "input"))

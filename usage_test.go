@@ -189,6 +189,34 @@ func TestParseUsageJSONCompletions(t *testing.T) {
 	require.Equal(t, "gpt-3.5-turbo-instruct", u.ResponseModel)
 }
 
+func TestParseUsageJSONEmbeddings(t *testing.T) {
+	u := parseUsageJSON([]byte(`{"object":"list","model":"text-embedding-3-small","data":[{"embedding":[0.1],"index":0}],"usage":{"prompt_tokens":8,"total_tokens":8}}`))
+	require.Equal(t, int64(8), u.Input)
+	require.Equal(t, int64(0), u.Output)
+	require.Equal(t, int64(8), u.Uncached)
+	require.Equal(t, "text-embedding-3-small", u.ResponseModel)
+}
+
+func TestParseUsageJSONEmbeddingsTotalOnly(t *testing.T) {
+	u := parseUsageJSON([]byte(`{"object":"list","usage":{"total_tokens":5}}`))
+	require.Equal(t, int64(5), u.Input)
+	require.Equal(t, int64(0), u.Output)
+	require.Equal(t, int64(5), u.Uncached)
+}
+
+func TestParseUsageJSONTotalTokensDoesNotOverridePrompt(t *testing.T) {
+	u := parseUsageJSON([]byte(`{"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}`))
+	require.Equal(t, int64(11), u.Input)
+	require.Equal(t, int64(7), u.Output)
+	require.Equal(t, int64(11), u.Uncached)
+}
+
+func TestParseUsageJSONTotalMinusCompletion(t *testing.T) {
+	u := parseUsageJSON([]byte(`{"usage":{"completion_tokens":7,"total_tokens":18}}`))
+	require.Equal(t, int64(11), u.Input)
+	require.Equal(t, int64(7), u.Output)
+}
+
 func TestParseUsageJSONResponsesDoesNotFoldCacheRead(t *testing.T) {
 	// Responses input_tokens already includes cached_tokens; cache_read_input_tokens is Anthropic-only.
 	u := parseUsageJSON([]byte(`{"usage":{"input_tokens":11,"output_tokens":2,"input_tokens_details":{"cached_tokens":4}}}`))

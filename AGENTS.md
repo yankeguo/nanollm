@@ -19,7 +19,7 @@ Single `package main`. No `internal/` split unless the tree clearly outgrows one
 | `proxy.go` | Body rewrite, ordered provider attempts, response copy, call logging |
 | `failover.go` | `isCatastrophic` — only then try the next provider |
 | `rewrite.go` | Patch top-level `model` (and OpenAI Chat Completions / Completions streaming `stream_options.include_usage`); copy other JSON fields as `json.RawMessage` |
-| `usage.go` | Parse OpenAI- and Anthropic-compatible `usage` (including cache fields and Responses `response.usage`) from JSON/SSE |
+| `usage.go` | Parse OpenAI- and Anthropic-compatible `usage` (including cache fields, Responses `response.usage`, and embeddings `prompt_tokens`/`total_tokens`) from JSON/SSE |
 | `sse_log.go` | Call-log only: coalesce consecutive same-type SSE text/argument deltas (including Chat Completions `function_call.arguments`) before storing `response_json`; does not change pass-through |
 | `files.go` | Call-log only: extract multimodal base64 from request/response JSON into SHA256-deduped files; replace with `<file:{sha256}>` |
 | `db.go` | GORM MySQL: `llm_calls` / `llm_files` / `llm_call_files` AutoMigrate, Record, prune detail blobs and unreferenced files |

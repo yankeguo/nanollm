@@ -100,6 +100,7 @@ func (n *jsonInt64) UnmarshalJSON(b []byte) error {
 type openaiUsage struct {
 	PromptTokens             jsonInt64 `json:"prompt_tokens"`
 	CompletionTokens         jsonInt64 `json:"completion_tokens"`
+	TotalTokens              jsonInt64 `json:"total_tokens"`
 	InputTokens              jsonInt64 `json:"input_tokens"`
 	OutputTokens             jsonInt64 `json:"output_tokens"`
 	CachedTokens             jsonInt64 `json:"cached_tokens"`
@@ -151,6 +152,17 @@ func (u openaiUsage) asTokenUsage() tokenUsage {
 	out := int64(u.CompletionTokens)
 	if out == 0 {
 		out = int64(u.OutputTokens)
+	}
+	// Embeddings (and some gateways) report only total_tokens, or omit
+	// prompt_tokens. Do not let total_tokens override an already-parsed input.
+	if in == 0 {
+		total := int64(u.TotalTokens)
+		if total > 0 {
+			in = total - out
+			if in < 0 {
+				in = 0
+			}
+		}
 	}
 
 	usage := tokenUsage{
