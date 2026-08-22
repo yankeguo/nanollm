@@ -10,7 +10,7 @@ import (
 )
 
 func TestHealthzDoesNotRequireAPIKey(t *testing.T) {
-	h := testProxy(t, cfgFast(Provider{Name: "x", URL: "http://example.invalid", Model: "x"}))
+	h := testProxy(t, cfgFast(Provider{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}))
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -19,7 +19,7 @@ func TestHealthzDoesNotRequireAPIKey(t *testing.T) {
 }
 
 func TestAPIKeyRequired(t *testing.T) {
-	h := testProxy(t, cfgFast(Provider{Name: "x", URL: "http://example.invalid", Model: "x"}))
+	h := testProxy(t, cfgFast(Provider{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}))
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -28,7 +28,7 @@ func TestAPIKeyRequired(t *testing.T) {
 }
 
 func TestAPIKeyRejectsUnknown(t *testing.T) {
-	h := testProxy(t, cfgFast(Provider{Name: "x", URL: "http://example.invalid", Model: "x"}))
+	h := testProxy(t, cfgFast(Provider{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}))
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	req.Header.Set("Authorization", "Bearer sk-wrong")
 	rec := httptest.NewRecorder()
@@ -37,7 +37,7 @@ func TestAPIKeyRejectsUnknown(t *testing.T) {
 }
 
 func TestAPIKeyAcceptsBearerAndXApiKey(t *testing.T) {
-	h := testProxy(t, cfgFast(Provider{Name: "x", URL: "http://example.invalid", Model: "x"}))
+	h := testProxy(t, cfgFast(Provider{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}))
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	req.Header.Set("Authorization", "Bearer "+testAPIKey)
@@ -89,7 +89,7 @@ func TestLookupAPIKeyScansAllKeys(t *testing.T) {
 }
 
 func TestAnthropicAPIKeyUnauthorized(t *testing.T) {
-	h := testProxy(t, cfgFast(Provider{Name: "x", Format: formatAnthropic, URL: "http://example.invalid", Model: "x"}))
+	h := testProxy(t, cfgFast(Provider{Name: "x", Model: "x", Anthropic: ep("http://example.invalid")}))
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", jsonBody(map[string]any{"model": "x"}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -105,7 +105,7 @@ func TestAnthropicAPIKeyAcceptsXApiKey(t *testing.T) {
 		io.WriteString(w, `{"type":"message","content":[]}`)
 	}))
 	t.Cleanup(up.Close)
-	cfg := cfgFast(Provider{Name: "x", Format: formatAnthropic, URL: up.URL, Model: "x"})
+	cfg := cfgFast(Provider{Name: "x", Model: "x", Anthropic: ep(up.URL)})
 	cfg.Models[0].Name = "claude"
 	h := NewServer(cfg, nil, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", jsonBody(map[string]any{"model": "claude"}))

@@ -17,7 +17,7 @@ func adminTestCfg() *Config {
 	return &Config{
 		Admin:   AdminConfig{Username: "admin", Password: "secret"},
 		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
-		Models:  []ModelConfig{{Name: "fast", Providers: []Provider{{Name: "x", URL: "http://example.invalid", Model: "x"}}}},
+		Models:  []ModelConfig{{Name: "fast", Providers: []Provider{{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}}}},
 	}
 }
 

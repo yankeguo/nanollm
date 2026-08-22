@@ -34,6 +34,10 @@ func cfgFast(providers ...Provider) *Config {
 	}
 }
 
+func ep(url string) *ProviderEndpoint {
+	return &ProviderEndpoint{URL: url}
+}
+
 func authed(req *http.Request) *http.Request {
 	req.Header.Set("Authorization", "Bearer "+testAPIKey)
 	return req
@@ -57,9 +61,9 @@ func TestProxyRewritesModelAndHeaders(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	h := testProxy(t, cfgFast(Provider{
-		Name:  "primary",
-		URL:   up.URL + "/v1/chat/completions",
-		Model: "gpt-4o-mini",
+		Name:              "primary",
+		Model:             "gpt-4o-mini",
+		OpenAICompletions: ep(up.URL + "/v1/chat/completions"),
 		Headers: map[string]string{
 			"Authorization": "Bearer sk-up",
 			"X-Extra":       "yes",
@@ -102,8 +106,8 @@ func TestProxyFailoversOnCatastrophicThenSucceeds(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	h := testProxy(t, cfgFast(
-		Provider{Name: "primary", URL: deadURL, Model: "primary"},
-		Provider{Name: "backup", URL: up.URL + "/v1/chat/completions", Model: "backup"},
+		Provider{Name: "primary", Model: "primary", OpenAICompletions: ep(deadURL)},
+		Provider{Name: "backup", Model: "backup", OpenAICompletions: ep(up.URL + "/v1/chat/completions")},
 	))
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
@@ -134,8 +138,8 @@ func TestProxyDoesNotFailoverOnClientError(t *testing.T) {
 	t.Cleanup(second.Close)
 
 	h := testProxy(t, cfgFast(
-		Provider{Name: "a", URL: first.URL, Model: "a"},
-		Provider{Name: "b", URL: second.URL, Model: "b"},
+		Provider{Name: "a", Model: "a", OpenAICompletions: ep(first.URL)},
+		Provider{Name: "b", Model: "b", OpenAICompletions: ep(second.URL)},
 	))
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
@@ -160,8 +164,8 @@ func TestProxyFailoversOn503(t *testing.T) {
 	t.Cleanup(second.Close)
 
 	h := testProxy(t, cfgFast(
-		Provider{Name: "a", URL: first.URL, Model: "a"},
-		Provider{Name: "b", URL: second.URL, Model: "b"},
+		Provider{Name: "a", Model: "a", OpenAICompletions: ep(first.URL)},
+		Provider{Name: "b", Model: "b", OpenAICompletions: ep(second.URL)},
 	))
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
 	rec := httptest.NewRecorder()
@@ -171,7 +175,7 @@ func TestProxyFailoversOn503(t *testing.T) {
 }
 
 func TestProxyUnknownModel(t *testing.T) {
-	h := testProxy(t, cfgFast(Provider{Name: "x", URL: "http://example.invalid", Model: "x"}))
+	h := testProxy(t, cfgFast(Provider{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}))
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "missing"}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, authed(req))
@@ -187,7 +191,7 @@ func TestProxyStreamPassthrough(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	h := testProxy(t, cfgFast(Provider{Name: "m", URL: up.URL, Model: "m"}))
+	h := testProxy(t, cfgFast(Provider{Name: "m", Model: "m", OpenAICompletions: ep(up.URL)}))
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
 		"model":  "fast",
 		"stream": true,
@@ -213,7 +217,7 @@ func TestProxyLogsCanceledAfter200(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	logger := &memoryCallLogger{}
-	h := NewServer(cfgFast(Provider{Name: "m", URL: up.URL, Model: "m"}), logger, nil).Handler()
+	h := NewServer(cfgFast(Provider{Name: "m", Model: "m", OpenAICompletions: ep(up.URL)}), logger, nil).Handler()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
@@ -259,8 +263,8 @@ func TestProxyLogsCanceledBeforeResponse(t *testing.T) {
 
 	logger := &memoryCallLogger{}
 	h := NewServer(cfgFast(
-		Provider{Name: "m", URL: up.URL, Model: "m"},
-		Provider{Name: "m2", URL: up.URL, Model: "m"},
+		Provider{Name: "m", Model: "m", OpenAICompletions: ep(up.URL)},
+		Provider{Name: "m2", Model: "m", OpenAICompletions: ep(up.URL)},
 	), logger, nil).Handler()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -302,8 +306,8 @@ func TestCopyErrText(t *testing.T) {
 
 func TestModelsEndpoint(t *testing.T) {
 	h := testProxy(t, &Config{Models: []ModelConfig{
-		{Name: "fast", Providers: []Provider{{Name: "x", URL: "http://example.invalid", Model: "x"}}},
-		{Name: "code", Providers: []Provider{{Name: "y", URL: "http://example.invalid", Model: "y"}}},
+		{Name: "fast", Providers: []Provider{{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}}},
+		{Name: "code", Providers: []Provider{{Name: "y", Model: "y", OpenAICompletions: ep("http://example.invalid")}}},
 	}})
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	rec := httptest.NewRecorder()
@@ -327,8 +331,8 @@ func TestProxyDoesNotFailoverOn500(t *testing.T) {
 	t.Cleanup(second.Close)
 
 	h := testProxy(t, cfgFast(
-		Provider{Name: "a", URL: first.URL, Model: "a"},
-		Provider{Name: "b", URL: second.URL, Model: "b"},
+		Provider{Name: "a", Model: "a", OpenAICompletions: ep(first.URL)},
+		Provider{Name: "b", Model: "b", OpenAICompletions: ep(second.URL)},
 	))
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
 	rec := httptest.NewRecorder()
@@ -352,8 +356,8 @@ func TestProxyDoesNotFailoverOn429(t *testing.T) {
 	t.Cleanup(second.Close)
 
 	h := testProxy(t, cfgFast(
-		Provider{Name: "a", URL: first.URL, Model: "a"},
-		Provider{Name: "b", URL: second.URL, Model: "b"},
+		Provider{Name: "a", Model: "a", OpenAICompletions: ep(first.URL)},
+		Provider{Name: "b", Model: "b", OpenAICompletions: ep(second.URL)},
 	))
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
 	rec := httptest.NewRecorder()
@@ -368,7 +372,7 @@ func TestProxyAllUpstreamsUnavailable(t *testing.T) {
 	deadURL := "http://" + ln.Addr().String() + "/v1/chat/completions"
 	require.NoError(t, ln.Close())
 
-	h := testProxy(t, cfgFast(Provider{Name: "a", URL: deadURL, Model: "a"}))
+	h := testProxy(t, cfgFast(Provider{Name: "a", Model: "a", OpenAICompletions: ep(deadURL)}))
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, authed(req))
@@ -381,7 +385,7 @@ func TestProxyBodyTooLarge(t *testing.T) {
 	maxRequestBody = 8
 	t.Cleanup(func() { maxRequestBody = orig })
 
-	h := testProxy(t, cfgFast(Provider{Name: "x", URL: "http://example.invalid", Model: "x"}))
+	h := testProxy(t, cfgFast(Provider{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}))
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(bytes.Repeat([]byte("x"), 64)))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, authed(req))
@@ -391,8 +395,8 @@ func TestProxyBodyTooLarge(t *testing.T) {
 
 func TestModelEndpoint(t *testing.T) {
 	h := testProxy(t, &Config{Models: []ModelConfig{
-		{Name: "fast", Providers: []Provider{{Name: "x", URL: "http://example.invalid", Model: "x"}}},
-		{Name: "org/code", Providers: []Provider{{Name: "y", URL: "http://example.invalid", Model: "y"}}},
+		{Name: "fast", Providers: []Provider{{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}}},
+		{Name: "org/code", Providers: []Provider{{Name: "y", Model: "y", OpenAICompletions: ep("http://example.invalid")}}},
 	}})
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/models/fast", nil)
@@ -467,8 +471,8 @@ func TestProxyCatastrophicStatusReturnsError(t *testing.T) {
 
 	logger := &memoryCallLogger{}
 	h := NewServer(cfgFast(
-		Provider{Name: "a", URL: first.URL},
-		Provider{Name: "b", URL: second.URL},
+		Provider{Name: "a", OpenAICompletions: ep(first.URL)},
+		Provider{Name: "b", OpenAICompletions: ep(second.URL)},
 	), logger, nil).Handler()
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
@@ -502,7 +506,7 @@ func TestProxyLogsSuccess(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	logger := &memoryCallLogger{}
-	cfg := cfgFast(Provider{Name: "primary", URL: up.URL, Model: "gpt-4o-mini"})
+	cfg := cfgFast(Provider{Name: "primary", Model: "gpt-4o-mini", OpenAICompletions: ep(up.URL)})
 	h := NewServer(cfg, logger, nil).Handler()
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
@@ -542,8 +546,8 @@ func TestProxyLogsFailoverAttempts(t *testing.T) {
 
 	logger := &memoryCallLogger{}
 	cfg := cfgFast(
-		Provider{Name: "a", URL: first.URL, Model: "a"},
-		Provider{Name: "b", URL: second.URL, Model: "b"},
+		Provider{Name: "a", Model: "a", OpenAICompletions: ep(first.URL)},
+		Provider{Name: "b", Model: "b", OpenAICompletions: ep(second.URL)},
 	)
 	h := NewServer(cfg, logger, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
@@ -567,7 +571,7 @@ func TestProxyLogsDialFailure(t *testing.T) {
 	require.NoError(t, ln.Close())
 
 	logger := &memoryCallLogger{}
-	h := NewServer(cfgFast(Provider{Name: "a", URL: deadURL, Model: "a"}), logger, nil).Handler()
+	h := NewServer(cfgFast(Provider{Name: "a", Model: "a", OpenAICompletions: ep(deadURL)}), logger, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, authed(req))
@@ -603,8 +607,8 @@ func TestProxyDoesNotFailoverAfterResponseStarted(t *testing.T) {
 
 	logger := &memoryCallLogger{}
 	h := NewServer(cfgFast(
-		Provider{Name: "a", URL: first.URL, Model: "a"},
-		Provider{Name: "b", URL: second.URL, Model: "b"},
+		Provider{Name: "a", Model: "a", OpenAICompletions: ep(first.URL)},
+		Provider{Name: "b", Model: "b", OpenAICompletions: ep(second.URL)},
 	), logger, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
 	rec := httptest.NewRecorder()
@@ -627,7 +631,7 @@ func TestProxyLogsStreamUsage(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	logger := &memoryCallLogger{}
-	h := NewServer(cfgFast(Provider{Name: "m", URL: up.URL, Model: "m"}), logger, nil).Handler()
+	h := NewServer(cfgFast(Provider{Name: "m", Model: "m", OpenAICompletions: ep(up.URL)}), logger, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
 		"model":  "fast",
 		"stream": true,
@@ -673,8 +677,8 @@ func TestProxySkipsOtherFormatProviders(t *testing.T) {
 	cfg := &Config{
 		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
 		Models: []ModelConfig{{Name: "claude", Providers: []Provider{
-			{Name: "anthropic", Format: formatAnthropic, URL: anthUp.URL, Model: "claude-sonnet-4-5"},
-			{Name: "openrouter", Format: formatOpenAI, URL: openaiUp.URL, Model: "anthropic/claude-sonnet-4-5"},
+			{Name: "anthropic", Model: "claude-sonnet-4-5", Anthropic: ep(anthUp.URL)},
+			{Name: "openrouter", Model: "anthropic/claude-sonnet-4-5", OpenAICompletions: ep(openaiUp.URL)},
 		}}},
 	}
 	h := NewServer(cfg, nil, nil).Handler()
@@ -721,10 +725,10 @@ func TestProxyNestedProviderFormats(t *testing.T) {
 	cfg := &Config{
 		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
 		Models: []ModelConfig{{Name: "claude", Providers: []Provider{{
-			Name:      "openrouter",
-			Model:     "anthropic/claude-sonnet-4-5",
-			OpenAI:    &ProviderEndpoint{URL: openaiUp.URL},
-			Anthropic: &ProviderEndpoint{URL: anthUp.URL},
+			Name:              "openrouter",
+			Model:             "anthropic/claude-sonnet-4-5",
+			OpenAICompletions: ep(openaiUp.URL),
+			Anthropic:         ep(anthUp.URL),
 		}}}},
 	}
 	h := NewServer(cfg, logger, nil).Handler()
@@ -777,12 +781,12 @@ func TestProxySkipsProviderWithoutMatchingBlock(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, authed(req))
 	require.Equal(t, http.StatusNotFound, rec.Code)
-	require.Contains(t, rec.Body.String(), "has no openai providers")
+	require.Contains(t, rec.Body.String(), "has no openai_completions providers")
 	require.Equal(t, int32(0), anthHits.Load())
 }
 
 func TestProxyAnthropicMissingProviders(t *testing.T) {
-	h := testProxy(t, cfgFast(Provider{Name: "x", URL: "http://example.invalid", Model: "x"}))
+	h := testProxy(t, cfgFast(Provider{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}))
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", jsonBody(map[string]any{"model": "fast"}))
 	req.Header.Set("X-Api-Key", testAPIKey)
 	rec := httptest.NewRecorder()
@@ -797,14 +801,14 @@ func TestProxyOpenAIMissingProviders(t *testing.T) {
 	h := testProxy(t, &Config{
 		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
 		Models: []ModelConfig{{Name: "claude", Providers: []Provider{
-			{Name: "anthropic", Format: formatAnthropic, URL: "http://example.invalid", Model: "claude-sonnet-4-5"},
+			{Name: "anthropic", Model: "claude-sonnet-4-5", Anthropic: ep("http://example.invalid")},
 		}}},
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "claude"}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, authed(req))
 	require.Equal(t, http.StatusNotFound, rec.Code)
-	require.Contains(t, rec.Body.String(), "has no openai providers")
+	require.Contains(t, rec.Body.String(), "has no openai_completions providers")
 }
 
 func TestProxyAnthropicRewritesModelAndStripsClientKey(t *testing.T) {
@@ -824,10 +828,9 @@ func TestProxyAnthropicRewritesModelAndStripsClientKey(t *testing.T) {
 	cfg := &Config{
 		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
 		Models: []ModelConfig{{Name: "claude", Providers: []Provider{{
-			Name:   "anthropic",
-			Format: formatAnthropic,
-			URL:    up.URL,
-			Model:  "claude-sonnet-4-5",
+			Name:      "anthropic",
+			Model:     "claude-sonnet-4-5",
+			Anthropic: ep(up.URL),
 			Headers: map[string]string{
 				"x-api-key":         "sk-up",
 				"anthropic-version": "2023-06-01",
@@ -870,7 +873,7 @@ func TestProxyAnthropicStreamUsage(t *testing.T) {
 	cfg := &Config{
 		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
 		Models: []ModelConfig{{Name: "claude", Providers: []Provider{{
-			Name: "anthropic", Format: formatAnthropic, URL: up.URL, Model: "claude-sonnet-4-5",
+			Name: "anthropic", Model: "claude-sonnet-4-5", Anthropic: ep(up.URL),
 		}}}},
 	}
 	h := NewServer(cfg, logger, nil).Handler()
@@ -899,7 +902,7 @@ func TestProxyPassesResponseBytesUnchanged(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	logger := &memoryCallLogger{}
-	h := NewServer(cfgFast(Provider{Name: "primary", URL: up.URL, Model: "gpt-4o-mini"}), logger, nil).Handler()
+	h := NewServer(cfgFast(Provider{Name: "primary", Model: "gpt-4o-mini", OpenAICompletions: ep(up.URL)}), logger, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, authed(req))
@@ -921,7 +924,7 @@ func TestProxyPassesSSEBytesUnchanged(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	logger := &memoryCallLogger{}
-	h := NewServer(cfgFast(Provider{Name: "m", URL: up.URL, Model: "m"}), logger, nil).Handler()
+	h := NewServer(cfgFast(Provider{Name: "m", Model: "m", OpenAICompletions: ep(up.URL)}), logger, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
 		"model":  "fast",
 		"stream": true,
@@ -947,7 +950,7 @@ func TestProxyLogsCompactedSSEDeltas(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	logger := &memoryCallLogger{}
-	h := NewServer(cfgFast(Provider{Name: "m", URL: up.URL, Model: "m"}), logger, nil).Handler()
+	h := NewServer(cfgFast(Provider{Name: "m", Model: "m", OpenAICompletions: ep(up.URL)}), logger, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
 		"model":  "fast",
 		"stream": true,
@@ -989,8 +992,8 @@ func TestProxyResponsesRewritesModelWithoutStreamOptions(t *testing.T) {
 			Headers: map[string]string{
 				"Authorization": "Bearer sk-up",
 			},
-			OpenAI:    &ProviderEndpoint{URL: up.URL + "/v1/chat/completions"},
-			Responses: &ProviderEndpoint{URL: up.URL + "/v1/responses"},
+			OpenAICompletions: ep(up.URL + "/v1/chat/completions"),
+			OpenAIResponses:   ep(up.URL + "/v1/responses"),
 		}}}},
 	}
 	h := NewServer(cfg, logger, nil).Handler()
@@ -1027,8 +1030,8 @@ func TestProxyResponsesStreamUsage(t *testing.T) {
 	cfg := &Config{
 		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
 		Models: []ModelConfig{{Name: "fast", Providers: []Provider{{
-			Name:      "openai",
-			Responses: &ProviderEndpoint{URL: up.URL, Model: "gpt-4o"},
+			Name:            "openai",
+			OpenAIResponses: &ProviderEndpoint{URL: up.URL, Model: "gpt-4o"},
 		}}}},
 	}
 	h := NewServer(cfg, logger, nil).Handler()
@@ -1047,12 +1050,12 @@ func TestProxyResponsesStreamUsage(t *testing.T) {
 }
 
 func TestProxyResponsesMissingProviders(t *testing.T) {
-	h := testProxy(t, cfgFast(Provider{Name: "x", URL: "http://example.invalid", Model: "x"}))
+	h := testProxy(t, cfgFast(Provider{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}))
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", jsonBody(map[string]any{"model": "fast", "input": "hi"}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, authed(req))
 	require.Equal(t, http.StatusNotFound, rec.Code)
-	require.Contains(t, rec.Body.String(), "has no responses providers")
+	require.Contains(t, rec.Body.String(), "has no openai_responses providers")
 	require.Contains(t, rec.Body.String(), "invalid_request_error")
 }
 
@@ -1068,8 +1071,8 @@ func TestProxyResponsesDoesNotUseOpenAIURL(t *testing.T) {
 	cfg := &Config{
 		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
 		Models: []ModelConfig{{Name: "fast", Providers: []Provider{{
-			Name:   "openai",
-			OpenAI: &ProviderEndpoint{URL: openaiUp.URL, Model: "gpt-4o"},
+			Name:              "openai",
+			OpenAICompletions: &ProviderEndpoint{URL: openaiUp.URL, Model: "gpt-4o"},
 		}}}},
 	}
 	h := NewServer(cfg, nil, nil).Handler()
@@ -1080,7 +1083,7 @@ func TestProxyResponsesDoesNotUseOpenAIURL(t *testing.T) {
 	require.Equal(t, int32(0), openaiHits.Load())
 }
 
-func TestProxyResponsesLegacyFormat(t *testing.T) {
+func TestProxyResponsesAliasPath(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"id":"resp_1","usage":{"input_tokens":3,"output_tokens":1}}`)
@@ -1091,7 +1094,7 @@ func TestProxyResponsesLegacyFormat(t *testing.T) {
 	cfg := &Config{
 		APIKeys: []APIKey{{Name: "test", Value: testAPIKey}},
 		Models: []ModelConfig{{Name: "fast", Providers: []Provider{{
-			Name: "openai", Format: formatResponses, URL: up.URL, Model: "gpt-4o",
+			Name: "openai", Model: "gpt-4o", OpenAIResponses: ep(up.URL),
 		}}}},
 	}
 	h := NewServer(cfg, logger, nil).Handler()
@@ -1123,7 +1126,7 @@ func TestProxyCompletionsInjectsStreamOptions(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	h := testProxy(t, cfgFast(Provider{Name: "m", URL: up.URL, Model: "instruct"}))
+	h := testProxy(t, cfgFast(Provider{Name: "m", Model: "instruct", OpenAICompletions: ep(up.URL)}))
 	req := httptest.NewRequest(http.MethodPost, "/v1/completions", jsonBody(map[string]any{
 		"model":  "fast",
 		"prompt": "hi",
@@ -1148,7 +1151,7 @@ func TestProxyEmbeddingsDoesNotInjectStreamOptions(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	h := testProxy(t, cfgFast(Provider{Name: "m", URL: up.URL, Model: "text-embedding-3-small"}))
+	h := testProxy(t, cfgFast(Provider{Name: "m", Model: "text-embedding-3-small", OpenAICompletions: ep(up.URL)}))
 	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", jsonBody(map[string]any{
 		"model":  "fast",
 		"input":  "hi",
@@ -1174,7 +1177,7 @@ func TestProxyStreamJSONErrorIsNotSSE(t *testing.T) {
 	t.Cleanup(up.Close)
 
 	logger := &memoryCallLogger{}
-	h := NewServer(cfgFast(Provider{Name: "m", URL: up.URL, Model: "m"}), logger, nil).Handler()
+	h := NewServer(cfgFast(Provider{Name: "m", Model: "m", OpenAICompletions: ep(up.URL)}), logger, nil).Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
 		"model":  "fast",
 		"stream": true,
@@ -1197,7 +1200,7 @@ func TestProxySSEDropsContentLength(t *testing.T) {
 	}))
 	t.Cleanup(up.Close)
 
-	h := testProxy(t, cfgFast(Provider{Name: "m", URL: up.URL, Model: "m"}))
+	h := testProxy(t, cfgFast(Provider{Name: "m", Model: "m", OpenAICompletions: ep(up.URL)}))
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
 		"model":  "fast",
 		"stream": true,

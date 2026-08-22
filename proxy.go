@@ -46,7 +46,7 @@ type Proxy struct {
 
 func (p *Proxy) format() string {
 	if p.Format == "" {
-		return formatOpenAI
+		return formatOpenAICompletions
 	}
 	return p.Format
 }

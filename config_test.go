@@ -24,21 +24,24 @@ models:
   - name: fast
     providers:
       - name: primary
-        url: http://primary.example/v1/chat/completions
         model: gpt-4o-mini
         headers:
           Authorization: Bearer sk-primary
           X-Extra: one
+        openai_completions:
+          url: http://primary.example/v1/chat/completions
       - name: backup
-        url: http://backup.example/v1/chat/completions
         model: llama3
         headers:
           Authorization: Bearer sk-backup
+        openai_completions:
+          url: http://backup.example/v1/chat/completions
   - name: embed
     providers:
       - name: openai
-        url: http://embed.example/v1/embeddings
         model: text-embedding-3-small
+        openai_completions:
+          url: http://embed.example/v1/embeddings
 `), 0o644))
 
 	cfg, err := loadConfig(path)
@@ -54,11 +57,9 @@ models:
 	require.Equal(t, 1000, cfg.MySQL.detailRetain())
 	require.Equal(t, "admin", cfg.Admin.Username)
 	require.Equal(t, "REPLACE_ME", cfg.Admin.Password)
-	require.Empty(t, cfg.providers("fast")[0].Format)
-	require.Empty(t, cfg.providers("fast")[0].URL)
-	require.NotNil(t, cfg.providers("fast")[0].OpenAI)
-	require.Equal(t, "http://primary.example/v1/chat/completions", cfg.providers("fast")[0].OpenAI.URL)
-	require.Len(t, cfg.providersFor("fast", formatOpenAI), 2)
+	require.NotNil(t, cfg.providers("fast")[0].OpenAICompletions)
+	require.Equal(t, "http://primary.example/v1/chat/completions", cfg.providers("fast")[0].OpenAICompletions.URL)
+	require.Len(t, cfg.providersFor("fast", formatOpenAICompletions), 2)
 	require.Empty(t, cfg.providersFor("fast", formatAnthropic))
 }
 
@@ -81,9 +82,11 @@ models:
   - name: fast
     providers:
       - name: a
-        url: http://a.example
+        openai_completions:
+          url: http://a.example
       - name: a
-		url: http://b.example
+        openai_completions:
+          url: http://b.example
 `), 0o644))
 	_, err := loadConfig(path)
 	require.Error(t, err)
@@ -102,7 +105,8 @@ models:
   - name: fast
     providers:
       - name: a
-        url: http://a.example
+        openai_completions:
+          url: http://a.example
 `), 0o644))
 	_, err := loadConfig(path)
 	require.Error(t, err)
@@ -119,7 +123,8 @@ models:
   - name: fast
     providers:
       - name: a
-        url: ftp://files.example/model
+        openai_completions:
+          url: ftp://files.example/model
 `), 0o644))
 	_, err := loadConfig(path)
 	require.ErrorContains(t, err, "http or https")
@@ -133,7 +138,8 @@ models:
   - name: fast
     providers:
       - name: a
-        url: http://a.example
+        openai_completions:
+          url: http://a.example
 `), 0o644))
 	_, err := loadConfig(path)
 	require.ErrorContains(t, err, "api_key")
@@ -150,7 +156,8 @@ models:
   - name: fast
     providers:
       - name: a
-        url: http://a.example
+        openai_completions:
+          url: http://a.example
 `), 0o644))
 	_, err := loadConfig(path)
 	require.ErrorContains(t, err, "mysql.dsn")
@@ -173,7 +180,8 @@ models:
   - name: fast
     providers:
       - name: a
-        url: http://a.example
+        openai_completions:
+          url: http://a.example
 `), 0o644))
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
@@ -190,7 +198,8 @@ models:
   - name: fast
     providers:
       - name: a
-        url: http://a.example
+        openai_completions:
+          url: http://a.example
 `), 0o644))
 	_, err = loadConfig(path)
 	require.ErrorContains(t, err, "detail_retain")
@@ -209,7 +218,8 @@ models:
   - name: fast
     providers:
       - name: a
-        url: http://a.example
+        openai_completions:
+          url: http://a.example
 `), 0o644))
 	_, err := loadConfig(path)
 	require.ErrorContains(t, err, "admin.username")
@@ -226,7 +236,8 @@ models:
   - name: fast
     providers:
       - name: a
-        url: http://a.example
+        openai_completions:
+          url: http://a.example
 `), 0o644))
 	_, err = loadConfig(path)
 	require.ErrorContains(t, err, "admin.password")
@@ -248,14 +259,15 @@ models:
   - name: fast
     providers:
       - name: a
-        url: http://a.example
+        openai_completions:
+          url: http://a.example
 `), 0o644))
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
 	require.Equal(t, "admin", cfg.Admin.Username)
 }
 
-func TestLoadConfigProviderFormat(t *testing.T) {
+func TestLoadConfigRequiresProtocolBlock(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(`
@@ -270,54 +282,11 @@ api_keys:
 models:
   - name: claude
     providers:
-      - name: anthropic
-        format: anthropic
-        url: https://api.anthropic.com/v1/messages
-        model: claude-sonnet-4-5
-      - name: openrouter
-        url: https://openrouter.ai/api/v1/chat/completions
-        model: anthropic/claude-sonnet-4-5
-      - name: responses
-        format: responses
-        url: https://api.openai.com/v1/responses
-        model: gpt-4o
-`), 0o644))
-	cfg, err := loadConfig(path)
-	require.NoError(t, err)
-	require.NotNil(t, cfg.providers("claude")[0].Anthropic)
-	require.Nil(t, cfg.providers("claude")[0].OpenAI)
-	require.Equal(t, "https://api.anthropic.com/v1/messages", cfg.providers("claude")[0].Anthropic.URL)
-	require.NotNil(t, cfg.providers("claude")[1].OpenAI)
-	require.Nil(t, cfg.providers("claude")[1].Anthropic)
-	require.Nil(t, cfg.providers("claude")[1].Responses)
-	require.NotNil(t, cfg.providers("claude")[2].Responses)
-	require.Nil(t, cfg.providers("claude")[2].OpenAI)
-	require.Equal(t, "https://api.openai.com/v1/responses", cfg.providers("claude")[2].Responses.URL)
-	require.Len(t, cfg.providersFor("claude", formatAnthropic), 1)
-	require.Equal(t, "anthropic", cfg.providersFor("claude", formatAnthropic)[0].Name)
-	require.Len(t, cfg.providersFor("claude", formatOpenAI), 1)
-	require.Equal(t, "openrouter", cfg.providersFor("claude", formatOpenAI)[0].Name)
-	require.Len(t, cfg.providersFor("claude", formatResponses), 1)
-	require.Equal(t, "responses", cfg.providersFor("claude", formatResponses)[0].Name)
-
-	require.NoError(t, os.WriteFile(path, []byte(`
-mysql:
-  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
-admin:
-  username: admin
-  password: REPLACE_ME
-api_keys:
-  - name: alice
-    value: sk-alice
-models:
-  - name: claude
-    providers:
       - name: a
-        format: grpc
         url: http://a.example
 `), 0o644))
-	_, err = loadConfig(path)
-	require.ErrorContains(t, err, "format must be openai, responses, or anthropic")
+	_, err := loadConfig(path)
+	require.ErrorContains(t, err, "must set openai_completions, openai_responses, or anthropic")
 }
 
 func TestLoadConfigNestedProviderEndpoints(t *testing.T) {
@@ -340,11 +309,11 @@ models:
         headers:
           Authorization: Bearer sk-or
           X-Shared: top
-        openai:
+        openai_completions:
           url: https://openrouter.ai/api/v1/chat/completions
           headers:
             X-Shared: openai
-        responses:
+        openai_responses:
           url: https://openrouter.ai/api/v1/responses
           model: openai/gpt-4o
         anthropic:
@@ -360,26 +329,24 @@ models:
 
 	or := cfg.providers("claude")[0]
 	require.Equal(t, "openrouter", or.Name)
-	require.NotNil(t, or.OpenAI)
-	require.NotNil(t, or.Responses)
+	require.NotNil(t, or.OpenAICompletions)
+	require.NotNil(t, or.OpenAIResponses)
 	require.NotNil(t, or.Anthropic)
-	require.Empty(t, or.URL)
-	require.Empty(t, or.Format)
 
-	openai := cfg.providersFor("claude", formatOpenAI)
+	openai := cfg.providersFor("claude", formatOpenAICompletions)
 	require.Len(t, openai, 1)
 	require.Equal(t, "openrouter", openai[0].Name)
-	u, model, headers, ok := openai[0].resolve(formatOpenAI)
+	u, model, headers, ok := openai[0].resolve(formatOpenAICompletions)
 	require.True(t, ok)
 	require.Equal(t, "https://openrouter.ai/api/v1/chat/completions", u)
 	require.Equal(t, "anthropic/claude-sonnet-4-5", model)
 	require.Equal(t, "Bearer sk-or", headers["Authorization"])
 	require.Equal(t, "openai", headers["X-Shared"])
 
-	responses := cfg.providersFor("claude", formatResponses)
+	responses := cfg.providersFor("claude", formatOpenAIResponses)
 	require.Len(t, responses, 1)
 	require.Equal(t, "openrouter", responses[0].Name)
-	u, model, headers, ok = responses[0].resolve(formatResponses)
+	u, model, headers, ok = responses[0].resolve(formatOpenAIResponses)
 	require.True(t, ok)
 	require.Equal(t, "https://openrouter.ai/api/v1/responses", u)
 	require.Equal(t, "openai/gpt-4o", model)
@@ -398,7 +365,7 @@ models:
 	require.Equal(t, "top", headers["X-Shared"])
 }
 
-func TestLoadConfigRejectsMixedURLAndBlock(t *testing.T) {
+func TestLoadConfigRequiresEndpointURL(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(`
@@ -414,10 +381,8 @@ models:
   - name: claude
     providers:
       - name: a
-        url: http://a.example/v1/chat/completions
-        openai:
-          url: http://b.example/v1/chat/completions
+        openai_completions: {}
 `), 0o644))
 	_, err := loadConfig(path)
-	require.ErrorContains(t, err, "cannot mix top-level url/format")
+	require.ErrorContains(t, err, "openai_completions url is required")
 }

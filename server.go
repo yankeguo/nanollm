@@ -47,18 +47,18 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /admin/calls/{id}", s.requireAdmin(http.HandlerFunc(s.handleAdminCall)))
 	mux.Handle("GET /admin/files/{sha}", s.requireAdmin(http.HandlerFunc(s.handleAdminFile)))
 
-	auth := func(h http.Handler) http.Handler { return s.requireAPIKey(h, formatOpenAI) }
+	auth := func(h http.Handler) http.Handler { return s.requireAPIKey(h, formatOpenAICompletions) }
 	mux.Handle("GET /v1/models", auth(http.HandlerFunc(s.handleModels)))
 	mux.Handle("GET /v1/models/{model...}", auth(http.HandlerFunc(s.handleModel)))
-	oai := auth(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Format: formatOpenAI})
-	chat := auth(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Format: formatOpenAI, InjectStreamUsage: true})
+	oai := auth(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Format: formatOpenAICompletions})
+	chat := auth(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Format: formatOpenAICompletions, InjectStreamUsage: true})
 	mux.Handle("POST /v1/chat/completions", chat)
 	mux.Handle("POST /chat/completions", chat)
 	mux.Handle("POST /v1/completions", chat)
 	mux.Handle("POST /completions", chat)
 	mux.Handle("POST /v1/embeddings", oai)
 	mux.Handle("POST /embeddings", oai)
-	resp := auth(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Format: formatResponses})
+	resp := auth(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Format: formatOpenAIResponses})
 	mux.Handle("POST /v1/responses", resp)
 	mux.Handle("POST /responses", resp)
 	anth := s.requireAPIKey(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Format: formatAnthropic}, formatAnthropic)

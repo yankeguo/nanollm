@@ -14,22 +14,24 @@ models:
         model: gpt-4o
         headers:
           Authorization: Bearer sk-REPLACE_ME
-        openai:
+        openai_completions:
           url: https://api.openai.com/v1/chat/completions
-        responses:
+        openai_responses:
           url: https://api.openai.com/v1/responses
       - name: openrouter
-        url: https://openrouter.ai/api/v1/chat/completions
         model: openai/gpt-4o
         headers:
           Authorization: Bearer sk-or-REPLACE_ME
+        openai_completions:
+          url: https://openrouter.ai/api/v1/chat/completions
   - name: fast
     providers:
       - name: ollama
-        url: http://127.0.0.1:11434/v1/chat/completions
         model: llama3.1
         headers:
           Authorization: Bearer ollama
+        openai_completions:
+          url: http://127.0.0.1:11434/v1/chat/completions
   - name: claude
     providers:
       - name: openrouter
@@ -37,16 +39,16 @@ models:
         headers:
           Authorization: Bearer sk-or-REPLACE_ME
           anthropic-version: "2023-06-01"
-        openai:
+        openai_completions:
           url: https://openrouter.ai/api/v1/chat/completions
-        responses:
+        openai_responses:
           url: https://openrouter.ai/api/v1/responses
         anthropic:
           url: https://openrouter.ai/api/v1/messages
       - name: anthropic
-        format: anthropic
-        url: https://api.anthropic.com/v1/messages
         model: claude-sonnet-4-5
         headers:
           x-api-key: REPLACE_ME
           anthropic-version: "2023-06-01"
+        anthropic:
+          url: https://api.anthropic.com/v1/messages

@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	defaultDetailRetain = 1000
-	formatOpenAI        = "openai"
-	formatAnthropic     = "anthropic"
-	formatResponses     = "responses"
+	defaultDetailRetain     = 1000
+	formatOpenAICompletions = "openai_completions"
+	formatOpenAIResponses   = "openai_responses"
+	formatAnthropic         = "anthropic"
 )
 
 type Config struct {
@@ -57,46 +57,25 @@ type ProviderEndpoint struct {
 }
 
 type Provider struct {
-	Name      string            `yaml:"name"`
-	Model     string            `yaml:"model"`
-	Headers   map[string]string `yaml:"headers"`
-	OpenAI    *ProviderEndpoint `yaml:"openai"`
-	Responses *ProviderEndpoint `yaml:"responses"`
-	Anthropic *ProviderEndpoint `yaml:"anthropic"`
-	Format    string            `yaml:"format"`
-	URL       string            `yaml:"url"`
+	Name              string            `yaml:"name"`
+	Model             string            `yaml:"model"`
+	Headers           map[string]string `yaml:"headers"`
+	OpenAICompletions *ProviderEndpoint `yaml:"openai_completions"`
+	OpenAIResponses   *ProviderEndpoint `yaml:"openai_responses"`
+	Anthropic         *ProviderEndpoint `yaml:"anthropic"`
 }
 
-// endpoint returns the protocol block for format. The top-level url/format
-// fallback only matters for Provider values that never went through
-// normalize (e.g. hand-built test fixtures); validate() folds the legacy
-// fields into the matching block.
 func (p Provider) endpoint(format string) *ProviderEndpoint {
 	if format == "" {
-		format = formatOpenAI
+		format = formatOpenAICompletions
 	}
 	switch format {
-	case formatOpenAI:
-		if p.OpenAI != nil {
-			return p.OpenAI
-		}
-	case formatResponses:
-		if p.Responses != nil {
-			return p.Responses
-		}
+	case formatOpenAICompletions:
+		return p.OpenAICompletions
+	case formatOpenAIResponses:
+		return p.OpenAIResponses
 	case formatAnthropic:
-		if p.Anthropic != nil {
-			return p.Anthropic
-		}
-	}
-	if p.OpenAI == nil && p.Anthropic == nil && p.Responses == nil && p.URL != "" {
-		legacy := strings.ToLower(strings.TrimSpace(p.Format))
-		if legacy == "" {
-			legacy = formatOpenAI
-		}
-		if legacy == format {
-			return &ProviderEndpoint{URL: p.URL, Model: p.Model, Headers: p.Headers}
-		}
+		return p.Anthropic
 	}
 	return nil
 }
@@ -188,7 +167,7 @@ func (c *Config) validate() error {
 				return fmt.Errorf("config: model %q has duplicate provider name %q", m.Name, p.Name)
 			}
 			seenProvider[p.Name] = struct{}{}
-			if err := c.Models[i].Providers[j].normalize(m.Name); err != nil {
+			if err := c.Models[i].Providers[j].validate(m.Name); err != nil {
 				return err
 			}
 		}
@@ -212,47 +191,19 @@ func (c *Config) validate() error {
 	return nil
 }
 
-func (p *Provider) normalize(model string) error {
-	nested := p.OpenAI != nil || p.Anthropic != nil || p.Responses != nil
-	if nested {
-		if p.URL != "" || strings.TrimSpace(p.Format) != "" {
-			return fmt.Errorf("config: model %q provider %q cannot mix top-level url/format with openai/responses/anthropic blocks", model, p.Name)
-		}
-		if err := validateEndpointURL(model, p.Name, formatOpenAI, p.OpenAI); err != nil {
-			return err
-		}
-		if err := validateEndpointURL(model, p.Name, formatResponses, p.Responses); err != nil {
-			return err
-		}
-		if err := validateEndpointURL(model, p.Name, formatAnthropic, p.Anthropic); err != nil {
-			return err
-		}
-		return nil
+func (p *Provider) validate(model string) error {
+	if p.OpenAICompletions == nil && p.OpenAIResponses == nil && p.Anthropic == nil {
+		return fmt.Errorf("config: model %q provider %q must set openai_completions, openai_responses, or anthropic", model, p.Name)
 	}
-	if p.URL == "" {
-		return fmt.Errorf("config: model %q provider %q url is required", model, p.Name)
-	}
-	format := strings.ToLower(strings.TrimSpace(p.Format))
-	if format == "" {
-		format = formatOpenAI
-	}
-	if format != formatOpenAI && format != formatAnthropic && format != formatResponses {
-		return fmt.Errorf("config: model %q provider %q format must be openai, responses, or anthropic", model, p.Name)
-	}
-	if err := validateHTTPURL(model, p.Name, "", p.URL); err != nil {
+	if err := validateEndpointURL(model, p.Name, formatOpenAICompletions, p.OpenAICompletions); err != nil {
 		return err
 	}
-	ep := &ProviderEndpoint{URL: p.URL}
-	switch format {
-	case formatAnthropic:
-		p.Anthropic = ep
-	case formatResponses:
-		p.Responses = ep
-	default:
-		p.OpenAI = ep
+	if err := validateEndpointURL(model, p.Name, formatOpenAIResponses, p.OpenAIResponses); err != nil {
+		return err
 	}
-	p.URL = ""
-	p.Format = ""
+	if err := validateEndpointURL(model, p.Name, formatAnthropic, p.Anthropic); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -304,7 +255,7 @@ func (c *Config) providers(model string) []Provider {
 func (c *Config) providersFor(model, format string) []Provider {
 	all := c.providers(model)
 	if format == "" {
-		format = formatOpenAI
+		format = formatOpenAICompletions
 	}
 	out := make([]Provider, 0, len(all))
 	for _, p := range all {
