@@ -935,6 +935,39 @@ func TestProxyPassesSSEBytesUnchanged(t *testing.T) {
 	require.Equal(t, int64(1), logger.calls[0].OutputTokens)
 }
 
+func TestProxyLogsCompactedSSEDeltas(t *testing.T) {
+	upstream := []byte("data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n" +
+		"data: {\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2}}\n\n" +
+		"data: [DONE]\n\n")
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write(upstream)
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(Provider{Name: "m", URL: up.URL, Model: "m"}), logger, nil).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
+		"model":  "fast",
+		"stream": true,
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, upstream, rec.Body.Bytes())
+	require.Len(t, logger.calls, 1)
+	require.Equal(t, int64(3), logger.calls[0].InputTokens)
+	require.Equal(t, int64(2), logger.calls[0].OutputTokens)
+
+	var logged string
+	require.NoError(t, json.Unmarshal(logger.calls[0].ResponseJSON, &logged))
+	events := splitSSEEvents([]byte(logged))
+	require.Len(t, events, 3)
+	require.Equal(t, []string{"Hello"}, openaiDeltaStrings(t, events[0], "content"))
+	require.Contains(t, logged, "[DONE]")
+}
+
 func TestProxyResponsesRewritesModelWithoutStreamOptions(t *testing.T) {
 	var gotBody []byte
 	var gotAuth string

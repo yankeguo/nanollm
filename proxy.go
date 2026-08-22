@@ -231,7 +231,9 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	var usage tokenUsage
 	if sse {
 		fw := newFlushWriter(w)
-		usage, err = copySSE(io.MultiWriter(fw, buf), fw, resp.Body, sseKeepaliveInterval)
+		logw := newSSELogWriter(buf)
+		usage, err = copySSE(io.MultiWriter(fw, logw), fw, resp.Body, sseKeepaliveInterval)
+		logw.Flush()
 	} else {
 		_, err = io.Copy(io.MultiWriter(w, buf), resp.Body)
 		usage = parseUsageJSON(buf.Bytes())

@@ -176,7 +176,7 @@ This keeps prefix / prompt cache on the first healthy provider.
 
 The JSON body `model` field selects `models[].name`. nanollm rewrites only the top-level `model` (and, for OpenAI chat streaming, injects `stream_options.include_usage` when missing). Responses and Anthropic bodies are not given `stream_options`. Other JSON fields are copied as raw values and are not decoded into a typed tree. Each inbound path only uses vendors with the matching protocol block: chat/completions/embeddings → `openai`, `/v1/responses` → `responses`, `/v1/messages` → `anthropic`.
 
-Streaming (`"stream": true`) is copied through as SSE. While the upstream is silent (long thinking / a long tool-using turn), nanollm writes SSE comments (`:` lines) so the client and any idle proxy do not time out. Usage is parsed from a copy of the upstream body (including Responses `response.usage` on `response.completed`); keepalive comments are not stored in the call-log blob. Anthropic and Responses bodies are not rewritten beyond `model`.
+Streaming (`"stream": true`) is copied through as SSE. While the upstream is silent (long thinking / a long tool-using turn), nanollm writes SSE comments (`:` lines) so the client and any idle proxy do not time out. Usage is parsed from a copy of the upstream body (including Responses `response.usage` on `response.completed`); keepalive comments are not stored in the call-log blob. Consecutive same-type text/argument deltas are coalesced in that blob only (Chat Completions `delta.content` / tool-call `arguments`, Anthropic `content_block_delta`, Responses `*.delta` strings); the client still receives the raw stream. Anthropic and Responses bodies are not rewritten beyond `model`.
 
 ## Call log (MySQL)
 
@@ -186,7 +186,7 @@ Each provider attempt writes one row to `llm_calls`:
 - `input_tokens` / `output_tokens` / `cache_tokens` / `uncached_tokens` (0 when usage is missing)
 - `http_status` (0 if no HTTP response, e.g. dial failure)
 - `error` (transport / rewrite / catastrophic status; `canceled` when the client hung up after the copy started; empty on a completed copy)
-- `request_json` / `response_json` (`MEDIUMBLOB`; SSE responses stored as a JSON string)
+- `request_json` / `response_json` (`MEDIUMBLOB`; SSE responses stored as a JSON string, with consecutive same-type text/argument deltas coalesced)
 - multimodal base64 in those blobs is replaced with `<file:{sha256}>` before insert (data URLs, Anthropic `type=base64` sources, OpenAI `input_audio`, and `b64_json`); decoded bytes go to `llm_files` (`MEDIUMBLOB`, SHA256 primary key) with `llm_call_files` linking each call. Upstream request/response bytes are not rewritten.
 
 Failures and failover hops are recorded so you can see which hop died. The synthetic “all upstreams unavailable” client error is not an extra row.
