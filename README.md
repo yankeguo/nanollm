@@ -170,7 +170,7 @@ This keeps prefix / prompt cache on the first healthy provider.
 | `GET` | `/admin` | cookie | Usage tables and Chart.js graphs |
 | `GET` | `/admin/calls` | cookie | Paginated call log |
 | `GET` | `/admin/calls/{id}` | cookie | Request/response JSON when retained; inline previews of extracted files |
-| `GET` | `/admin/files/{sha}` | cookie | File bytes from `llm_files` (SHA256 hex) |
+| `GET` | `/admin/files/{sha}` | cookie | File bytes from `llm_files` (SHA256 hex); safe media types served inline, anything else forced to download as `application/octet-stream` |
 | `GET`/`POST` | `/admin/login` | no | Admin sign-in |
 | `POST` | `/admin/logout` | cookie | Clear admin cookie |
 
@@ -191,7 +191,7 @@ Each provider attempt writes one row to `llm_calls`:
 
 Failures and failover hops are recorded so you can see which hop died. The synthetic “all upstreams unavailable” client error is not an extra row.
 
-Periodically (every 50 inserts), blobs older than the latest `mysql.detail_retain` rows are set to `NULL`, join rows for those calls are deleted, and unreferenced `llm_files` rows are removed. Metadata is kept. Bodies larger than 16 MiB skip the blob columns; a single decoded file larger than 16 MiB is left as base64 in the JSON.
+Periodically (every 50 inserts), blobs older than the latest `mysql.detail_retain` rows are set to `NULL`, join rows for those calls are deleted, and unreferenced `llm_files` rows older than a minute are removed. Metadata is kept. Bodies larger than 16 MiB skip the blob columns (and file extraction); a single decoded file larger than 16 MiB is left as base64 in the JSON.
 
 Insert/prune errors are logged and do not change the client response.
 

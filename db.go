@@ -136,6 +136,10 @@ type gormCallLogger struct {
 
 const pruneEveryN = 50
 
+// fileGCMinAge is how old an unreferenced llm_files row must be before prune
+// deletes it, closing the race with a concurrent Record's file/join inserts.
+const fileGCMinAge = time.Minute
+
 func newGormCallLogger(db *gorm.DB, retain int) *gormCallLogger {
 	return &gormCallLogger{db: db, retain: retain}
 }
@@ -148,8 +152,12 @@ func (l *gormCallLogger) Record(rec CallRecord) {
 	var files []extractedFile
 	if l.retain > 0 {
 		var reqFiles, respFiles []extractedFile
-		req, reqFiles = extractFiles(rec.RequestJSON)
-		resp, respFiles = extractFiles(rec.ResponseJSON)
+		if retainableBlob(req) {
+			req, reqFiles = extractFiles(req)
+		}
+		if retainableBlob(resp) {
+			resp, respFiles = extractFiles(resp)
+		}
 		files = mergeExtracted(reqFiles, respFiles)
 	}
 	call := LLMCall{
@@ -264,7 +272,18 @@ func (l *gormCallLogger) pruneFiles(before uint64, all bool) error {
 	if err := q.Delete(&LLMCallFile{}).Error; err != nil {
 		return err
 	}
-	return l.db.Where("sha256 NOT IN (?)", l.db.Model(&LLMCallFile{}).Select("sha256")).Delete(&LLMFile{}).Error
+	// Only GC files older than fileGCMinAge: a concurrent Record may have
+	// inserted an llm_files row whose llm_call_files join is not written yet.
+	return l.db.
+		Where("created_at < ?", time.Now().UTC().Add(-fileGCMinAge)).
+		Where("sha256 NOT IN (?)", l.db.Model(&LLMCallFile{}).Select("sha256")).
+		Delete(&LLMFile{}).Error
+}
+
+// retainableBlob reports whether a detail JSON blob survives clipBlob; only
+// then is extracting files from it worthwhile.
+func retainableBlob(b []byte) bool {
+	return len(b) > 0 && len(b) <= maxMediumBlob
 }
 
 func clipBlob(b []byte) []byte {

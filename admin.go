@@ -548,7 +548,7 @@ func (s *Server) handleAdminFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var f LLMFile
-	if err := s.DB.Select("mime_type, data").Where("sha256 = ?", sha).First(&f).Error; err != nil {
+	if err := s.DB.Select("mime_type, data, created_at").Where("sha256 = ?", sha).First(&f).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			http.NotFound(w, r)
 			return
@@ -557,10 +557,15 @@ func (s *Server) handleAdminFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "query failed", http.StatusInternalServerError)
 		return
 	}
-	if f.MimeType != "" {
-		w.Header().Set("Content-Type", f.MimeType)
+	h := w.Header()
+	if inlineFileMime(f.MimeType) {
+		h.Set("Content-Type", f.MimeType)
+	} else {
+		h.Set("Content-Type", "application/octet-stream")
+		h.Set("Content-Disposition", "attachment")
 	}
-	_, _ = w.Write(f.Data)
+	// ServeContent handles Range requests, which Safari requires for media.
+	http.ServeContent(w, r, "", f.CreatedAt, bytes.NewReader(f.Data))
 }
 
 func adminNavData(nav string, f adminFilter) map[string]any {

@@ -142,6 +142,30 @@ func TestFileKind(t *testing.T) {
 	require.Equal(t, "video", fileKind("video/mp4"))
 	require.Equal(t, "audio", fileKind("audio/wav"))
 	require.Equal(t, "file", fileKind("application/pdf"))
+	require.Equal(t, "file", fileKind("image/svg+xml"))
+}
+
+func TestInlineFileMime(t *testing.T) {
+	for _, mime := range []string{
+		"image/png", "image/jpeg", "image/gif", "image/webp", "image/avif",
+		"video/mp4", "video/webm", "video/ogg",
+		"audio/wav", "audio/mpeg", "application/pdf",
+		" IMAGE/PNG ",
+	} {
+		require.True(t, inlineFileMime(mime), mime)
+	}
+	for _, mime := range []string{
+		"", "text/html", "text/plain", "image/svg+xml", "application/xhtml+xml",
+		"application/octet-stream", "image/tiff", "video/avi",
+	} {
+		require.False(t, inlineFileMime(mime), mime)
+	}
+}
+
+func TestRetainableBlob(t *testing.T) {
+	require.False(t, retainableBlob(nil))
+	require.False(t, retainableBlob(make([]byte, maxMediumBlob+1)))
+	require.True(t, retainableBlob([]byte(`{"a":1}`)))
 }
 
 func TestPruneFileScope(t *testing.T) {

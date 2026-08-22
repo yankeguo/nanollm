@@ -32,11 +32,11 @@
         {{range .Files}}
         <div class="col-12 col-md-6 col-lg-4">
           {{if eq .Kind "image"}}
-          <img src="/admin/files/{{.SHA256}}" alt="{{.MimeType}}" class="img-fluid rounded border">
+          <img src="/admin/files/{{.SHA256}}" alt="{{.MimeType}}" class="img-fluid rounded border" loading="lazy">
           {{else if eq .Kind "video"}}
-          <video src="/admin/files/{{.SHA256}}" class="w-100 rounded border" controls></video>
+          <video src="/admin/files/{{.SHA256}}" class="w-100 rounded border" controls preload="metadata"></video>
           {{else if eq .Kind "audio"}}
-          <audio src="/admin/files/{{.SHA256}}" class="w-100" controls></audio>
+          <audio src="/admin/files/{{.SHA256}}" class="w-100" controls preload="metadata"></audio>
           {{else}}
           <a href="/admin/files/{{.SHA256}}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-download"></i> {{.MimeType}} ({{formatNum .Size}} bytes)</a>
           {{end}}

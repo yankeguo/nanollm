@@ -61,6 +61,9 @@ func validFileSHA256(s string) bool {
 func fileKind(mime string) string {
 	mime = strings.ToLower(strings.TrimSpace(mime))
 	switch {
+	case mime == "image/svg+xml":
+		// SVG can carry script; never render it inline.
+		return "file"
 	case strings.HasPrefix(mime, "image/"):
 		return "image"
 	case strings.HasPrefix(mime, "video/"):
@@ -70,6 +73,24 @@ func fileKind(mime string) string {
 	default:
 		return "file"
 	}
+}
+
+// inlineFileMime reports whether a stored file may be served inline to the
+// admin browser. Stored MIME types come from client-controlled request
+// fields, so anything scriptable (text/html, image/svg+xml, ...) is forced
+// to download as octet-stream instead.
+func inlineFileMime(mime string) bool {
+	mime = strings.ToLower(strings.TrimSpace(mime))
+	if strings.HasPrefix(mime, "audio/") {
+		return true
+	}
+	switch mime {
+	case "image/png", "image/jpeg", "image/gif", "image/webp", "image/avif",
+		"video/mp4", "video/webm", "video/ogg",
+		"application/pdf":
+		return true
+	}
+	return false
 }
 
 func extractFiles(body []byte) ([]byte, []extractedFile) {
