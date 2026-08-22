@@ -96,6 +96,26 @@ type callListRow struct {
 	HasDetail    bool
 }
 
+type callFileView struct {
+	SHA256   string
+	MimeType string
+	Size     int
+	Kind     string
+}
+
+func callFileViews(files []LLMFile) []callFileView {
+	out := make([]callFileView, len(files))
+	for i, f := range files {
+		out[i] = callFileView{
+			SHA256:   f.SHA256,
+			MimeType: f.MimeType,
+			Size:     f.Size,
+			Kind:     fileKind(f.MimeType),
+		}
+	}
+	return out
+}
+
 func parseAdminWindow(q url.Values, now time.Time) adminWindow {
 	f := parseAdminFilter(q, now, "usage")
 	return adminWindow{Range: f.Range, Bucket: f.Bucket, From: f.From, To: f.To}
@@ -498,8 +518,49 @@ func (s *Server) handleAdminCall(w http.ResponseWriter, r *http.Request) {
 	data["Call"] = call
 	data["RequestPretty"] = prettyJSON(call.RequestJSON)
 	data["ResponsePretty"] = prettyJSON(call.ResponseJSON)
+	data["Files"] = callFileViews(s.listCallFiles(call.ID))
 	data["CallsURL"] = pagerURL(f, page)
 	s.renderAdmin(w, "detail.html", data)
+}
+
+func (s *Server) listCallFiles(callID uint64) []LLMFile {
+	var files []LLMFile
+	if err := s.DB.Model(&LLMFile{}).
+		Select("llm_files.sha256, llm_files.mime_type, llm_files.size").
+		Joins("JOIN llm_call_files ON llm_call_files.sha256 = llm_files.sha256").
+		Where("llm_call_files.call_id = ?", callID).
+		Order("llm_call_files.seq").
+		Find(&files).Error; err != nil {
+		log.Println("admin call files:", err)
+		return nil
+	}
+	return files
+}
+
+func (s *Server) handleAdminFile(w http.ResponseWriter, r *http.Request) {
+	if s.DB == nil {
+		http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	sha := r.PathValue("sha")
+	if !validFileSHA256(sha) {
+		http.NotFound(w, r)
+		return
+	}
+	var f LLMFile
+	if err := s.DB.Select("mime_type, data").Where("sha256 = ?", sha).First(&f).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Println("admin file lookup:", err)
+		http.Error(w, "query failed", http.StatusInternalServerError)
+		return
+	}
+	if f.MimeType != "" {
+		w.Header().Set("Content-Type", f.MimeType)
+	}
+	_, _ = w.Write(f.Data)
 }
 
 func adminNavData(nav string, f adminFilter) map[string]any {

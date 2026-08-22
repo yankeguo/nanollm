@@ -91,7 +91,7 @@ models:
 | Field | Required | Meaning |
 |---|---|---|
 | `mysql.dsn` | yes | MySQL DSN (`user:pass@tcp(host:3306)/dbname`). Connection params are forced: `charset=utf8mb4`, `parseTime=true`, `loc=UTC`, `time_zone='UTC'` |
-| `mysql.detail_retain` | no | Keep request/response JSON for the latest N rows (default `1000`; `0` keeps no blobs) |
+| `mysql.detail_retain` | no | Keep request/response JSON and extracted files for the latest N rows (default `1000`; `0` keeps no blobs) |
 | `admin.username` | yes | Admin UI login name |
 | `admin.password` | yes | Admin UI login password |
 | `api_keys[].name` | yes | Identifier for this key (must be unique) |
@@ -169,7 +169,8 @@ This keeps prefix / prompt cache on the first healthy provider.
 | `POST` | `/v1/messages` | yes | Anthropic Messages; only providers with an `anthropic` block |
 | `GET` | `/admin` | cookie | Usage tables and Chart.js graphs |
 | `GET` | `/admin/calls` | cookie | Paginated call log |
-| `GET` | `/admin/calls/{id}` | cookie | Request/response JSON when retained |
+| `GET` | `/admin/calls/{id}` | cookie | Request/response JSON when retained; inline previews of extracted files |
+| `GET` | `/admin/files/{sha}` | cookie | File bytes from `llm_files` (SHA256 hex) |
 | `GET`/`POST` | `/admin/login` | no | Admin sign-in |
 | `POST` | `/admin/logout` | cookie | Clear admin cookie |
 
@@ -186,10 +187,11 @@ Each provider attempt writes one row to `llm_calls`:
 - `http_status` (0 if no HTTP response, e.g. dial failure)
 - `error` (transport / rewrite / catastrophic status; `canceled` when the client hung up after the copy started; empty on a completed copy)
 - `request_json` / `response_json` (`MEDIUMBLOB`; SSE responses stored as a JSON string)
+- multimodal base64 in those blobs is replaced with `<file:{sha256}>` before insert (data URLs, Anthropic `type=base64` sources, OpenAI `input_audio`, and `b64_json`); decoded bytes go to `llm_files` (`MEDIUMBLOB`, SHA256 primary key) with `llm_call_files` linking each call. Upstream request/response bytes are not rewritten.
 
 Failures and failover hops are recorded so you can see which hop died. The synthetic “all upstreams unavailable” client error is not an extra row.
 
-Periodically (every 50 inserts), blobs older than the latest `mysql.detail_retain` rows are set to `NULL`. Metadata is kept. Bodies larger than 16 MiB skip the blob columns.
+Periodically (every 50 inserts), blobs older than the latest `mysql.detail_retain` rows are set to `NULL`, join rows for those calls are deleted, and unreferenced `llm_files` rows are removed. Metadata is kept. Bodies larger than 16 MiB skip the blob columns; a single decoded file larger than 16 MiB is left as base64 in the JSON.
 
 Insert/prune errors are logged and do not change the client response.
 

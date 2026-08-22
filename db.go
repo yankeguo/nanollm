@@ -10,6 +10,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	gormmysql "gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
@@ -56,6 +57,28 @@ func (LLMCall) TableName() string {
 	return "llm_calls"
 }
 
+type LLMFile struct {
+	SHA256    string `gorm:"primaryKey;size:64"`
+	MimeType  string `gorm:"size:128"`
+	Size      int
+	Data      []byte    `gorm:"type:mediumblob"`
+	CreatedAt time.Time `gorm:"type:datetime(3)"`
+}
+
+func (LLMFile) TableName() string {
+	return "llm_files"
+}
+
+type LLMCallFile struct {
+	CallID uint64 `gorm:"primaryKey"`
+	SHA256 string `gorm:"primaryKey;size:64;index:idx_llm_call_files_sha256"`
+	Seq    int
+}
+
+func (LLMCallFile) TableName() string {
+	return "llm_call_files"
+}
+
 func normalizeMySQLDSN(dsn string) (string, error) {
 	cfg, err := mysql.ParseDSN(dsn)
 	if err != nil {
@@ -93,7 +116,7 @@ func openDB(cfg MySQLConfig) (*gorm.DB, func() error, error) {
 	sqlDB.SetMaxOpenConns(32)
 	sqlDB.SetMaxIdleConns(8)
 	sqlDB.SetConnMaxLifetime(30 * time.Minute)
-	if err := db.AutoMigrate(&LLMCall{}); err != nil {
+	if err := db.AutoMigrate(&LLMCall{}, &LLMFile{}, &LLMCallFile{}); err != nil {
 		_ = sqlDB.Close()
 		return nil, nil, err
 	}
@@ -121,6 +144,14 @@ func (l *gormCallLogger) Record(rec CallRecord) {
 	if l == nil || l.db == nil {
 		return
 	}
+	req, resp := rec.RequestJSON, rec.ResponseJSON
+	var files []extractedFile
+	if l.retain > 0 {
+		var reqFiles, respFiles []extractedFile
+		req, reqFiles = extractFiles(rec.RequestJSON)
+		resp, respFiles = extractFiles(rec.ResponseJSON)
+		files = mergeExtracted(reqFiles, respFiles)
+	}
 	call := LLMCall{
 		Model:          rec.Model,
 		Provider:       rec.Provider,
@@ -132,8 +163,8 @@ func (l *gormCallLogger) Record(rec CallRecord) {
 		UncachedTokens: rec.UncachedTokens,
 		HTTPStatus:     rec.HTTPStatus,
 		Error:          clipError(rec.Error),
-		RequestJSON:    clipBlob(rec.RequestJSON),
-		ResponseJSON:   clipBlob(rec.ResponseJSON),
+		RequestJSON:    clipBlob(req),
+		ResponseJSON:   clipBlob(resp),
 	}
 	if l.retain <= 0 {
 		call.RequestJSON = nil
@@ -143,7 +174,31 @@ func (l *gormCallLogger) Record(rec CallRecord) {
 		log.Println("llm_calls insert:", err)
 		return
 	}
+	if err := l.storeFiles(call.ID, files); err != nil {
+		log.Println("llm_files insert:", err)
+	}
 	go l.pruneAsync()
+}
+
+func (l *gormCallLogger) storeFiles(callID uint64, files []extractedFile) error {
+	if len(files) == 0 {
+		return nil
+	}
+	rows := make([]LLMFile, len(files))
+	joins := make([]LLMCallFile, len(files))
+	for i, f := range files {
+		rows[i] = LLMFile{
+			SHA256:   f.SHA256,
+			MimeType: f.MimeType,
+			Size:     len(f.Data),
+			Data:     f.Data,
+		}
+		joins[i] = LLMCallFile{CallID: callID, SHA256: f.SHA256, Seq: i}
+	}
+	if err := l.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error; err != nil {
+		return err
+	}
+	return l.db.Create(&joins).Error
 }
 
 func (l *gormCallLogger) pruneAsync() {
@@ -171,12 +226,15 @@ func (l *gormCallLogger) runPrune() error {
 
 func (l *gormCallLogger) prune() error {
 	if l.retain <= 0 {
-		return l.db.Model(&LLMCall{}).
+		if err := l.db.Model(&LLMCall{}).
 			Where("request_json IS NOT NULL OR response_json IS NOT NULL").
 			UpdateColumns(map[string]any{
 				"request_json":  gorm.Expr("NULL"),
 				"response_json": gorm.Expr("NULL"),
-			}).Error
+			}).Error; err != nil {
+			return err
+		}
+		return l.pruneFiles(pruneFileScope(l.retain, 0))
 	}
 	var cutoff uint64
 	if err := l.db.Model(&LLMCall{}).Select("id").Order("id DESC").Offset(l.retain - 1).Limit(1).Scan(&cutoff).Error; err != nil {
@@ -185,12 +243,28 @@ func (l *gormCallLogger) prune() error {
 	if cutoff == 0 {
 		return nil
 	}
-	return l.db.Model(&LLMCall{}).
+	if err := l.db.Model(&LLMCall{}).
 		Where("id < ? AND (request_json IS NOT NULL OR response_json IS NOT NULL)", cutoff).
 		UpdateColumns(map[string]any{
 			"request_json":  gorm.Expr("NULL"),
 			"response_json": gorm.Expr("NULL"),
-		}).Error
+		}).Error; err != nil {
+		return err
+	}
+	return l.pruneFiles(pruneFileScope(l.retain, cutoff))
+}
+
+func (l *gormCallLogger) pruneFiles(before uint64, all bool) error {
+	q := l.db
+	if all {
+		q = q.Where("1 = 1")
+	} else {
+		q = q.Where("call_id < ?", before)
+	}
+	if err := q.Delete(&LLMCallFile{}).Error; err != nil {
+		return err
+	}
+	return l.db.Where("sha256 NOT IN (?)", l.db.Model(&LLMCallFile{}).Select("sha256")).Delete(&LLMFile{}).Error
 }
 
 func clipBlob(b []byte) []byte {

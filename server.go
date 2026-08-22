@@ -45,6 +45,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /admin", s.requireAdmin(http.HandlerFunc(s.handleAdminUsage)))
 	mux.Handle("GET /admin/calls", s.requireAdmin(http.HandlerFunc(s.handleAdminCalls)))
 	mux.Handle("GET /admin/calls/{id}", s.requireAdmin(http.HandlerFunc(s.handleAdminCall)))
+	mux.Handle("GET /admin/files/{sha}", s.requireAdmin(http.HandlerFunc(s.handleAdminFile)))
 
 	auth := func(h http.Handler) http.Handler { return s.requireAPIKey(h, formatOpenAI) }
 	mux.Handle("GET /v1/models", auth(http.HandlerFunc(s.handleModels)))
@@ -78,6 +79,7 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 				"style-src https://cdn.jsdelivr.net 'unsafe-inline'",
 				"font-src https://cdn.jsdelivr.net",
 				"img-src 'self' data:",
+				"media-src 'self'",
 				"connect-src 'self'",
 				"form-action 'self'",
 				"base-uri 'none'",

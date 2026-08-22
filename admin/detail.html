@@ -25,6 +25,27 @@
       </dl>
       {{if .Call.Error}}<p class="border rounded p-2 mt-3 mb-0 text-break {{callErrorClass .Call.HTTPStatus .Call.Error}}">{{.Call.Error}}</p>{{end}}
     </div></div>
+    {{if .Files}}
+    <div class="card mb-4"><div class="card-body">
+      <h2 class="card-title h6">Files</h2>
+      <div class="row g-3">
+        {{range .Files}}
+        <div class="col-12 col-md-6 col-lg-4">
+          {{if eq .Kind "image"}}
+          <img src="/admin/files/{{.SHA256}}" alt="{{.MimeType}}" class="img-fluid rounded border">
+          {{else if eq .Kind "video"}}
+          <video src="/admin/files/{{.SHA256}}" class="w-100 rounded border" controls></video>
+          {{else if eq .Kind "audio"}}
+          <audio src="/admin/files/{{.SHA256}}" class="w-100" controls></audio>
+          {{else}}
+          <a href="/admin/files/{{.SHA256}}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-download"></i> {{.MimeType}} ({{formatNum .Size}} bytes)</a>
+          {{end}}
+          <div class="small text-secondary text-break mt-1"><code>{{printf "<file:%s>" .SHA256}}</code></div>
+        </div>
+        {{end}}
+      </div>
+    </div></div>
+    {{end}}
     <div class="card mb-4"><div class="card-body">
       <h2 class="card-title h6">Request JSON</h2>
       {{if .RequestPretty}}<pre class="codebox border rounded p-3 overflow-auto small mb-0">{{.RequestPretty}}</pre>{{else}}<p class="text-secondary mb-0">detail not retained</p>{{end}}

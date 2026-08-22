@@ -14,13 +14,14 @@ Single `package main`. No `internal/` split unless the tree clearly outgrows one
 | `config.go` | YAML load/validate |
 | `auth.go` | Incoming API keys; do not forward client credentials |
 | `server.go` | `net/http` mux (`GET /healthz` unauthenticated) |
-| `admin.go` / `admin_auth.go` | Admin cookie login, usage dashboard, call viewer. Usage and Calls share GET filters: `range`/`from`/`to`/`tz`, `model`, `provider`, `api_key`, `outcome` (from `http_status`/`error`; the four outcomes partition `llm_calls`: ok / canceled / no_response / error). Usage windows are always bounded (custom max 366d); the chart bucket is derived from the span (≤48h hour, ≤62d day, else week), never user-selected. Naive `from`/`to` are interpreted in `tz` (IANA, default UTC; `time/tzdata` is embedded). |
+| `admin.go` / `admin_auth.go` | Admin cookie login, usage dashboard, call viewer. Usage and Calls share GET filters: `range`/`from`/`to`/`tz`, `model`, `provider`, `api_key`, `outcome` (from `http_status`/`error`; the four outcomes partition `llm_calls`: ok / canceled / no_response / error). Usage windows are always bounded (custom max 366d); the chart bucket is derived from the span (≤48h hour, ≤62d day, else week), never user-selected. Naive `from`/`to` are interpreted in `tz` (IANA, default UTC; `time/tzdata` is embedded). Call detail lists extracted files (`<img>` / `<video>` / `<audio>` / download) from `llm_call_files`. |
 | `admin/*.html` | Embedded HTML for `/admin`. Bootstrap 5.3 (jsdelivr CDN, SRI) with `data-bs-theme="dark"` + Bootstrap Icons; hand-rolled CSS is limited to the token bars and code boxes |
 | `proxy.go` | Body rewrite, ordered provider attempts, response copy, call logging |
 | `failover.go` | `isCatastrophic` — only then try the next provider |
 | `rewrite.go` | Patch top-level `model` (and OpenAI chat streaming `stream_options.include_usage`); copy other JSON fields as `json.RawMessage` |
 | `usage.go` | Parse OpenAI- and Anthropic-compatible `usage` (including cache fields and Responses `response.usage`) from JSON/SSE |
-| `db.go` | GORM MySQL: `llm_calls` AutoMigrate, Record, prune detail blobs |
+| `files.go` | Call-log only: extract multimodal base64 from request/response JSON into SHA256-deduped files; replace with `<file:{sha256}>` |
+| `db.go` | GORM MySQL: `llm_calls` / `llm_files` / `llm_call_files` AutoMigrate, Record, prune detail blobs and unreferenced files |
 
 Tests live next to the code (`*_test.go`). Use `github.com/stretchr/testify`. Prefer extending an existing test file over adding a new one for the same area.
 
@@ -33,7 +34,7 @@ Tests live next to the code (`*_test.go`). Use `github.com/stretchr/testify`. Pr
 - Request rewrite only patches `model` and, for OpenAI chat streaming, `stream_options.include_usage`. Responses and Anthropic bodies are not given `stream_options`. Other JSON fields must be copied as raw values (`json.RawMessage`), not `map[string]any` round-tripped. Upstream responses are copied byte-for-byte; usage parsing is inspect-only. Streaming copies emit SSE comments while the upstream body is idle so long thinking turns do not die on client/proxy idle timeouts. There is no upstream `Timeout` / `ResponseHeaderTimeout`; wait as long as the client stays connected. Client cancel (before or after the response starts) is logged as `canceled`, not a transport failure, and never triggers failover. `http.Server.Shutdown` uses an unbounded context: SIGINT/SIGTERM stops accepting connections and waits indefinitely for in-flight requests; do not add a Shutdown timeout. After the first signal, SIGINT/SIGTERM is unregistered so a second signal can terminate.
 - MySQL is required. DSN params `charset=utf8mb4`, `parseTime=true`, `loc=UTC`, `time_zone='UTC'` are forced. All DB timestamps are UTC.
 - `/admin` is a cookie-authenticated dashboard (HMAC, HttpOnly, SameSite=Lax; Secure when TLS or `X-Forwarded-Proto: https`). It is not API-key auth. `admin.username` and `admin.password` are required.
-- Every provider attempt (success, 4xx/5xx, failover, dial failure, rewrite error, client cancel) is inserted into `llm_calls`. Detail JSON blobs are kept only for the latest `mysql.detail_retain` rows (default 1000).
+- Every provider attempt (success, 4xx/5xx, failover, dial failure, rewrite error, client cancel) is inserted into `llm_calls`. Detail JSON blobs are kept only for the latest `mysql.detail_retain` rows (default 1000). Before insert, request/response JSON copies have multimodal base64 replaced with `<file:{sha256}>`; decoded bytes are stored in `llm_files` (deduped) and linked via `llm_call_files`. This does not change upstream pass-through. File rows are GC'd with the same retain window.
 - Incoming `Authorization` / `X-Api-Key` / `Api-Key` authenticate against `api_keys` and must not be copied upstream. Client `Cookie` is stripped from upstream requests; upstream `Set-Cookie` is dropped from responses.
 - At least one API key is required; missing/invalid keys → 401 except `GET /healthz` and `/admin*`.
 - Do not commit `config.yaml` (secrets). Change `config.example.yaml` and README when the config schema changes.

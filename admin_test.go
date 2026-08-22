@@ -170,6 +170,7 @@ func TestAdminSecurityHeaders(t *testing.T) {
 	require.Contains(t, rec.Header().Get("Content-Security-Policy"), "cdn.jsdelivr.net")
 	require.Contains(t, rec.Header().Get("Content-Security-Policy"), "connect-src 'self'")
 	require.Contains(t, rec.Header().Get("Content-Security-Policy"), "font-src https://cdn.jsdelivr.net")
+	require.Contains(t, rec.Header().Get("Content-Security-Policy"), "media-src 'self'")
 }
 
 func TestAdminTrailingSlashRedirect(t *testing.T) {
@@ -525,6 +526,34 @@ func TestAdminTemplatesRender(t *testing.T) {
 	require.Equal(t, 2, strings.Count(cbody, "Page 2 of 5"))
 	require.Equal(t, 2, strings.Count(cbody, "justify-content-center"))
 	require.Contains(t, cbody, `/admin/calls?model=fast&amp;page=3`)
+
+	sha := strings.Repeat("a", 64)
+	ddata := adminNavData("calls", cf)
+	ddata["Call"] = LLMCall{ID: 7, Model: "fast", HTTPStatus: 200}
+	ddata["RequestPretty"] = `{"url":"<file:` + sha + `>"}`
+	ddata["ResponsePretty"] = ""
+	ddata["CallsURL"] = "/admin/calls"
+	ddata["Files"] = []callFileView{{
+		SHA256:   sha,
+		MimeType: "image/png",
+		Size:     70,
+		Kind:     "image",
+	}}
+	buf.Reset()
+	require.NoError(t, adminTmpl.ExecuteTemplate(&buf, "detail.html", ddata))
+	dbody := buf.String()
+	require.Contains(t, dbody, `<img src="/admin/files/`+sha+`"`)
+	require.Contains(t, dbody, "&lt;file:"+sha+"&gt;")
+}
+
+func TestCallFileViews(t *testing.T) {
+	got := callFileViews([]LLMFile{{SHA256: strings.Repeat("a", 64), MimeType: "image/png", Size: 70}})
+	require.Equal(t, []callFileView{{
+		SHA256:   strings.Repeat("a", 64),
+		MimeType: "image/png",
+		Size:     70,
+		Kind:     "image",
+	}}, got)
 }
 
 func TestPagerItems(t *testing.T) {
