@@ -29,17 +29,6 @@ func newSSELogWriter(out io.Writer) *sseLogWriter {
 	return &sseLogWriter{out: out}
 }
 
-func compactSSE(in []byte) []byte {
-	if len(in) == 0 {
-		return nil
-	}
-	var buf bytes.Buffer
-	w := newSSELogWriter(&buf)
-	_, _ = w.Write(in)
-	w.Flush()
-	return buf.Bytes()
-}
-
 func (w *sseLogWriter) Write(p []byte) (int, error) {
 	n := len(p)
 	if n == 0 {
@@ -94,13 +83,10 @@ func (w *sseLogWriter) handleEvent(raw []byte) {
 		w.writeOut(raw)
 		return
 	}
-	if w.pending != nil && w.pending.key == key {
-		if mergeSSE(w.pending.obj, obj) {
-			w.pending.merged = true
-			return
-		}
-		w.flushPending()
-		w.writeOut(raw)
+	// mergeSSE only mutates the pending object, never obj, so a failed merge
+	// can still start a new pending run with the current event.
+	if w.pending != nil && w.pending.key == key && mergeSSE(w.pending.obj, obj) {
+		w.pending.merged = true
 		return
 	}
 	w.flushPending()
@@ -487,14 +473,16 @@ func mergeAnthropicDelta(dst, src map[string]json.RawMessage) bool {
 }
 
 var responsesTextDelta = map[string]bool{
-	"response.output_text.delta":             true,
-	"response.refusal.delta":                 true,
-	"response.function_call_arguments.delta": true,
-	"response.reasoning_text.delta":          true,
-	"response.reasoning.delta":               true,
-	"response.reasoning_summary_text.delta":  true,
-	"response.mcp_call.arguments.delta":      true,
-	"response.audio.transcript.delta":        true,
+	"response.output_text.delta":                true,
+	"response.refusal.delta":                    true,
+	"response.function_call_arguments.delta":    true,
+	"response.reasoning_text.delta":             true,
+	"response.reasoning.delta":                  true,
+	"response.reasoning_summary_text.delta":     true,
+	"response.mcp_call.arguments.delta":         true,
+	"response.audio.transcript.delta":           true,
+	"response.code_interpreter_call_code.delta": true,
+	"response.custom_tool_call_input.delta":     true,
 }
 
 func responsesMergeKey(obj map[string]json.RawMessage) (string, error) {

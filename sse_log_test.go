@@ -8,6 +8,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func compactSSE(in []byte) []byte {
+	if len(in) == 0 {
+		return nil
+	}
+	var buf bytes.Buffer
+	w := newSSELogWriter(&buf)
+	_, _ = w.Write(in)
+	w.Flush()
+	return buf.Bytes()
+}
+
 func TestCompactSSEOpenAIContent(t *testing.T) {
 	in := []byte("data: {\"id\":\"1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hel\"}}]}\n\n" +
 		"data: {\"id\":\"2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"lo\"},\"finish_reason\":\"stop\"}]}\n\n" +
@@ -249,6 +260,34 @@ func TestCompactSSEResponsesAudioUnmerged(t *testing.T) {
 		"data: {\"type\":\"response.audio.delta\",\"delta\":\"BBBB\"}\n\n")
 	out := compactSSE(in)
 	require.Len(t, splitSSEEvents(out), 2)
+}
+
+func TestCompactSSEResponsesCodeInterpreter(t *testing.T) {
+	in := []byte("event: response.code_interpreter_call_code.delta\n" +
+		"data: {\"type\":\"response.code_interpreter_call_code.delta\",\"item_id\":\"ci_1\",\"output_index\":0,\"delta\":\"import\"}\n\n" +
+		"event: response.code_interpreter_call_code.delta\n" +
+		"data: {\"type\":\"response.code_interpreter_call_code.delta\",\"item_id\":\"ci_1\",\"output_index\":0,\"delta\":\" os\"}\n\n")
+	out := compactSSE(in)
+	events := splitSSEEvents(out)
+	require.Len(t, events, 1)
+	obj := sseDataObject(t, events[0])
+	delta, err := rawJSONString(obj["delta"])
+	require.NoError(t, err)
+	require.Equal(t, "import os", delta)
+}
+
+func TestCompactSSEResponsesCustomToolCallInput(t *testing.T) {
+	in := []byte("event: response.custom_tool_call_input.delta\n" +
+		"data: {\"type\":\"response.custom_tool_call_input.delta\",\"item_id\":\"ctc_1\",\"delta\":\"abc\"}\n\n" +
+		"event: response.custom_tool_call_input.delta\n" +
+		"data: {\"type\":\"response.custom_tool_call_input.delta\",\"item_id\":\"ctc_1\",\"delta\":\"def\"}\n\n")
+	out := compactSSE(in)
+	events := splitSSEEvents(out)
+	require.Len(t, events, 1)
+	obj := sseDataObject(t, events[0])
+	delta, err := rawJSONString(obj["delta"])
+	require.NoError(t, err)
+	require.Equal(t, "abcdef", delta)
 }
 
 func TestCompactSSEPassThrough(t *testing.T) {
