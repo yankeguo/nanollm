@@ -84,6 +84,16 @@ func TestExtractFilesSSEJSONString(t *testing.T) {
 	require.NotContains(t, text, b64)
 }
 
+func TestExtractFilesResponsesInputImage(t *testing.T) {
+	_, b64, sha := testPNG()
+	in := []byte(`{"model":"fast","input":[{"role":"user","content":[{"type":"input_image","image_url":"data:image/png;base64,` + b64 + `"}]}]}`)
+	out, files := extractFiles(in)
+	require.Len(t, files, 1)
+	require.Equal(t, sha, files[0].SHA256)
+	require.Contains(t, string(out), filePlaceholder(sha))
+	require.NotContains(t, string(out), b64)
+}
+
 func TestExtractFilesHTTPURLUnchanged(t *testing.T) {
 	in := []byte(`{"model":"fast","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.com/cat.png"}}]}]}`)
 	out, files := extractFiles(in)

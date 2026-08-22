@@ -58,6 +58,40 @@ func TestCompactSSEOpenAIInterleavedChoices(t *testing.T) {
 	require.Equal(t, []string{"b"}, openaiDeltaStrings(t, events[2], "content"))
 }
 
+func TestCompactSSEOpenAILegacyFunctionCall(t *testing.T) {
+	chunk1, err := json.Marshal(map[string]any{
+		"choices": []any{map[string]any{"delta": map[string]any{
+			"function_call": map[string]any{"name": "foo", "arguments": `{"x":`},
+		}}},
+	})
+	require.NoError(t, err)
+	chunk2, err := json.Marshal(map[string]any{
+		"choices": []any{map[string]any{"delta": map[string]any{
+			"function_call": map[string]any{"arguments": "1}"},
+		}}},
+	})
+	require.NoError(t, err)
+	in := []byte("data: " + string(chunk1) + "\n\ndata: " + string(chunk2) + "\n\n")
+	out := compactSSE(in)
+	events := splitSSEEvents(out)
+	require.Len(t, events, 1)
+	obj := sseDataObject(t, events[0])
+	choices, err := unmarshalRawArray(obj["choices"])
+	require.NoError(t, err)
+	ch, err := decodeJSONRawObject(choices[0])
+	require.NoError(t, err)
+	delta, err := decodeJSONRawObject(ch["delta"])
+	require.NoError(t, err)
+	fc, err := decodeJSONRawObject(delta["function_call"])
+	require.NoError(t, err)
+	args, err := rawJSONString(fc["arguments"])
+	require.NoError(t, err)
+	require.Equal(t, `{"x":1}`, args)
+	name, err := rawJSONString(fc["name"])
+	require.NoError(t, err)
+	require.Equal(t, "foo", name)
+}
+
 func TestCompactSSEOpenAIToolCallArguments(t *testing.T) {
 	chunk1, err := json.Marshal(map[string]any{
 		"choices": []any{map[string]any{"delta": map[string]any{

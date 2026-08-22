@@ -1103,3 +1103,108 @@ func TestProxyResponsesLegacyFormat(t *testing.T) {
 	require.Equal(t, int64(3), logger.calls[0].InputTokens)
 	require.Equal(t, int64(1), logger.calls[0].OutputTokens)
 }
+
+func TestResponseIsSSE(t *testing.T) {
+	require.True(t, responseIsSSE(false, "text/event-stream"))
+	require.True(t, responseIsSSE(true, "text/event-stream; charset=utf-8"))
+	require.True(t, responseIsSSE(true, ""))
+	require.False(t, responseIsSSE(false, "application/json"))
+	require.False(t, responseIsSSE(true, "application/json"))
+	require.False(t, responseIsSSE(true, "application/json; charset=utf-8"))
+	require.False(t, responseIsSSE(false, ""))
+}
+
+func TestProxyCompletionsInjectsStreamOptions(t *testing.T) {
+	var gotBody []byte
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"id":"cmpl_1","object":"text_completion","choices":[{"text":"hi"}],"usage":{"prompt_tokens":2,"completion_tokens":1}}`)
+	}))
+	t.Cleanup(up.Close)
+
+	h := testProxy(t, cfgFast(Provider{Name: "m", URL: up.URL, Model: "instruct"}))
+	req := httptest.NewRequest(http.MethodPost, "/v1/completions", jsonBody(map[string]any{
+		"model":  "fast",
+		"prompt": "hi",
+		"stream": true,
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	var sent map[string]any
+	require.NoError(t, json.Unmarshal(gotBody, &sent))
+	require.Equal(t, "instruct", sent["model"])
+	opts := sent["stream_options"].(map[string]any)
+	require.Equal(t, true, opts["include_usage"])
+}
+
+func TestProxyEmbeddingsDoesNotInjectStreamOptions(t *testing.T) {
+	var gotBody []byte
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"object":"list","data":[{"embedding":[0.1],"index":0}],"usage":{"prompt_tokens":2,"total_tokens":2}}`)
+	}))
+	t.Cleanup(up.Close)
+
+	h := testProxy(t, cfgFast(Provider{Name: "m", URL: up.URL, Model: "text-embedding-3-small"}))
+	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", jsonBody(map[string]any{
+		"model":  "fast",
+		"input":  "hi",
+		"stream": true,
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	var sent map[string]any
+	require.NoError(t, json.Unmarshal(gotBody, &sent))
+	_, has := sent["stream_options"]
+	require.False(t, has)
+	require.Equal(t, "text-embedding-3-small", sent["model"])
+}
+
+func TestProxyStreamJSONErrorIsNotSSE(t *testing.T) {
+	errBody := []byte(`{"error":{"message":"bad req","type":"invalid_request_error"}}`)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write(errBody)
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(Provider{Name: "m", URL: up.URL, Model: "m"}), logger, nil).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
+		"model":  "fast",
+		"stream": true,
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, errBody, rec.Body.Bytes())
+	require.NotContains(t, rec.Body.String(), sseComment)
+	require.Len(t, logger.calls, 1)
+	require.Equal(t, errBody, logger.calls[0].ResponseJSON)
+}
+
+func TestProxySSEDropsContentLength(t *testing.T) {
+	upstream := []byte("data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\ndata: [DONE]\n\n")
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(upstream)))
+		_, _ = w.Write(upstream)
+	}))
+	t.Cleanup(up.Close)
+
+	h := testProxy(t, cfgFast(Provider{Name: "m", URL: up.URL, Model: "m"}))
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", jsonBody(map[string]any{
+		"model":  "fast",
+		"stream": true,
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Empty(t, rec.Header().Get("Content-Length"))
+	require.Equal(t, upstream, rec.Body.Bytes())
+}

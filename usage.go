@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"strings"
 	"time"
 )
 
-var maxSSEScan = 1 << 20
+// maxSSEScan caps an incomplete SSE line held for usage parsing. Responses
+// `response.completed` embeds the full output object on one data line, so this
+// matches the call-log MEDIUMBLOB cap rather than a 1MiB thinking-delta guess.
+var maxSSEScan = maxMediumBlob
 
 type tokenUsage struct {
 	Input         int64
@@ -61,59 +63,94 @@ func (u *tokenUsage) fillUncached() {
 	u.Uncached = left
 }
 
+// jsonInt64 accepts JSON integers, integer-valued floats, and numeric strings.
+// Some compatible gateways serialize usage counts as 1.0 or "11".
+type jsonInt64 int64
+
+func (n *jsonInt64) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || bytes.Equal(b, []byte("null")) {
+		*n = 0
+		return nil
+	}
+	if b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		b = bytes.TrimSpace([]byte(s))
+		if len(b) == 0 {
+			*n = 0
+			return nil
+		}
+	}
+	var i int64
+	if err := json.Unmarshal(b, &i); err == nil {
+		*n = jsonInt64(i)
+		return nil
+	}
+	var f float64
+	if err := json.Unmarshal(b, &f); err != nil {
+		return err
+	}
+	*n = jsonInt64(f)
+	return nil
+}
+
 type openaiUsage struct {
-	PromptTokens             int64 `json:"prompt_tokens"`
-	CompletionTokens         int64 `json:"completion_tokens"`
-	InputTokens              int64 `json:"input_tokens"`
-	OutputTokens             int64 `json:"output_tokens"`
-	CachedTokens             int64 `json:"cached_tokens"`
-	CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
-	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
-	PromptCacheHitTokens     int64 `json:"prompt_cache_hit_tokens"`
-	PromptCacheMissTokens    int64 `json:"prompt_cache_miss_tokens"`
+	PromptTokens             jsonInt64 `json:"prompt_tokens"`
+	CompletionTokens         jsonInt64 `json:"completion_tokens"`
+	InputTokens              jsonInt64 `json:"input_tokens"`
+	OutputTokens             jsonInt64 `json:"output_tokens"`
+	CachedTokens             jsonInt64 `json:"cached_tokens"`
+	CacheReadInputTokens     jsonInt64 `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens jsonInt64 `json:"cache_creation_input_tokens"`
+	PromptCacheHitTokens     jsonInt64 `json:"prompt_cache_hit_tokens"`
+	PromptCacheMissTokens    jsonInt64 `json:"prompt_cache_miss_tokens"`
 	PromptTokensDetails      *struct {
-		CachedTokens int64 `json:"cached_tokens"`
+		CachedTokens jsonInt64 `json:"cached_tokens"`
 	} `json:"prompt_tokens_details"`
 	InputTokensDetails *struct {
-		CachedTokens int64 `json:"cached_tokens"`
+		CachedTokens jsonInt64 `json:"cached_tokens"`
 	} `json:"input_tokens_details"`
 	CacheCreation *struct {
-		Ephemeral5mInputTokens int64 `json:"ephemeral_5m_input_tokens"`
-		Ephemeral1hInputTokens int64 `json:"ephemeral_1h_input_tokens"`
+		Ephemeral5mInputTokens jsonInt64 `json:"ephemeral_5m_input_tokens"`
+		Ephemeral1hInputTokens jsonInt64 `json:"ephemeral_1h_input_tokens"`
 	} `json:"cache_creation"`
 }
 
 func (u openaiUsage) asTokenUsage() tokenUsage {
-	cacheRead := u.CacheReadInputTokens
+	cacheRead := int64(u.CacheReadInputTokens)
 	if cacheRead == 0 {
-		cacheRead = u.PromptCacheHitTokens
+		cacheRead = int64(u.PromptCacheHitTokens)
 	}
 	if cacheRead == 0 && u.PromptTokensDetails != nil {
-		cacheRead = u.PromptTokensDetails.CachedTokens
+		cacheRead = int64(u.PromptTokensDetails.CachedTokens)
 	}
 	if cacheRead == 0 && u.InputTokensDetails != nil {
-		cacheRead = u.InputTokensDetails.CachedTokens
+		cacheRead = int64(u.InputTokensDetails.CachedTokens)
 	}
 	if cacheRead == 0 {
-		cacheRead = u.CachedTokens
+		cacheRead = int64(u.CachedTokens)
 	}
 
-	cacheCreation := u.CacheCreationInputTokens
+	cacheCreation := int64(u.CacheCreationInputTokens)
 	if cacheCreation == 0 && u.CacheCreation != nil {
-		cacheCreation = u.CacheCreation.Ephemeral5mInputTokens + u.CacheCreation.Ephemeral1hInputTokens
+		cacheCreation = int64(u.CacheCreation.Ephemeral5mInputTokens + u.CacheCreation.Ephemeral1hInputTokens)
 	}
 
-	in := u.PromptTokens
+	in := int64(u.PromptTokens)
 	if in == 0 {
-		in = u.InputTokens
-		// Anthropic reports input_tokens excluding cache reads/creations,
-		// while OpenAI's prompt_tokens includes them. Fold the Anthropic
-		// cache parts back so Input is always the full prompt size.
-		in += u.CacheReadInputTokens + cacheCreation
+		in = int64(u.InputTokens)
+		// Anthropic input_tokens is tokens after the last cache breakpoint
+		// (not the full prompt). OpenAI prompt_tokens / Responses
+		// input_tokens already include cached tokens and use *tokens_details
+		// instead of cache_read_input_tokens, so this add is a no-op there.
+		in += int64(u.CacheReadInputTokens) + cacheCreation
 	}
-	out := u.CompletionTokens
+	out := int64(u.CompletionTokens)
 	if out == 0 {
-		out = u.OutputTokens
+		out = int64(u.OutputTokens)
 	}
 
 	usage := tokenUsage{
@@ -121,7 +158,7 @@ func (u openaiUsage) asTokenUsage() tokenUsage {
 		Output:        out,
 		CacheRead:     cacheRead,
 		CacheCreation: cacheCreation,
-		Uncached:      u.PromptCacheMissTokens,
+		Uncached:      int64(u.PromptCacheMissTokens),
 	}
 	if usage.Uncached == 0 {
 		usage.fillUncached()
@@ -184,16 +221,16 @@ const sseComment = ":\n\n"
 // without comments, clients and middle proxies idle-timeout and cancel us.
 var sseKeepaliveInterval = 15 * time.Second
 
-func parseUsageSSELine(line string) tokenUsage {
-	line = strings.TrimSpace(line)
-	if !strings.HasPrefix(line, "data:") {
+func parseUsageSSELine(line []byte) tokenUsage {
+	line = bytes.TrimSpace(line)
+	if !bytes.HasPrefix(line, []byte("data:")) {
 		return tokenUsage{}
 	}
-	payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-	if payload == "" || payload == "[DONE]" {
+	payload := bytes.TrimSpace(line[len("data:"):])
+	if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
 		return tokenUsage{}
 	}
-	return parseUsageJSON([]byte(payload))
+	return parseUsageJSON(payload)
 }
 
 func copyAndScanSSE(dst io.Writer, src io.Reader) (tokenUsage, error) {
@@ -218,11 +255,12 @@ func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (token
 			if i < 0 {
 				break
 			}
-			line := string(bytes.TrimRight(carry[:i], "\r"))
+			line := bytes.TrimRight(carry[:i], "\r")
 			carry = carry[i+1:]
 			mergeUsage(&usage, parseUsageSSELine(line))
 		}
 		if len(carry) > maxSSEScan {
+			mergeUsage(&usage, parseUsageSSELine(carry))
 			carry = carry[:0]
 		}
 		return nil
@@ -231,7 +269,7 @@ func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (token
 	finish := func(err error) (tokenUsage, error) {
 		if err == nil || errors.Is(err, io.EOF) {
 			if len(carry) > 0 {
-				mergeUsage(&usage, parseUsageSSELine(string(carry)))
+				mergeUsage(&usage, parseUsageSSELine(carry))
 			}
 			return usage, nil
 		}

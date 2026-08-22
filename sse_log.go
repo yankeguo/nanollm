@@ -241,6 +241,9 @@ func concatenableDeltaFields(d map[string]json.RawMessage) string {
 			parts = append(parts, name)
 		}
 	}
+	if raw, ok := d["function_call"]; ok && functionCallHasArgs(raw) {
+		parts = append(parts, "function_call")
+	}
 	if raw, ok := d["tool_calls"]; ok {
 		indexes, ok := toolCallIndexes(raw)
 		if !ok {
@@ -249,6 +252,11 @@ func concatenableDeltaFields(d map[string]json.RawMessage) string {
 		parts = append(parts, "tool_calls="+strings.Join(indexes, ","))
 	}
 	return strings.Join(parts, "+")
+}
+
+func functionCallHasArgs(raw json.RawMessage) bool {
+	m, err := decodeJSONRawObject(raw)
+	return err == nil && isJSONString(m["arguments"])
 }
 
 func toolCallIndexes(raw json.RawMessage) ([]string, bool) {
@@ -342,6 +350,11 @@ func mergeOpenAIChoice(dst, src map[string]json.RawMessage) bool {
 			concatJSONStringField(dd, name, sd[name])
 		}
 	}
+	if raw, ok := sd["function_call"]; ok {
+		if !mergeFunctionCall(dd, raw) {
+			return false
+		}
+	}
 	if raw, ok := sd["tool_calls"]; ok {
 		if !mergeToolCalls(dd, raw) {
 			return false
@@ -404,6 +417,33 @@ func mergeToolCalls(dstDelta map[string]json.RawMessage, srcRaw json.RawMessage)
 		return false
 	}
 	dstDelta["tool_calls"] = enc
+	return true
+}
+
+func mergeFunctionCall(dstDelta map[string]json.RawMessage, srcRaw json.RawMessage) bool {
+	sm, err := decodeJSONRawObject(srcRaw)
+	if err != nil {
+		return true
+	}
+	if !isJSONString(sm["arguments"]) {
+		return true
+	}
+	dm, err := decodeJSONRawObject(dstDelta["function_call"])
+	if err != nil {
+		dstDelta["function_call"] = srcRaw
+		return true
+	}
+	if _, ok := dm["name"]; !ok {
+		if v, ok := sm["name"]; ok {
+			dm["name"] = v
+		}
+	}
+	concatJSONStringField(dm, "arguments", sm["arguments"])
+	enc, err := encodeJSONValue(dm)
+	if err != nil {
+		return false
+	}
+	dstDelta["function_call"] = enc
 	return true
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,11 +100,11 @@ func parseUsageSSE(body []byte) tokenUsage {
 		i := bytes.IndexByte(body, '\n')
 		if i < 0 {
 			if len(body) > 0 {
-				mergeUsage(&usage, parseUsageSSELine(string(body)))
+				mergeUsage(&usage, parseUsageSSELine(body))
 			}
 			return usage
 		}
-		line := string(bytes.TrimRight(body[:i], "\r"))
+		line := bytes.TrimRight(body[:i], "\r")
 		body = body[i+1:]
 		mergeUsage(&usage, parseUsageSSELine(line))
 	}
@@ -172,5 +173,37 @@ func TestParseUsageSSEResponses(t *testing.T) {
 	require.Equal(t, int64(2), u.Output)
 	require.Equal(t, int64(3), u.CacheRead)
 	require.Equal(t, int64(6), u.Uncached)
+	require.Equal(t, "gpt-4o", u.ResponseModel)
+}
+
+func TestParseUsageJSONFlexibleNumbers(t *testing.T) {
+	u := parseUsageJSON([]byte(`{"usage":{"prompt_tokens":11.0,"completion_tokens":"7"}}`))
+	require.Equal(t, int64(11), u.Input)
+	require.Equal(t, int64(7), u.Output)
+}
+
+func TestParseUsageJSONCompletions(t *testing.T) {
+	u := parseUsageJSON([]byte(`{"id":"cmpl_1","object":"text_completion","model":"gpt-3.5-turbo-instruct","choices":[{"text":"hi","index":0}],"usage":{"prompt_tokens":4,"completion_tokens":1}}`))
+	require.Equal(t, int64(4), u.Input)
+	require.Equal(t, int64(1), u.Output)
+	require.Equal(t, "gpt-3.5-turbo-instruct", u.ResponseModel)
+}
+
+func TestParseUsageJSONResponsesDoesNotFoldCacheRead(t *testing.T) {
+	// Responses input_tokens already includes cached_tokens; cache_read_input_tokens is Anthropic-only.
+	u := parseUsageJSON([]byte(`{"usage":{"input_tokens":11,"output_tokens":2,"input_tokens_details":{"cached_tokens":4}}}`))
+	require.Equal(t, int64(11), u.Input)
+	require.Equal(t, int64(4), u.CacheRead)
+	require.Equal(t, int64(7), u.Uncached)
+}
+
+func TestCopyAndScanSSEResponsesLargeCompleted(t *testing.T) {
+	payload := `{"type":"response.completed","response":{"model":"gpt-4o","output":[{"content":[{"text":"` + strings.Repeat("x", 64*1024) + `"}]}],"usage":{"input_tokens":9,"output_tokens":2}}}`
+	src := bytes.NewBufferString("event: response.completed\ndata: " + payload + "\n\n")
+	var dst bytes.Buffer
+	u, err := copyAndScanSSE(&dst, src)
+	require.NoError(t, err)
+	require.Equal(t, int64(9), u.Input)
+	require.Equal(t, int64(2), u.Output)
 	require.Equal(t, "gpt-4o", u.ResponseModel)
 }

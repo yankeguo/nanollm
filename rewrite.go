@@ -29,7 +29,7 @@ func parseRequest(body []byte) (*requestMeta, error) {
 	return &requestMeta{Model: model, Stream: stream, Body: body}, nil
 }
 
-func rewriteRequest(body []byte, upstreamModel string, stream bool, format string) ([]byte, error) {
+func rewriteRequest(body []byte, upstreamModel string, stream, injectStreamUsage bool) ([]byte, error) {
 	raw, err := decodeJSONRawObject(body)
 	if err != nil {
 		return nil, err
@@ -41,7 +41,10 @@ func rewriteRequest(body []byte, upstreamModel string, stream bool, format strin
 		}
 		raw["model"] = b
 	}
-	if stream && format == formatOpenAI {
+	// Chat Completions and Completions (legacy) document stream_options.include_usage.
+	// Responses uses stream_options.include_obfuscation only; Anthropic has no such field;
+	// embeddings does not stream. Never inject include_usage onto those bodies.
+	if stream && injectStreamUsage {
 		opts, err := ensureIncludeUsage(raw["stream_options"])
 		if err != nil {
 			return nil, err

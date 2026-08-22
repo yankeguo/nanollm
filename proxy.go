@@ -38,6 +38,10 @@ type Proxy struct {
 	Client *http.Client
 	Logger CallLogger
 	Format string
+	// InjectStreamUsage adds stream_options.include_usage for OpenAI Chat
+	// Completions and Completions (legacy) streaming. Responses, Anthropic,
+	// and embeddings must not receive that field.
+	InjectStreamUsage bool
 }
 
 func (p *Proxy) format() string {
@@ -180,7 +184,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 		rec.ProviderModel = meta.Model
 	}
 
-	payload, err := rewriteRequest(meta.Body, providerModel, meta.Stream, p.format())
+	payload, err := rewriteRequest(meta.Body, providerModel, meta.Stream, p.InjectStreamUsage)
 	if err != nil {
 		rec.HTTPStatus = http.StatusBadRequest
 		rec.Error = err.Error()
@@ -214,7 +218,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	}
 	defer resp.Body.Close()
 	rec.HTTPStatus = resp.StatusCode
-	sse := meta.Stream || isSSE(resp.Header.Get("Content-Type"))
+	sse := responseIsSSE(meta.Stream, resp.Header.Get("Content-Type"))
 
 	if isCatastrophic(nil, resp.StatusCode) {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxStatusBlob))
@@ -225,6 +229,15 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	}
 
 	copyResponseHeaders(w.Header(), resp.Header)
+	keepalive := time.Duration(0)
+	if sse {
+		// Keepalives append SSE comments, so a forwarded Content-Length would
+		// desync HTTP/1.1 clients. Go then chunk-encodes the modified body.
+		w.Header().Del("Content-Length")
+		if !isCompressedEncoding(resp.Header.Get("Content-Encoding")) {
+			keepalive = sseKeepaliveInterval
+		}
+	}
 	w.WriteHeader(resp.StatusCode)
 
 	buf := &capBuffer{max: maxMediumBlob}
@@ -232,7 +245,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	if sse {
 		fw := newFlushWriter(w)
 		logw := newSSELogWriter(buf)
-		usage, err = copySSE(io.MultiWriter(fw, logw), fw, resp.Body, sseKeepaliveInterval)
+		usage, err = copySSE(io.MultiWriter(fw, logw), fw, resp.Body, keepalive)
 		logw.Flush()
 	} else {
 		_, err = io.Copy(io.MultiWriter(w, buf), resp.Body)
@@ -357,6 +370,25 @@ func copyResponseHeaders(dst, src http.Header) {
 
 func isSSE(contentType string) bool {
 	return strings.Contains(strings.ToLower(contentType), "text/event-stream")
+}
+
+// responseIsSSE reports whether the upstream body should be copied as SSE
+// (keepalive comments, line-scanned usage, JSON-string call-log wrapping).
+// stream=true JSON errors must stay JSON: comments would corrupt them.
+func responseIsSSE(stream bool, contentType string) bool {
+	if isSSE(contentType) {
+		return true
+	}
+	if !stream {
+		return false
+	}
+	ct := strings.ToLower(contentType)
+	return !strings.Contains(ct, "json")
+}
+
+func isCompressedEncoding(v string) bool {
+	v = strings.ToLower(strings.TrimSpace(v))
+	return v != "" && v != "identity"
 }
 
 const errCanceled = "canceled"
