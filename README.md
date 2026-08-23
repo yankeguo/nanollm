@@ -55,7 +55,7 @@ The container image sets `NANOLLM_CONFIG=/config.yaml`.
 ```yaml
 mysql:
   dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
-  detail_retain: 1000
+detail_retain: 168h
 admin:
   username: admin
   password: REPLACE_ME
@@ -107,7 +107,7 @@ models:
 | Field | Required | Meaning |
 |---|---|---|
 | `mysql.dsn` | yes | MySQL DSN (`user:pass@tcp(host:3306)/dbname`). Connection params are forced: `charset=utf8mb4`, `parseTime=true`, `loc=UTC`, `time_zone='UTC'` |
-| `mysql.detail_retain` | no | Keep request/response JSON and extracted files for the latest N rows (default `1000`; `0` keeps no blobs) |
+| `detail_retain` | no | Keep request/response JSON and extracted files for this duration (Go duration or `Nd` days; default `168h`; `0` keeps no blobs) |
 | `admin.username` | yes | Admin UI login name |
 | `admin.password` | yes | Admin UI login password |
 | `api_keys[].name` | yes | Identifier for this key (must be unique) |
@@ -209,7 +209,7 @@ Each provider attempt writes one row to `llm_calls`:
 
 Failures and failover hops are recorded so you can see which hop died. The synthetic “all upstreams unavailable” client error is not an extra row.
 
-Periodically (every 50 inserts), blobs older than the latest `mysql.detail_retain` rows are set to `NULL`, join rows for those calls are deleted, and unreferenced `llm_files` rows older than a minute are removed. Metadata is kept. Bodies larger than 16 MiB skip the blob columns (and file extraction); a single decoded file larger than 16 MiB is left as base64 in the JSON.
+Periodically (every 50 inserts), blobs and `llm_call_files` rows older than `detail_retain` are cleared, then unreferenced `llm_files` older than that same cutoff are removed. Metadata is kept. A concurrent insert refreshes `llm_files.created_at` before writing the join, so files still inside the window are not GC'd even if their join is not committed yet. Bodies larger than 16 MiB skip the blob columns (and file extraction); a single decoded file larger than 16 MiB is left as base64 in the JSON.
 
 Insert/prune errors are logged and do not change the client response.
 

@@ -53,10 +53,9 @@ func TestClipErrorUTF8(t *testing.T) {
 	require.Equal(t, prefix, got)
 }
 
-func TestMySQLDetailRetainDefault(t *testing.T) {
-	require.Equal(t, 1000, MySQLConfig{}.detailRetain())
-	zero := 0
-	require.Equal(t, 0, MySQLConfig{DetailRetain: &zero}.detailRetain())
+func TestDetailRetainDefault(t *testing.T) {
+	require.Equal(t, 168*time.Hour, Config{}.detailRetain())
+	require.Equal(t, time.Duration(0), Config{DetailRetain: retainDuration{set: true}}.detailRetain())
 }
 
 func TestPruneAsyncThrottle(t *testing.T) {

@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	defaultDetailRetain = 1000
+	defaultDetailRetain = 168 * time.Hour
 
 	protocolOpenAICompletions = "openai_completions"
 	protocolOpenAIResponses   = "openai_responses"
@@ -19,11 +21,12 @@ const (
 )
 
 type Config struct {
-	MySQL     MySQLConfig   `yaml:"mysql"`
-	Admin     AdminConfig   `yaml:"admin"`
-	APIKeys   []APIKey      `yaml:"api_keys"`
-	Providers []Provider    `yaml:"providers"`
-	Models    []ModelConfig `yaml:"models"`
+	MySQL        MySQLConfig    `yaml:"mysql"`
+	DetailRetain retainDuration `yaml:"detail_retain"`
+	Admin        AdminConfig    `yaml:"admin"`
+	APIKeys      []APIKey       `yaml:"api_keys"`
+	Providers    []Provider     `yaml:"providers"`
+	Models       []ModelConfig  `yaml:"models"`
 }
 
 type AdminConfig struct {
@@ -32,15 +35,65 @@ type AdminConfig struct {
 }
 
 type MySQLConfig struct {
-	DSN          string `yaml:"dsn"`
-	DetailRetain *int   `yaml:"detail_retain"`
+	DSN string `yaml:"dsn"`
 }
 
-func (m MySQLConfig) detailRetain() int {
-	if m.DetailRetain == nil {
+func (c Config) detailRetain() time.Duration {
+	if !c.DetailRetain.set {
 		return defaultDetailRetain
 	}
-	return *m.DetailRetain
+	return c.DetailRetain.d
+}
+
+// retainDuration is a YAML duration. Omitted uses defaultDetailRetain; 0 keeps
+// no blobs. Go durations (168h, 24h) and a day unit (7d) are accepted.
+type retainDuration struct {
+	set bool
+	d   time.Duration
+}
+
+func (r *retainDuration) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.ScalarNode {
+		return fmt.Errorf("config: detail_retain must be a duration")
+	}
+	if value.Tag == "!!null" || strings.TrimSpace(value.Value) == "" {
+		return nil
+	}
+	d, err := parseRetainDuration(value.Value)
+	if err != nil {
+		return fmt.Errorf("config: detail_retain: %w", err)
+	}
+	r.set = true
+	r.d = d
+	return nil
+}
+
+func parseRetainDuration(s string) (time.Duration, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, fmt.Errorf("invalid duration")
+	}
+	if s == "0" {
+		return 0, nil
+	}
+	var d time.Duration
+	if strings.HasSuffix(s, "d") {
+		days, err := strconv.ParseFloat(s[:len(s)-1], 64)
+		if err != nil || s[:len(s)-1] == "" {
+			return 0, fmt.Errorf("invalid duration %q", s)
+		}
+		d = time.Duration(days * 24 * float64(time.Hour))
+	} else {
+		parsed, err := time.ParseDuration(s)
+		if err != nil {
+			return 0, fmt.Errorf("invalid duration %q", s)
+		}
+		d = parsed
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("must be >= 0")
+	}
+	return d, nil
 }
 
 type APIKey struct {
@@ -281,8 +334,8 @@ func (c *Config) validate() error {
 	if _, err := normalizeMySQLDSN(c.MySQL.DSN); err != nil {
 		return fmt.Errorf("config: mysql.dsn is invalid: %w", err)
 	}
-	if c.MySQL.DetailRetain != nil && *c.MySQL.DetailRetain < 0 {
-		return fmt.Errorf("config: mysql.detail_retain must be >= 0")
+	if c.DetailRetain.set && c.DetailRetain.d < 0 {
+		return fmt.Errorf("config: detail_retain must be >= 0")
 	}
 	c.Admin.Username = strings.TrimSpace(c.Admin.Username)
 	if c.Admin.Username == "" {

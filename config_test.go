@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -61,7 +62,7 @@ models:
 	require.Equal(t, "Bearer sk-primary", cfg.providers("fast")[0].Headers["Authorization"])
 	require.Len(t, cfg.providers("fast"), 2)
 	require.Equal(t, "nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm", cfg.MySQL.DSN)
-	require.Equal(t, 1000, cfg.MySQL.detailRetain())
+	require.Equal(t, 168*time.Hour, cfg.detailRetain())
 	require.Equal(t, "admin", cfg.Admin.Username)
 	require.Equal(t, "REPLACE_ME", cfg.Admin.Password)
 	require.NotNil(t, cfg.providers("fast")[0].OpenAICompletions)
@@ -214,7 +215,7 @@ func TestLoadConfigDetailRetain(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(`
 mysql:
   dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
-  detail_retain: 0
+detail_retain: 0
 admin:
   username: admin
   password: REPLACE_ME
@@ -233,12 +234,60 @@ models:
 `), 0o644))
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
-	require.Equal(t, 0, cfg.MySQL.detailRetain())
+	require.Equal(t, time.Duration(0), cfg.detailRetain())
 
 	require.NoError(t, os.WriteFile(path, []byte(`
 mysql:
   dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
-  detail_retain: -1
+detail_retain: 24h
+admin:
+  username: admin
+  password: REPLACE_ME
+api_keys:
+  - name: alice
+    value: sk-alice
+providers:
+  - name: a
+    openai_completions:
+      url: http://a.example
+models:
+  - name: fast
+    providers:
+      - name: a
+        protocols: [openai_completions]
+`), 0o644))
+	cfg, err = loadConfig(path)
+	require.NoError(t, err)
+	require.Equal(t, 24*time.Hour, cfg.detailRetain())
+
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+detail_retain: 7d
+admin:
+  username: admin
+  password: REPLACE_ME
+api_keys:
+  - name: alice
+    value: sk-alice
+providers:
+  - name: a
+    openai_completions:
+      url: http://a.example
+models:
+  - name: fast
+    providers:
+      - name: a
+        protocols: [openai_completions]
+`), 0o644))
+	cfg, err = loadConfig(path)
+	require.NoError(t, err)
+	require.Equal(t, 7*24*time.Hour, cfg.detailRetain())
+
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+detail_retain: -1h
 api_keys:
   - name: alice
     value: sk-alice
@@ -254,6 +303,37 @@ models:
 `), 0o644))
 	_, err = loadConfig(path)
 	require.ErrorContains(t, err, "detail_retain")
+}
+
+func TestParseRetainDuration(t *testing.T) {
+	d, err := parseRetainDuration("0")
+	require.NoError(t, err)
+	require.Equal(t, time.Duration(0), d)
+
+	d, err = parseRetainDuration("168h")
+	require.NoError(t, err)
+	require.Equal(t, 168*time.Hour, d)
+
+	d, err = parseRetainDuration("7d")
+	require.NoError(t, err)
+	require.Equal(t, 7*24*time.Hour, d)
+
+	d, err = parseRetainDuration("1.5d")
+	require.NoError(t, err)
+	require.Equal(t, 36*time.Hour, d)
+
+	d, err = parseRetainDuration("0s")
+	require.NoError(t, err)
+	require.Equal(t, time.Duration(0), d)
+
+	_, err = parseRetainDuration("1000")
+	require.Error(t, err)
+
+	_, err = parseRetainDuration("-1h")
+	require.Error(t, err)
+
+	_, err = parseRetainDuration("d")
+	require.Error(t, err)
 }
 
 func TestLoadConfigRequiresAdmin(t *testing.T) {

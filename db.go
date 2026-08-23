@@ -125,7 +125,7 @@ func openDB(cfg MySQLConfig) (*gorm.DB, func() error, error) {
 
 type gormCallLogger struct {
 	db      *gorm.DB
-	retain  int
+	retain  time.Duration
 	pruning sync.Mutex
 	// sincePrune counts inserts since the last prune; pruneAsync only runs
 	// every pruneEveryN inserts to avoid one UPDATE per request.
@@ -136,11 +136,7 @@ type gormCallLogger struct {
 
 const pruneEveryN = 50
 
-// fileGCMinAge is how old an unreferenced llm_files row must be before prune
-// deletes it, closing the race with a concurrent Record's file/join inserts.
-const fileGCMinAge = time.Minute
-
-func newGormCallLogger(db *gorm.DB, retain int) *gormCallLogger {
+func newGormCallLogger(db *gorm.DB, retain time.Duration) *gormCallLogger {
 	return &gormCallLogger{db: db, retain: retain}
 }
 
@@ -192,18 +188,24 @@ func (l *gormCallLogger) storeFiles(callID uint64, files []extractedFile) error 
 	if len(files) == 0 {
 		return nil
 	}
+	now := time.Now().UTC()
 	rows := make([]LLMFile, len(files))
 	joins := make([]LLMCallFile, len(files))
 	for i, f := range files {
 		rows[i] = LLMFile{
-			SHA256:   f.SHA256,
-			MimeType: f.MimeType,
-			Size:     len(f.Data),
-			Data:     f.Data,
+			SHA256:    f.SHA256,
+			MimeType:  f.MimeType,
+			Size:      len(f.Data),
+			Data:      f.Data,
+			CreatedAt: now,
 		}
 		joins[i] = LLMCallFile{CallID: callID, SHA256: f.SHA256, Seq: i}
 	}
-	if err := l.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error; err != nil {
+	// Refresh created_at on reuse so prune's retain cutoff covers the window
+	// between this INSERT and the join row, without a separate grace period.
+	if err := l.db.Clauses(clause.OnConflict{
+		DoUpdates: clause.Assignments(map[string]any{"created_at": now}),
+	}).Create(&rows).Error; err != nil {
 		return err
 	}
 	return l.db.Create(&joins).Error
@@ -233,60 +235,48 @@ func (l *gormCallLogger) runPrune() error {
 }
 
 func (l *gormCallLogger) prune() error {
-	if l.retain <= 0 {
-		if err := l.db.Model(&LLMCall{}).
-			Where("request_json IS NOT NULL OR response_json IS NOT NULL").
-			UpdateColumns(map[string]any{
-				"request_json":  gorm.Expr("NULL"),
-				"response_json": gorm.Expr("NULL"),
-			}).Error; err != nil {
-			return err
-		}
-		return l.pruneFiles(pruneFileScope(l.retain, 0))
+	cutoff, all := pruneFileScope(l.retain, time.Now())
+	q := l.db.Model(&LLMCall{}).Where("request_json IS NOT NULL OR response_json IS NOT NULL")
+	if !all {
+		q = q.Where("created_at < ?", cutoff)
 	}
-	var cutoff uint64
-	if err := l.db.Model(&LLMCall{}).Select("id").Order("id DESC").Offset(l.retain - 1).Limit(1).Scan(&cutoff).Error; err != nil {
+	if err := q.UpdateColumns(map[string]any{
+		"request_json":  gorm.Expr("NULL"),
+		"response_json": gorm.Expr("NULL"),
+	}).Error; err != nil {
 		return err
 	}
-	if cutoff == 0 {
-		return nil
-	}
-	if err := l.db.Model(&LLMCall{}).
-		Where("id < ? AND (request_json IS NOT NULL OR response_json IS NOT NULL)", cutoff).
-		UpdateColumns(map[string]any{
-			"request_json":  gorm.Expr("NULL"),
-			"response_json": gorm.Expr("NULL"),
-		}).Error; err != nil {
-		return err
-	}
-	return l.pruneFiles(pruneFileScope(l.retain, cutoff))
+	return l.pruneFiles(cutoff, all)
 }
 
-// pruneFileScope says how llm_call_files should be cleared during prune:
-// all joins when retain is disabled, otherwise joins with call_id < cutoff.
-func pruneFileScope(retain int, cutoff uint64) (before uint64, all bool) {
+// pruneFileScope says how blobs and files should be cleared during prune:
+// everything when retain is disabled, otherwise rows older than now-retain.
+func pruneFileScope(retain time.Duration, now time.Time) (cutoff time.Time, all bool) {
 	if retain <= 0 {
-		return 0, true
+		return time.Time{}, true
 	}
-	return cutoff, false
+	return now.UTC().Add(-retain), false
 }
 
-func (l *gormCallLogger) pruneFiles(before uint64, all bool) error {
+func (l *gormCallLogger) pruneFiles(cutoff time.Time, all bool) error {
 	q := l.db
 	if all {
 		q = q.Where("1 = 1")
 	} else {
-		q = q.Where("call_id < ?", before)
+		q = q.Where("call_id IN (?)", l.db.Model(&LLMCall{}).Select("id").Where("created_at < ?", cutoff))
 	}
 	if err := q.Delete(&LLMCallFile{}).Error; err != nil {
 		return err
 	}
-	// Only GC files older than fileGCMinAge: a concurrent Record may have
-	// inserted an llm_files row whose llm_call_files join is not written yet.
-	return l.db.
-		Where("created_at < ?", time.Now().UTC().Add(-fileGCMinAge)).
-		Where("sha256 NOT IN (?)", l.db.Model(&LLMCallFile{}).Select("sha256")).
-		Delete(&LLMFile{}).Error
+	// Unreferenced files inside the retain window are kept: a concurrent
+	// Record may have inserted (or refreshed) llm_files before writing
+	// llm_call_files. The same cutoff as blob prune makes that race
+	// harmless without a separate grace period.
+	fq := l.db.Where("sha256 NOT IN (?)", l.db.Model(&LLMCallFile{}).Select("sha256"))
+	if !all {
+		fq = fq.Where("created_at < ?", cutoff)
+	}
+	return fq.Delete(&LLMFile{}).Error
 }
 
 // retainableBlob reports whether a detail JSON blob survives clipBlob; only

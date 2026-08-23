@@ -1,6 +1,6 @@
 mysql:
   dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
-  # detail_retain: 1000
+# detail_retain: 168h
 admin:
   username: admin
   password: REPLACE_ME

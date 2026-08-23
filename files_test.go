@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -179,12 +180,14 @@ func TestRetainableBlob(t *testing.T) {
 }
 
 func TestPruneFileScope(t *testing.T) {
-	before, all := pruneFileScope(0, 99)
+	now := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
+	cutoff, all := pruneFileScope(0, now)
 	require.True(t, all)
-	require.Equal(t, uint64(0), before)
-	before, all = pruneFileScope(1000, 42)
+	require.True(t, cutoff.IsZero())
+
+	cutoff, all = pruneFileScope(24*time.Hour, now)
 	require.False(t, all)
-	require.Equal(t, uint64(42), before)
+	require.Equal(t, now.Add(-24*time.Hour), cutoff)
 }
 
 func TestFilePlaceholder(t *testing.T) {
