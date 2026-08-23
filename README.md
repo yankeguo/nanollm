@@ -209,7 +209,7 @@ Each provider attempt writes one row to `llm_calls`:
 
 Failures and failover hops are recorded so you can see which hop died. The synthetic “all upstreams unavailable” client error is not an extra row.
 
-Periodically (every 50 inserts), blobs and `llm_call_files` rows older than `detail_retain` are cleared, then unreferenced `llm_files` older than that same cutoff are removed. Metadata is kept. A concurrent insert refreshes `llm_files.created_at` before writing the join, so files still inside the window are not GC'd even if their join is not committed yet. Bodies larger than 16 MiB skip the blob columns (and file extraction); a single decoded file larger than 16 MiB is left as base64 in the JSON.
+Periodically (every 50 inserts), blobs and `llm_call_files` rows older than `detail_retain` are cleared, then unreferenced `llm_files` whose `visited_at` is older than that same cutoff are removed. Metadata is kept. A concurrent insert refreshes `llm_files.visited_at` before writing the join, so files still inside the window are not GC'd even if their join is not committed yet. Bodies larger than 16 MiB skip the blob columns (and file extraction); a single decoded file larger than 16 MiB is left as base64 in the JSON.
 
 Insert/prune errors are logged and do not change the client response.
 

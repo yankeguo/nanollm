@@ -37,20 +37,20 @@ type CallRecord struct {
 }
 
 type LLMCall struct {
-	ID             uint64    `gorm:"primaryKey"`
-	CreatedAt      time.Time `gorm:"type:datetime(3);index"`
-	Model          string    `gorm:"size:255;not null;index"`
-	Provider       string    `gorm:"size:255;not null;index"`
-	ProviderModel  string    `gorm:"size:255"`
-	APIKeyName     string    `gorm:"size:255;index"`
-	InputTokens    int64
-	OutputTokens   int64
-	CacheTokens    int64
-	UncachedTokens int64
-	HTTPStatus     int
-	Error          string `gorm:"size:1024"`
-	RequestJSON    []byte `gorm:"type:mediumblob"`
-	ResponseJSON   []byte `gorm:"type:mediumblob"`
+	ID             uint64    `gorm:"column:id;type:bigint unsigned;primaryKey;autoIncrement"`
+	CreatedAt      time.Time `gorm:"column:created_at;type:datetime(3);not null;index"`
+	Model          string    `gorm:"column:model;type:varchar(255);not null;index"`
+	Provider       string    `gorm:"column:provider;type:varchar(255);not null;index"`
+	ProviderModel  string    `gorm:"column:provider_model;type:varchar(255);not null"`
+	APIKeyName     string    `gorm:"column:api_key_name;type:varchar(255);not null;index"`
+	InputTokens    int64     `gorm:"column:input_tokens;type:bigint;not null"`
+	OutputTokens   int64     `gorm:"column:output_tokens;type:bigint;not null"`
+	CacheTokens    int64     `gorm:"column:cache_tokens;type:bigint;not null"`
+	UncachedTokens int64     `gorm:"column:uncached_tokens;type:bigint;not null"`
+	HTTPStatus     int       `gorm:"column:http_status;type:int;not null"`
+	Error          string    `gorm:"column:error;type:varchar(1024);not null"`
+	RequestJSON    []byte    `gorm:"column:request_json;type:mediumblob"`
+	ResponseJSON   []byte    `gorm:"column:response_json;type:mediumblob"`
 }
 
 func (LLMCall) TableName() string {
@@ -58,11 +58,12 @@ func (LLMCall) TableName() string {
 }
 
 type LLMFile struct {
-	SHA256    string `gorm:"primaryKey;size:64"`
-	MimeType  string `gorm:"size:128"`
-	Size      int
-	Data      []byte    `gorm:"type:mediumblob"`
-	CreatedAt time.Time `gorm:"type:datetime(3)"`
+	SHA256    string    `gorm:"column:sha256;type:varchar(64);primaryKey"`
+	MimeType  string    `gorm:"column:mime_type;type:varchar(128);not null"`
+	Size      int       `gorm:"column:size;type:int;not null"`
+	Data      []byte    `gorm:"column:data;type:mediumblob;not null"`
+	CreatedAt time.Time `gorm:"column:created_at;type:datetime(3);not null"`
+	VisitedAt time.Time `gorm:"column:visited_at;type:datetime(3);not null;index"`
 }
 
 func (LLMFile) TableName() string {
@@ -70,9 +71,9 @@ func (LLMFile) TableName() string {
 }
 
 type LLMCallFile struct {
-	CallID uint64 `gorm:"primaryKey"`
-	SHA256 string `gorm:"primaryKey;size:64;index:idx_llm_call_files_sha256"`
-	Seq    int
+	CallID uint64 `gorm:"column:call_id;type:bigint unsigned;primaryKey"`
+	SHA256 string `gorm:"column:sha256;type:varchar(64);primaryKey;index:idx_llm_call_files_sha256"`
+	Seq    int    `gorm:"column:seq;type:int;not null"`
 }
 
 func (LLMCallFile) TableName() string {
@@ -198,13 +199,14 @@ func (l *gormCallLogger) storeFiles(callID uint64, files []extractedFile) error 
 			Size:      len(f.Data),
 			Data:      f.Data,
 			CreatedAt: now,
+			VisitedAt: now,
 		}
 		joins[i] = LLMCallFile{CallID: callID, SHA256: f.SHA256, Seq: i}
 	}
-	// Refresh created_at on reuse so prune's retain cutoff covers the window
-	// between this INSERT and the join row, without a separate grace period.
+	// Touch visited_at on reuse so prune's retain cutoff covers the window
+	// between this INSERT and the join row, without rewriting created_at.
 	if err := l.db.Clauses(clause.OnConflict{
-		DoUpdates: clause.Assignments(map[string]any{"created_at": now}),
+		DoUpdates: clause.Assignments(map[string]any{"visited_at": now}),
 	}).Create(&rows).Error; err != nil {
 		return err
 	}
@@ -268,13 +270,13 @@ func (l *gormCallLogger) pruneFiles(cutoff time.Time, all bool) error {
 	if err := q.Delete(&LLMCallFile{}).Error; err != nil {
 		return err
 	}
-	// Unreferenced files inside the retain window are kept: a concurrent
-	// Record may have inserted (or refreshed) llm_files before writing
-	// llm_call_files. The same cutoff as blob prune makes that race
+	// Unreferenced files last visited inside the retain window are kept: a
+	// concurrent Record may have inserted (or touched visited_at) before
+	// writing llm_call_files. The same cutoff as blob prune makes that race
 	// harmless without a separate grace period.
 	fq := l.db.Where("sha256 NOT IN (?)", l.db.Model(&LLMCallFile{}).Select("sha256"))
 	if !all {
-		fq = fq.Where("created_at < ?", cutoff)
+		fq = fq.Where("visited_at < ?", cutoff)
 	}
 	return fq.Delete(&LLMFile{}).Error
 }
