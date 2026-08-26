@@ -1189,6 +1189,78 @@ func TestProxyEmbeddingsRewritesModelAndLogsUsage(t *testing.T) {
 	require.Contains(t, string(got.ResponseJSON), `"prompt_tokens":2`)
 }
 
+func TestProxyBailianMultimodalEmbedding(t *testing.T) {
+	var gotBody []byte
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"output":{"embeddings":[{"index":0,"embedding":[-0.02,0.05],"type":"text"},{"index":1,"embedding":[0.01,0.03],"type":"image"}]},"usage":{"input_tokens":903,"input_tokens_details":{"image_tokens":896,"text_tokens":7},"output_tokens":2,"total_tokens":905},"request_id":"req-1"}`)
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(Provider{
+		Name:  "bailian",
+		Model: "tongyi-embedding-vision-plus",
+		BailianMultimodalEmbedding: &ProviderEndpoint{
+			URL:     up.URL + "/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding",
+			Headers: map[string]string{"Authorization": "Bearer sk-upstream"},
+		},
+	}), logger, nil).Handler()
+
+	respBody := `{"output":{"embeddings":[{"index":0,"embedding":[-0.02,0.05],"type":"text"},{"index":1,"embedding":[0.01,0.03],"type":"image"}]},"usage":{"input_tokens":903,"input_tokens_details":{"image_tokens":896,"text_tokens":7},"output_tokens":2,"total_tokens":905},"request_id":"req-1"}`
+	req := httptest.NewRequest(http.MethodPost, "/dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding", jsonBody(map[string]any{
+		"model": "fast",
+		"input": map[string]any{
+			"contents": []any{
+				map[string]any{"text": "多模态向量模型"},
+				map[string]any{"image": "https://example.com/a.jpg"},
+			},
+		},
+		"parameters": map[string]any{"dimension": 1152},
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	// The upstream response is passed through byte-for-byte.
+	require.JSONEq(t, respBody, rec.Body.String())
+
+	// model is rewritten; every other field is passed through untouched.
+	var sent map[string]any
+	require.NoError(t, json.Unmarshal(gotBody, &sent))
+	require.Equal(t, "tongyi-embedding-vision-plus", sent["model"])
+	require.Equal(t, map[string]any{"dimension": float64(1152)}, sent["parameters"])
+	contents, ok := sent["input"].(map[string]any)["contents"].([]any)
+	require.True(t, ok)
+	require.Len(t, contents, 2)
+	_, has := sent["stream_options"]
+	require.False(t, has)
+
+	require.Len(t, logger.calls, 1)
+	got := logger.calls[0]
+	require.Equal(t, "fast", got.Model)
+	require.Equal(t, "bailian", got.Provider)
+	require.Equal(t, "tongyi-embedding-vision-plus", got.ProviderModel)
+	require.Equal(t, int64(903), got.InputTokens)
+	require.Equal(t, int64(2), got.OutputTokens)
+	require.Equal(t, int64(903), got.UncachedTokens)
+	require.Contains(t, string(got.RequestJSON), `"model":"tongyi-embedding-vision-plus"`)
+	require.Contains(t, string(got.ResponseJSON), `"request_id":"req-1"`)
+}
+
+func TestProxyBailianMultimodalEmbeddingMissingProviders(t *testing.T) {
+	h := testProxy(t, cfgFast(Provider{Name: "m", OpenAIEmbeddings: ep("http://127.0.0.1:0")}))
+	req := httptest.NewRequest(http.MethodPost, "/dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding", jsonBody(map[string]any{
+		"model": "fast",
+		"input": map[string]any{"contents": []any{map[string]any{"text": "hi"}}},
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	// DashScope-style error shape.
+	require.JSONEq(t, `{"code":"invalid_request_error","message":"the model `+"`fast`"+` has no bailian_multimodal_embedding providers"}`, rec.Body.String())
+}
+
 func TestProxyStreamJSONErrorIsNotSSE(t *testing.T) {
 	errBody := []byte(`{"error":{"message":"bad req","type":"invalid_request_error"}}`)
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

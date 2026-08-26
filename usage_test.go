@@ -197,6 +197,30 @@ func TestParseUsageJSONEmbeddings(t *testing.T) {
 	require.Equal(t, "text-embedding-3-small", u.ResponseModel)
 }
 
+func TestParseUsageJSONBailianTongyiVision(t *testing.T) {
+	// tongyi-embedding-vision-*: input_tokens already includes visual tokens;
+	// input_tokens_details is a breakdown and must not be counted twice.
+	u := parseUsageJSON([]byte(`{"output":{"embeddings":[{"index":0,"embedding":[0.1],"type":"text"}]},"usage":{"input_tokens":903,"input_tokens_details":{"image_tokens":896,"text_tokens":7},"output_tokens":3,"total_tokens":906},"request_id":"req-1"}`))
+	require.Equal(t, int64(903), u.Input)
+	require.Equal(t, int64(3), u.Output)
+	require.Equal(t, int64(903), u.Uncached)
+}
+
+func TestParseUsageJSONBailianQwenImageTokens(t *testing.T) {
+	// qwen3-vl-embedding: input_tokens is text-only; top-level image_tokens
+	// is separate and total_tokens is their sum.
+	u := parseUsageJSON([]byte(`{"usage":{"input_tokens":43,"image_tokens":1247,"total_tokens":1290}}`))
+	require.Equal(t, int64(1290), u.Input)
+	require.Equal(t, int64(0), u.Output)
+}
+
+func TestParseUsageJSONBailianV1(t *testing.T) {
+	// multimodal-embedding-v1: no total_tokens, top-level image_tokens only.
+	u := parseUsageJSON([]byte(`{"usage":{"input_tokens":7,"image_tokens":896,"image_count":1,"duration":0}}`))
+	require.Equal(t, int64(903), u.Input)
+	require.Equal(t, int64(0), u.Output)
+}
+
 func TestParseUsageJSONEmbeddingsTotalOnly(t *testing.T) {
 	u := parseUsageJSON([]byte(`{"object":"list","usage":{"total_tokens":5}}`))
 	require.Equal(t, int64(5), u.Input)

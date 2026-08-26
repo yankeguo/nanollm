@@ -108,11 +108,20 @@ type usageFields struct {
 	CacheCreationInputTokens jsonInt64 `json:"cache_creation_input_tokens"`
 	PromptCacheHitTokens     jsonInt64 `json:"prompt_cache_hit_tokens"`
 	PromptCacheMissTokens    jsonInt64 `json:"prompt_cache_miss_tokens"`
-	PromptTokensDetails      *struct {
+	// ImageTokens is a top-level field only on DashScope multimodal embedding
+	// responses (qwen*-vl-embedding, multimodal-embedding-v1), where
+	// input_tokens excludes visual tokens.
+	ImageTokens         jsonInt64 `json:"image_tokens"`
+	PromptTokensDetails *struct {
 		CachedTokens jsonInt64 `json:"cached_tokens"`
 	} `json:"prompt_tokens_details"`
 	InputTokensDetails *struct {
 		CachedTokens jsonInt64 `json:"cached_tokens"`
+		// DashScope tongyi-embedding-vision-* breaks down input_tokens here;
+		// those tokens are already counted in input_tokens, so these fields
+		// are parsed for completeness but never added.
+		ImageTokens jsonInt64 `json:"image_tokens"`
+		TextTokens  jsonInt64 `json:"text_tokens"`
 	} `json:"input_tokens_details"`
 	CacheCreation *struct {
 		Ephemeral5mInputTokens jsonInt64 `json:"ephemeral_5m_input_tokens"`
@@ -149,6 +158,11 @@ func (u usageFields) asTokenUsage() tokenUsage {
 		// instead of cache_read_input_tokens, so this add is a no-op there.
 		in += int64(u.CacheReadInputTokens) + cacheCreation
 	}
+	// DashScope qwen multimodal embeddings report visual tokens as a
+	// top-level image_tokens not included in input_tokens. The tongyi
+	// series puts them in input_tokens_details instead and already counts
+	// them in input_tokens, so only the top-level field is added here.
+	in += int64(u.ImageTokens)
 	out := int64(u.CompletionTokens)
 	if out == 0 {
 		out = int64(u.OutputTokens)

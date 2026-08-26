@@ -14,10 +14,11 @@ import (
 const (
 	defaultDetailRetain = 168 * time.Hour
 
-	protocolOpenAICompletions = "openai_completions"
-	protocolOpenAIResponses   = "openai_responses"
-	protocolOpenAIEmbeddings  = "openai_embeddings"
-	protocolAnthropicMessages = "anthropic_messages"
+	protocolOpenAICompletions          = "openai_completions"
+	protocolOpenAIResponses            = "openai_responses"
+	protocolOpenAIEmbeddings           = "openai_embeddings"
+	protocolAnthropicMessages          = "anthropic_messages"
+	protocolBailianMultimodalEmbedding = "bailian_multimodal_embedding"
 )
 
 type Config struct {
@@ -120,13 +121,14 @@ type ProviderEndpoint struct {
 }
 
 type Provider struct {
-	Name              string            `yaml:"name"`
-	Model             string            `yaml:"model"`
-	Headers           map[string]string `yaml:"headers"`
-	OpenAICompletions *ProviderEndpoint `yaml:"openai_completions"`
-	OpenAIResponses   *ProviderEndpoint `yaml:"openai_responses"`
-	OpenAIEmbeddings  *ProviderEndpoint `yaml:"openai_embeddings"`
-	AnthropicMessages *ProviderEndpoint `yaml:"anthropic_messages"`
+	Name                       string            `yaml:"name"`
+	Model                      string            `yaml:"model"`
+	Headers                    map[string]string `yaml:"headers"`
+	OpenAICompletions          *ProviderEndpoint `yaml:"openai_completions"`
+	OpenAIResponses            *ProviderEndpoint `yaml:"openai_responses"`
+	OpenAIEmbeddings           *ProviderEndpoint `yaml:"openai_embeddings"`
+	AnthropicMessages          *ProviderEndpoint `yaml:"anthropic_messages"`
+	BailianMultimodalEmbedding *ProviderEndpoint `yaml:"bailian_multimodal_embedding"`
 }
 
 func normalizeProtocol(protocol string) string {
@@ -138,7 +140,7 @@ func normalizeProtocol(protocol string) string {
 
 func isKnownProtocol(protocol string) bool {
 	switch protocol {
-	case protocolOpenAICompletions, protocolOpenAIResponses, protocolOpenAIEmbeddings, protocolAnthropicMessages:
+	case protocolOpenAICompletions, protocolOpenAIResponses, protocolOpenAIEmbeddings, protocolAnthropicMessages, protocolBailianMultimodalEmbedding:
 		return true
 	default:
 		return false
@@ -155,12 +157,14 @@ func (p Provider) endpoint(protocol string) *ProviderEndpoint {
 		return p.OpenAIEmbeddings
 	case protocolAnthropicMessages:
 		return p.AnthropicMessages
+	case protocolBailianMultimodalEmbedding:
+		return p.BailianMultimodalEmbedding
 	}
 	return nil
 }
 
 func (p Provider) protocols() []string {
-	out := make([]string, 0, 4)
+	out := make([]string, 0, 5)
 	if p.OpenAICompletions != nil {
 		out = append(out, protocolOpenAICompletions)
 	}
@@ -172,6 +176,9 @@ func (p Provider) protocols() []string {
 	}
 	if p.AnthropicMessages != nil {
 		out = append(out, protocolAnthropicMessages)
+	}
+	if p.BailianMultimodalEmbedding != nil {
+		out = append(out, protocolBailianMultimodalEmbedding)
 	}
 	return out
 }
@@ -196,6 +203,9 @@ func (p Provider) bind(ref ProviderRef) Provider {
 	}
 	if _, ok := allowed[protocolAnthropicMessages]; !ok {
 		out.AnthropicMessages = nil
+	}
+	if _, ok := allowed[protocolBailianMultimodalEmbedding]; !ok {
+		out.BailianMultimodalEmbedding = nil
 	}
 	return out
 }
@@ -348,8 +358,8 @@ func (c *Config) validate() error {
 }
 
 func (p *Provider) validate() error {
-	if p.OpenAICompletions == nil && p.OpenAIResponses == nil && p.OpenAIEmbeddings == nil && p.AnthropicMessages == nil {
-		return fmt.Errorf("config: provider %q must set openai_completions, openai_responses, openai_embeddings, or anthropic_messages", p.Name)
+	if p.OpenAICompletions == nil && p.OpenAIResponses == nil && p.OpenAIEmbeddings == nil && p.AnthropicMessages == nil && p.BailianMultimodalEmbedding == nil {
+		return fmt.Errorf("config: provider %q must set openai_completions, openai_responses, openai_embeddings, anthropic_messages, or bailian_multimodal_embedding", p.Name)
 	}
 	for _, item := range []struct {
 		protocol string
@@ -359,6 +369,7 @@ func (p *Provider) validate() error {
 		{protocolOpenAIResponses, p.OpenAIResponses},
 		{protocolOpenAIEmbeddings, p.OpenAIEmbeddings},
 		{protocolAnthropicMessages, p.AnthropicMessages},
+		{protocolBailianMultimodalEmbedding, p.BailianMultimodalEmbedding},
 	} {
 		if err := validateEndpointURL(p.Name, item.protocol, item.ep); err != nil {
 			return err

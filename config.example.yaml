@@ -39,6 +39,12 @@ providers:
       anthropic-version: "2023-06-01"
     anthropic_messages:
       url: https://api.anthropic.com/v1/messages
+  - name: bailian
+    headers:
+      Authorization: Bearer sk-REPLACE_ME
+    bailian_multimodal_embedding:
+      url: https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding
+      model: qwen3-vl-embedding
 models:
   - name: gpt-4o
     providers:
@@ -66,3 +72,7 @@ models:
       - name: anthropic
         model: claude-sonnet-4-5
         protocols: [anthropic_messages]
+  - name: multimodal-embedding
+    providers:
+      - name: bailian
+        protocols: [bailian_multimodal_embedding]

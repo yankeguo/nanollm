@@ -63,6 +63,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /responses", resp)
 	anth := s.requireAPIKey(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Protocol: protocolAnthropicMessages}, protocolAnthropicMessages)
 	mux.Handle("POST /v1/messages", anth)
+	// Native vendor APIs mirror the official URL shape: host as first path
+	// segment, so clients only swap the endpoint host for this proxy.
+	mme := auth(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Protocol: protocolBailianMultimodalEmbedding})
+	mux.Handle("POST /dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding", mme)
 	return withSecurityHeaders(mux)
 }
 
@@ -159,6 +163,14 @@ func writeProtocolError(w http.ResponseWriter, protocol string, status int, typ,
 				"type":    typ,
 				"message": message,
 			},
+		})
+		return
+	}
+	if protocol == protocolBailianMultimodalEmbedding {
+		// DashScope errors are {"code": ..., "message": ...}.
+		writeJSON(w, status, map[string]any{
+			"code":    typ,
+			"message": message,
 		})
 		return
 	}

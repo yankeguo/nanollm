@@ -429,7 +429,48 @@ models:
         protocols: [openai_completions]
 `), 0o644))
 	_, err := loadConfig(path)
-	require.ErrorContains(t, err, "must set openai_completions, openai_responses, openai_embeddings, or anthropic_messages")
+	require.ErrorContains(t, err, "must set openai_completions, openai_responses, openai_embeddings, anthropic_messages, or bailian_multimodal_embedding")
+}
+
+func TestLoadConfigBailianMultimodalEmbedding(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+admin:
+  username: admin
+  password: REPLACE_ME
+api_keys:
+  - name: alice
+    value: sk-alice
+providers:
+  - name: bailian
+    headers:
+      Authorization: Bearer sk-bailian
+    bailian_multimodal_embedding:
+      url: https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding
+      model: qwen3-vl-embedding
+models:
+  - name: mme
+    providers:
+      - name: bailian
+        protocols: [bailian_multimodal_embedding]
+`), 0o644))
+	cfg, err := loadConfig(path)
+	require.NoError(t, err)
+
+	providers := cfg.providersFor("mme", protocolBailianMultimodalEmbedding)
+	require.Len(t, providers, 1)
+	u, model, headers, ok := providers[0].resolve(protocolBailianMultimodalEmbedding)
+	require.True(t, ok)
+	require.Equal(t, "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding", u)
+	require.Equal(t, "qwen3-vl-embedding", model)
+	require.Equal(t, "Bearer sk-bailian", headers["Authorization"])
+
+	// The association only lists bailian_multimodal_embedding, so other
+	// protocols stay unmatched for this model.
+	require.Empty(t, cfg.providersFor("mme", protocolOpenAIEmbeddings))
 }
 
 func TestLoadConfigNestedProviderEndpoints(t *testing.T) {
