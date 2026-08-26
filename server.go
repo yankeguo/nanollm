@@ -36,16 +36,16 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 
-	mux.HandleFunc("GET /admin/login", s.handleAdminLogin)
-	mux.HandleFunc("POST /admin/login", s.handleAdminLogin)
-	mux.HandleFunc("POST /admin/logout", s.handleAdminLogout)
-	mux.HandleFunc("GET /admin/{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/admin", http.StatusFound)
+	mux.HandleFunc("GET /login", s.handleAdminLogin)
+	mux.HandleFunc("POST /login", s.handleAdminLogin)
+	mux.HandleFunc("POST /logout", s.handleAdminLogout)
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/usage", http.StatusFound)
 	})
-	mux.Handle("GET /admin", s.requireAdmin(http.HandlerFunc(s.handleAdminUsage)))
-	mux.Handle("GET /admin/calls", s.requireAdmin(http.HandlerFunc(s.handleAdminCalls)))
-	mux.Handle("GET /admin/calls/{id}", s.requireAdmin(http.HandlerFunc(s.handleAdminCall)))
-	mux.Handle("GET /admin/files/{sha}", s.requireAdmin(http.HandlerFunc(s.handleAdminFile)))
+	mux.Handle("GET /usage", s.requireAdmin(http.HandlerFunc(s.handleAdminUsage)))
+	mux.Handle("GET /calls", s.requireAdmin(http.HandlerFunc(s.handleAdminCalls)))
+	mux.Handle("GET /calls/{id}", s.requireAdmin(http.HandlerFunc(s.handleAdminCall)))
+	mux.Handle("GET /files/{sha}", s.requireAdmin(http.HandlerFunc(s.handleAdminFile)))
 
 	// LLM routes mirror each vendor's official URL shape: the vendor host is
 	// the first path segment, so clients only swap the endpoint host for this
@@ -68,13 +68,27 @@ func (s *Server) Handler() http.Handler {
 	return withSecurityHeaders(mux)
 }
 
+// isAdminPage reports whether a path serves the cookie-authenticated
+// dashboard, which gets no-store and a strict CSP.
+func isAdminPage(path string) bool {
+	if path == "/" {
+		return true
+	}
+	for _, prefix := range []string{"/usage", "/calls", "/files", "/login", "/logout"} {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func withSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
-		if strings.HasPrefix(r.URL.Path, "/admin") {
+		if isAdminPage(r.URL.Path) {
 			h.Set("Cache-Control", "no-store")
 			h.Set("Content-Security-Policy", strings.Join([]string{
 				"default-src 'none'",

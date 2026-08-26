@@ -65,7 +65,7 @@ func (s *Server) setAdminCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     adminCookieName,
 		Value:    signAdminCookie(s.adminKey, s.Config.Admin.Username, exp),
-		Path:     "/admin",
+		Path:     "/",
 		MaxAge:   int(adminCookieTTL.Seconds()),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
@@ -77,7 +77,7 @@ func (s *Server) clearAdminCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     adminCookieName,
 		Value:    "",
-		Path:     "/admin",
+		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
@@ -96,7 +96,7 @@ func (s *Server) adminCookieValid(r *http.Request) bool {
 func (s *Server) requireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.adminCookieValid(r) {
-			http.Redirect(w, r, "/admin/login", http.StatusFound)
+			http.Redirect(w, r, "/login", http.StatusFound)
 			return
 		}
 		next.ServeHTTP(w, r)

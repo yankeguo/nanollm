@@ -17,7 +17,7 @@ Providers for a model are tried **in order**, but only those whose `protocols` l
 - SIGINT/SIGTERM stops accepting connections and waits indefinitely for in-flight requests (including long LLM streams); a second signal terminates
 - Failover only on dial/DNS/TLS failure or HTTP 502/503/504
 - Every upstream attempt (including failures) is stored in MySQL
-- Admin UI at `/admin` (cookie login) for usage charts and call details
+- Admin UI at the root (cookie login): `/usage` for charts, `/calls` for call details
 
 ## Quick start
 
@@ -43,7 +43,7 @@ Point Anthropic clients at `http://127.0.0.1:8080/api.anthropic.com` with `x-api
 
 For the Aliyun Bailian multimodal embedding API, POST to `http://127.0.0.1:8080/dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding` with `Authorization: Bearer <api_keys.value>`; the model must list `bailian_multimodal_embedding` on at least one associated provider.
 
-Open `http://127.0.0.1:8080/admin` to review token usage and call logs.
+Open `http://127.0.0.1:8080/` (redirects to `/usage`) to review token usage and call logs.
 
 ## Flags and environment
 
@@ -155,7 +155,7 @@ LLM API routes except `GET /healthz` require a configured key:
 
 Unknown or missing keys return `401`. OpenAI routes use `{"error":{"type":"invalid_request_error","message":"invalid api key"}}`. Anthropic `POST /api.anthropic.com/v1/messages` uses `{"type":"error","error":{"type":"authentication_error","message":"invalid api key"}}`. The Bailian multimodal embedding route uses the DashScope shape `{"code":"...","message":"..."}`.
 
-The admin UI (`/admin`) uses `admin.username` / `admin.password` and an HttpOnly cookie (`nanollm_admin`, 12h, SameSite=Lax). `Secure` is set when the request is TLS or `X-Forwarded-Proto: https`. `/admin/login` is unauthenticated; failed logins are delayed by 1s to damp brute force.
+The admin UI (`/usage`, `/calls`) uses `admin.username` / `admin.password` and an HttpOnly cookie (`nanollm_admin`, 12h, SameSite=Lax). `Secure` is set when the request is TLS or `X-Forwarded-Proto: https`. `/login` is unauthenticated; failed logins are delayed by 1s to damp brute force.
 
 ## Failover
 
@@ -190,12 +190,13 @@ This keeps prefix / prompt cache on the first healthy provider.
 | `POST` | `/api.openai.com/v1/responses` | yes | Only associations that list `openai_responses` |
 | `POST` | `/api.anthropic.com/v1/messages` | yes | Anthropic Messages; only associations that list `anthropic_messages` |
 | `POST` | `/dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding` | yes | Aliyun Bailian multimodal embedding (official URL shape, host as first path segment); only associations that list `bailian_multimodal_embedding` |
-| `GET` | `/admin` | cookie | Usage tables and Chart.js graphs |
-| `GET` | `/admin/calls` | cookie | Paginated call log |
-| `GET` | `/admin/calls/{id}` | cookie | Request/response JSON when retained; inline previews of extracted files |
-| `GET` | `/admin/files/{sha}` | cookie | File bytes from `llm_files` (SHA256 hex); safe media types served inline, anything else forced to download as `application/octet-stream` |
-| `GET`/`POST` | `/admin/login` | no | Admin sign-in |
-| `POST` | `/admin/logout` | cookie | Clear admin cookie |
+| `GET` | `/` | no | 302 redirect to `/usage` |
+| `GET` | `/usage` | cookie | Usage tables and Chart.js graphs |
+| `GET` | `/calls` | cookie | Paginated call log |
+| `GET` | `/calls/{id}` | cookie | Request/response JSON when retained; inline previews of extracted files |
+| `GET` | `/files/{sha}` | cookie | File bytes from `llm_files` (SHA256 hex); safe media types served inline, anything else forced to download as `application/octet-stream` |
+| `GET`/`POST` | `/login` | no | Admin sign-in |
+| `POST` | `/logout` | cookie | Clear admin cookie |
 
 The JSON body `model` field selects `models[].name`. nanollm rewrites only the top-level `model` (and, for OpenAI Chat Completions and Completions streaming, injects `stream_options.include_usage` when missing). Responses `stream_options` only documents `include_obfuscation`; Anthropic has no `stream_options`; embeddings are not given that field. Other JSON fields are copied as raw values and are not decoded into a typed tree. Each inbound path only uses associations that list the matching protocol: chat/completions → `openai_completions`, `/api.openai.com/v1/embeddings` → `openai_embeddings`, `/api.openai.com/v1/responses` → `openai_responses`, `/api.anthropic.com/v1/messages` → `anthropic_messages`, the DashScope multimodal embedding path → `bailian_multimodal_embedding`.
 
@@ -218,7 +219,7 @@ Periodically (every 50 inserts), blobs and `llm_call_files` rows older than `det
 
 Insert/prune errors are logged and do not change the client response.
 
-Browse the same data at `/admin` after signing in with `admin.username` / `admin.password`. Usage and Calls share a time window (quick ranges or a custom range with a timezone, defaulting to the browser's) and combinable filters for model, provider, API key, and outcome (`ok` / `canceled` / `no_response` / `error`, partitioning every recorded call). Usage is grouped by hour, day, or week, derived from the window span.
+Browse the same data at `/usage` after signing in with `admin.username` / `admin.password`. Usage and Calls share a time window (quick ranges or a custom range with a timezone, defaulting to the browser's) and combinable filters for model, provider, API key, and outcome (`ok` / `canceled` / `no_response` / `error`, partitioning every recorded call). Usage is grouped by hour, day, or week, derived from the window span.
 
 ## Docker / GHCR
 

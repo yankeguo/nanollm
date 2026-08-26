@@ -28,8 +28,8 @@
   <div class="container-fluid column-gap-3">
     <span class="navbar-brand mb-0 h1"><i class="bi bi-lightning-charge-fill"></i> nanollm</span>
     <ul class="navbar-nav flex-row gap-3 me-auto">
-      <li class="nav-item"><a class="nav-link{{if eq .Nav "usage"}} active{{end}}" href="{{or .UsageURL "/admin"}}"><i class="bi bi-activity"></i> Usage</a></li>
-      <li class="nav-item"><a class="nav-link{{if eq .Nav "calls"}} active{{end}}" href="{{or .CallsURL "/admin/calls"}}"><i class="bi bi-list-ul"></i> Calls</a></li>
+      <li class="nav-item"><a class="nav-link{{if eq .Nav "usage"}} active{{end}}" href="{{or .UsageURL "/usage"}}"><i class="bi bi-activity"></i> Usage</a></li>
+      <li class="nav-item"><a class="nav-link{{if eq .Nav "calls"}} active{{end}}" href="{{or .CallsURL "/calls"}}"><i class="bi bi-list-ul"></i> Calls</a></li>
     </ul>
     {{if .FilterAction}}
     <form class="rangefilter d-flex flex-wrap align-items-center gap-2" method="get" action="{{.FilterAction}}">
@@ -51,7 +51,7 @@
       </span>
     </form>
     {{end}}
-    <form method="post" action="/admin/logout"><button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-box-arrow-right"></i> Sign out</button></form>
+    <form method="post" action="/logout"><button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-box-arrow-right"></i> Sign out</button></form>
   </div>
 </header>
 {{end}}

@@ -9,7 +9,7 @@
 <body>
   {{template "nav" .}}
   <main class="container-xxl py-4">
-    <p><a href="{{or .CallsURL "/admin/calls"}}"><i class="bi bi-arrow-left"></i> Calls</a></p>
+    <p><a href="{{or .CallsURL "/calls"}}"><i class="bi bi-arrow-left"></i> Calls</a></p>
     <div class="card mb-4"><div class="card-body">
       <div class="d-flex align-items-center gap-3 mb-3">
         <h2 class="h5 mb-0">Call #{{.Call.ID}}</h2>
@@ -32,13 +32,13 @@
         {{range .Files}}
         <div class="col-12 col-md-6 col-lg-4">
           {{if eq .Kind "image"}}
-          <img src="/admin/files/{{.SHA256}}" alt="{{.MimeType}}" class="img-fluid rounded border" loading="lazy">
+          <img src="/files/{{.SHA256}}" alt="{{.MimeType}}" class="img-fluid rounded border" loading="lazy">
           {{else if eq .Kind "video"}}
-          <video src="/admin/files/{{.SHA256}}" class="w-100 rounded border" controls preload="metadata"></video>
+          <video src="/files/{{.SHA256}}" class="w-100 rounded border" controls preload="metadata"></video>
           {{else if eq .Kind "audio"}}
-          <audio src="/admin/files/{{.SHA256}}" class="w-100" controls preload="metadata"></audio>
+          <audio src="/files/{{.SHA256}}" class="w-100" controls preload="metadata"></audio>
           {{else}}
-          <a href="/admin/files/{{.SHA256}}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-download"></i> {{.MimeType}} ({{formatNum .Size}} bytes)</a>
+          <a href="/files/{{.SHA256}}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-download"></i> {{.MimeType}} ({{formatNum .Size}} bytes)</a>
           {{end}}
           <div class="small text-secondary text-break mt-1"><code>{{printf "<file:%s>" .SHA256}}</code></div>
         </div>

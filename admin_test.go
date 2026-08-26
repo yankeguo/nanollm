@@ -65,13 +65,13 @@ func TestAdminCookieHMAC(t *testing.T) {
 func TestAdminLoginAndGuard(t *testing.T) {
 	h := NewServer(adminTestCfg(), nil, nil).Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	req := httptest.NewRequest(http.MethodGet, "/usage", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusFound, rec.Code)
-	require.Equal(t, "/admin/login", rec.Header().Get("Location"))
+	require.Equal(t, "/login", rec.Header().Get("Location"))
 
-	req = httptest.NewRequest(http.MethodPost, "/admin/login", strings.NewReader("username=admin&password=wrong"))
+	req = httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=admin&password=wrong"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -80,12 +80,12 @@ func TestAdminLoginAndGuard(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "invalid username or password")
 	require.Empty(t, rec.Result().Cookies())
 
-	req = httptest.NewRequest(http.MethodPost, "/admin/login", strings.NewReader("username=admin&password=secret"))
+	req = httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=admin&password=secret"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusFound, rec.Code)
-	require.Equal(t, "/admin", rec.Header().Get("Location"))
+	require.Equal(t, "/usage", rec.Header().Get("Location"))
 	var cookie *http.Cookie
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == adminCookieName {
@@ -94,31 +94,31 @@ func TestAdminLoginAndGuard(t *testing.T) {
 	}
 	require.NotNil(t, cookie)
 	require.True(t, cookie.HttpOnly)
-	require.Equal(t, "/admin", cookie.Path)
+	require.Equal(t, "/", cookie.Path)
 	require.False(t, cookie.Secure)
 
-	req = httptest.NewRequest(http.MethodGet, "/admin", nil)
+	req = httptest.NewRequest(http.MethodGet, "/usage", nil)
 	req.AddCookie(cookie)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 
-	req = httptest.NewRequest(http.MethodGet, "/admin", nil)
+	req = httptest.NewRequest(http.MethodGet, "/usage", nil)
 	req.AddCookie(&http.Cookie{Name: adminCookieName, Value: cookie.Value + "tamper"})
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusFound, rec.Code)
 
-	req = httptest.NewRequest(http.MethodPost, "/admin/logout", nil)
+	req = httptest.NewRequest(http.MethodPost, "/logout", nil)
 	req.AddCookie(cookie)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusFound, rec.Code)
-	require.Equal(t, "/admin/login", rec.Header().Get("Location"))
+	require.Equal(t, "/login", rec.Header().Get("Location"))
 }
 
 func TestCookieSecureFromForwardedProto(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/admin/login", nil)
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
 	require.False(t, cookieSecure(req))
 	req.Header.Set("X-Forwarded-Proto", "https")
 	require.True(t, cookieSecure(req))
@@ -133,7 +133,7 @@ func TestPrettyJSON(t *testing.T) {
 
 func TestAdminLoginPage(t *testing.T) {
 	h := NewServer(adminTestCfg(), nil, nil).Handler()
-	req := httptest.NewRequest(http.MethodGet, "/admin/login", nil)
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -142,11 +142,11 @@ func TestAdminLoginPage(t *testing.T) {
 
 func TestAdminLogoutClearsCookieWithoutSession(t *testing.T) {
 	h := NewServer(adminTestCfg(), nil, nil).Handler()
-	req := httptest.NewRequest(http.MethodPost, "/admin/logout", nil)
+	req := httptest.NewRequest(http.MethodPost, "/logout", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusFound, rec.Code)
-	require.Equal(t, "/admin/login", rec.Header().Get("Location"))
+	require.Equal(t, "/login", rec.Header().Get("Location"))
 	var cookie *http.Cookie
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == adminCookieName {
@@ -159,7 +159,7 @@ func TestAdminLogoutClearsCookieWithoutSession(t *testing.T) {
 
 func TestAdminSecurityHeaders(t *testing.T) {
 	h := NewServer(adminTestCfg(), nil, nil).Handler()
-	req := httptest.NewRequest(http.MethodGet, "/admin/login", nil)
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
@@ -171,13 +171,13 @@ func TestAdminSecurityHeaders(t *testing.T) {
 	require.Contains(t, rec.Header().Get("Content-Security-Policy"), "media-src 'self'")
 }
 
-func TestAdminTrailingSlashRedirect(t *testing.T) {
+func TestAdminRootRedirect(t *testing.T) {
 	h := NewServer(adminTestCfg(), nil, nil).Handler()
-	req := httptest.NewRequest(http.MethodGet, "/admin/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusFound, rec.Code)
-	require.Equal(t, "/admin", rec.Header().Get("Location"))
+	require.Equal(t, "/usage", rec.Header().Get("Location"))
 }
 
 func TestCallErrorClass(t *testing.T) {
@@ -360,8 +360,8 @@ func TestAdminFilterRoundTrip(t *testing.T) {
 func TestAdminFilterCrossLinks(t *testing.T) {
 	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
 	f := parseAdminFilter(url.Values{"range": []string{"30d"}, "model": []string{"fast"}, "page": []string{"3"}}, now, "usage")
-	usage := f.path("usage", "/admin")
-	calls := f.path("calls", "/admin/calls")
+	usage := f.path("usage", "/usage")
+	calls := f.path("calls", "/calls")
 	require.Contains(t, usage, "range=30d")
 	require.Contains(t, usage, "model=fast")
 	require.NotContains(t, usage, "page=")
@@ -372,12 +372,12 @@ func TestAdminFilterCrossLinks(t *testing.T) {
 
 	fromCalls := parseAdminFilter(url.Values{"model": []string{"fast"}}, now, "calls")
 	require.Equal(t, "all", fromCalls.Range)
-	usageFromCalls := fromCalls.forUsage().path("usage", "/admin")
-	require.Equal(t, "/admin?model=fast", usageFromCalls)
+	usageFromCalls := fromCalls.forUsage().path("usage", "/usage")
+	require.Equal(t, "/usage?model=fast", usageFromCalls)
 	require.NotContains(t, usageFromCalls, "range=")
 
-	require.Equal(t, "/admin/calls?model=fast", pagerURL(fromCalls, 1))
-	require.Equal(t, "/admin/calls?model=fast&page=2", pagerURL(fromCalls, 2))
+	require.Equal(t, "/calls?model=fast", pagerURL(fromCalls, 1))
+	require.Equal(t, "/calls?model=fast&page=2", pagerURL(fromCalls, 2))
 }
 
 func TestOutcomeSQL(t *testing.T) {
@@ -484,15 +484,15 @@ func TestAdminTemplatesRender(t *testing.T) {
 	f := parseAdminFilter(url.Values{"model": []string{"fast"}}, now, "usage")
 	data := adminNavData("usage", f)
 	data["Kind"] = "usage"
-	data["FilterAction"] = "/admin"
+	data["FilterAction"] = "/usage"
 	data["Totals"] = usageTotals{Calls: 1, Input: 2, Output: 3}
 	data["ChartJSON"] = template.JS(`{"labels":["2026-08-20"],"calls":[1],"input":[2],"output":[3],"cache":[0],"uncached":[2]}`)
 	mergeFilterView(data, f, "usage", filterOptions{Models: []string{"fast"}})
 	var buf bytes.Buffer
 	require.NoError(t, adminTmpl.ExecuteTemplate(&buf, "usage.html", data))
 	body := buf.String()
-	require.Contains(t, body, `href="/admin?model=fast"`)
-	require.Contains(t, body, `/admin/calls?`)
+	require.Contains(t, body, `href="/usage?model=fast"`)
+	require.Contains(t, body, `/calls?`)
 	require.Contains(t, body, "model=fast")
 	require.Contains(t, body, "border-primary")
 	require.Contains(t, body, "Tokens by period")
@@ -500,7 +500,7 @@ func TestAdminTemplatesRender(t *testing.T) {
 	cf := parseAdminFilter(url.Values{"model": []string{"fast"}}, now, "calls")
 	cdata := adminNavData("calls", cf)
 	cdata["Kind"] = "calls"
-	cdata["FilterAction"] = "/admin/calls"
+	cdata["FilterAction"] = "/calls"
 	cdata["Rows"] = []callListRow{{ID: 7, Model: "fast", HasDetail: true}}
 	cdata["Total"] = int64(250)
 	cdata["Page"] = 2
@@ -517,20 +517,20 @@ func TestAdminTemplatesRender(t *testing.T) {
 	cbody := buf.String()
 	require.Contains(t, cbody, `name="model"`)
 	require.Contains(t, cbody, "all")
-	require.Contains(t, cbody, `/admin/calls/7?model=fast&amp;page=2`)
+	require.Contains(t, cbody, `/calls/7?model=fast&amp;page=2`)
 	require.Equal(t, 2, strings.Count(cbody, `aria-label="Newer"`))
 	require.Equal(t, 2, strings.Count(cbody, `aria-label="Older"`))
 	require.Equal(t, 2, strings.Count(cbody, `aria-current="page"`))
 	require.Equal(t, 2, strings.Count(cbody, "Page 2 of 5"))
 	require.Equal(t, 2, strings.Count(cbody, "justify-content-center"))
-	require.Contains(t, cbody, `/admin/calls?model=fast&amp;page=3`)
+	require.Contains(t, cbody, `/calls?model=fast&amp;page=3`)
 
 	sha := strings.Repeat("a", 64)
 	ddata := adminNavData("calls", cf)
 	ddata["Call"] = LLMCall{ID: 7, Model: "fast", HTTPStatus: 200}
 	ddata["RequestPretty"] = `{"url":"<file:` + sha + `>"}`
 	ddata["ResponsePretty"] = ""
-	ddata["CallsURL"] = "/admin/calls"
+	ddata["CallsURL"] = "/calls"
 	ddata["Files"] = []callFileView{{
 		SHA256:   sha,
 		MimeType: "image/png",
@@ -540,7 +540,7 @@ func TestAdminTemplatesRender(t *testing.T) {
 	buf.Reset()
 	require.NoError(t, adminTmpl.ExecuteTemplate(&buf, "detail.html", ddata))
 	dbody := buf.String()
-	require.Contains(t, dbody, `<img src="/admin/files/`+sha+`"`)
+	require.Contains(t, dbody, `<img src="/files/`+sha+`"`)
 	require.Contains(t, dbody, "&lt;file:"+sha+"&gt;")
 }
 
@@ -579,6 +579,6 @@ func TestPagerItems(t *testing.T) {
 	items := pagerItems(f, 2, 3)
 	require.Len(t, items, 3)
 	require.True(t, items[1].Active)
-	require.Equal(t, template.URL("/admin/calls?model=fast"), items[0].URL)
-	require.Equal(t, template.URL("/admin/calls?model=fast&page=3"), items[2].URL)
+	require.Equal(t, template.URL("/calls?model=fast"), items[0].URL)
+	require.Equal(t, template.URL("/calls?model=fast&page=3"), items[2].URL)
 }

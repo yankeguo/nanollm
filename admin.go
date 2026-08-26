@@ -80,7 +80,7 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		if s.adminCookieValid(r) {
-			http.Redirect(w, r, "/admin", http.StatusFound)
+			http.Redirect(w, r, "/usage", http.StatusFound)
 			return
 		}
 		s.renderAdmin(w, "login.html", map[string]any{"Error": ""})
@@ -99,7 +99,7 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.setAdminCookie(w, r)
-		http.Redirect(w, r, "/admin", http.StatusFound)
+		http.Redirect(w, r, "/usage", http.StatusFound)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -107,7 +107,7 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
 	s.clearAdminCookie(w, r)
-	http.Redirect(w, r, "/admin/login", http.StatusFound)
+	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
 func (s *Server) handleAdminUsage(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +161,7 @@ func (s *Server) handleAdminUsage(w http.ResponseWriter, r *http.Request) {
 	data := adminNavData("usage", f)
 	data["Filter"] = f
 	data["Kind"] = "usage"
-	data["FilterAction"] = "/admin"
+	data["FilterAction"] = "/usage"
 	data["Totals"] = totals
 	data["ChartJSON"] = template.JS(raw)
 	mergeFilterView(data, f, "usage", opts)
@@ -202,7 +202,7 @@ func (s *Server) handleAdminCalls(w http.ResponseWriter, r *http.Request) {
 	data := adminNavData("calls", f)
 	data["Filter"] = f
 	data["Kind"] = "calls"
-	data["FilterAction"] = "/admin/calls"
+	data["FilterAction"] = "/calls"
 	data["Rows"] = rows
 	data["Total"] = total
 	data["Page"] = page
@@ -301,8 +301,8 @@ func adminNavData(nav string, f adminFilter) map[string]any {
 	return map[string]any{
 		"Nav":      nav,
 		"Filter":   f,
-		"UsageURL": f.forUsage().path("usage", "/admin"),
-		"CallsURL": f.path("calls", "/admin/calls"),
+		"UsageURL": f.forUsage().path("usage", "/usage"),
+		"CallsURL": f.path("calls", "/calls"),
 	}
 }
 

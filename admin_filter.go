@@ -298,9 +298,9 @@ func pagerURL(f adminFilter, page int) string {
 	}
 	enc := v.Encode()
 	if enc == "" {
-		return "/admin/calls"
+		return "/calls"
 	}
-	return "/admin/calls?" + enc
+	return "/calls?" + enc
 }
 
 // pagerItem is one slot of the calls pager: either a numbered page link or an
