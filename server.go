@@ -138,7 +138,7 @@ func (s *Server) handleModels(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) handleModel(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("model")
-	if len(s.Config.providers(name)) == 0 {
+	if s.Config.model(name) == nil {
 		writeAPIError(w, http.StatusNotFound, "invalid_request_error", "the model `"+name+"` does not exist")
 		return
 	}

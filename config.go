@@ -131,13 +131,6 @@ type Provider struct {
 	BailianMultimodalEmbedding *ProviderEndpoint `yaml:"bailian_multimodal_embedding"`
 }
 
-func normalizeProtocol(protocol string) string {
-	if protocol == "" {
-		return protocolOpenAICompletions
-	}
-	return protocol
-}
-
 func isKnownProtocol(protocol string) bool {
 	switch protocol {
 	case protocolOpenAICompletions, protocolOpenAIResponses, protocolOpenAIEmbeddings, protocolAnthropicMessages, protocolBailianMultimodalEmbedding:
@@ -148,7 +141,7 @@ func isKnownProtocol(protocol string) bool {
 }
 
 func (p Provider) endpoint(protocol string) *ProviderEndpoint {
-	switch normalizeProtocol(protocol) {
+	switch protocol {
 	case protocolOpenAICompletions:
 		return p.OpenAICompletions
 	case protocolOpenAIResponses:
@@ -161,26 +154,6 @@ func (p Provider) endpoint(protocol string) *ProviderEndpoint {
 		return p.BailianMultimodalEmbedding
 	}
 	return nil
-}
-
-func (p Provider) protocols() []string {
-	out := make([]string, 0, 5)
-	if p.OpenAICompletions != nil {
-		out = append(out, protocolOpenAICompletions)
-	}
-	if p.OpenAIResponses != nil {
-		out = append(out, protocolOpenAIResponses)
-	}
-	if p.OpenAIEmbeddings != nil {
-		out = append(out, protocolOpenAIEmbeddings)
-	}
-	if p.AnthropicMessages != nil {
-		out = append(out, protocolAnthropicMessages)
-	}
-	if p.BailianMultimodalEmbedding != nil {
-		out = append(out, protocolBailianMultimodalEmbedding)
-	}
-	return out
 }
 
 func (p Provider) bind(ref ProviderRef) Provider {
@@ -445,7 +418,6 @@ func (c *Config) providers(model string) []Provider {
 
 func (c *Config) providersFor(model, protocol string) []Provider {
 	all := c.providers(model)
-	protocol = normalizeProtocol(protocol)
 	out := make([]Provider, 0, len(all))
 	for _, p := range all {
 		if p.endpoint(protocol) != nil {

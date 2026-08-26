@@ -44,7 +44,29 @@ func cfgWith(model string, providers ...Provider) *Config {
 }
 
 func providerRef(p Provider) ProviderRef {
-	return ProviderRef{Name: p.Name, Model: p.Model, Protocols: p.protocols()}
+	return ProviderRef{Name: p.Name, Model: p.Model, Protocols: providerProtocols(p)}
+}
+
+// providerProtocols lists the protocol blocks set on a vendor, so test
+// configs can associate every block without repeating them.
+func providerProtocols(p Provider) []string {
+	out := make([]string, 0, 5)
+	if p.OpenAICompletions != nil {
+		out = append(out, protocolOpenAICompletions)
+	}
+	if p.OpenAIResponses != nil {
+		out = append(out, protocolOpenAIResponses)
+	}
+	if p.OpenAIEmbeddings != nil {
+		out = append(out, protocolOpenAIEmbeddings)
+	}
+	if p.AnthropicMessages != nil {
+		out = append(out, protocolAnthropicMessages)
+	}
+	if p.BailianMultimodalEmbedding != nil {
+		out = append(out, protocolBailianMultimodalEmbedding)
+	}
+	return out
 }
 
 func ep(url string) *ProviderEndpoint {

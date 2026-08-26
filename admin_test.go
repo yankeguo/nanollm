@@ -39,16 +39,15 @@ func TestParseAdminWindow(t *testing.T) {
 	for _, tc := range tests {
 		q, err := url.ParseQuery(tc.q)
 		require.NoError(t, err)
-		win := parseAdminWindow(q, now)
-		require.Equal(t, tc.rng, win.Range, tc.q)
-		require.Equal(t, tc.bucket, win.Bucket, tc.q)
-		require.Equal(t, now, win.To)
-		require.Equal(t, now.Add(-tc.dur), win.From)
+		f := parseAdminFilter(q, now, "usage")
+		require.Equal(t, tc.rng, f.Range, tc.q)
+		require.Equal(t, tc.bucket, f.Bucket, tc.q)
+		require.Equal(t, now, f.To)
+		require.Equal(t, now.Add(-tc.dur), f.From)
 	}
 	require.Equal(t, "%Y-%m-%d %H:00", bucketSQLFormat("hour"))
 	require.Equal(t, "%Y-%m-%d", bucketSQLFormat("day"))
 	require.Equal(t, "%x-W%v", bucketSQLFormat("week"))
-	require.Equal(t, "%Y-%m", bucketSQLFormat("month"))
 }
 
 func TestAdminCookieHMAC(t *testing.T) {
@@ -461,14 +460,6 @@ func TestFillUsageBuckets(t *testing.T) {
 	}
 	got = fillUsageBuckets(weekWin, nil)
 	require.Equal(t, []string{"2026-W34", "2026-W35"}, bucketNames(got))
-
-	monthWin := adminWindow{
-		Bucket: "month",
-		From:   time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC),
-		To:     time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
-	}
-	got = fillUsageBuckets(monthWin, nil)
-	require.Equal(t, []string{"2026-07", "2026-08"}, bucketNames(got))
 }
 
 func bucketNames(rows []usageBucket) []string {

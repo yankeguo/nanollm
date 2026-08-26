@@ -42,11 +42,6 @@ type filterOptions struct {
 	Keys      []string
 }
 
-func parseAdminWindow(q url.Values, now time.Time) adminWindow {
-	f := parseAdminFilter(q, now, "usage")
-	return adminWindow{Range: f.Range, Bucket: f.Bucket, From: f.From, To: f.To}
-}
-
 func parseAdminFilter(q url.Values, now time.Time, kind string) adminFilter {
 	now = now.UTC()
 	f := adminFilter{

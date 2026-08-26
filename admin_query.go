@@ -158,8 +158,6 @@ func bucketSQLFormat(bucket string) string {
 		return "%Y-%m-%d %H:00"
 	case "week":
 		return "%x-W%v"
-	case "month":
-		return "%Y-%m"
 	default:
 		return "%Y-%m-%d"
 	}
@@ -178,8 +176,6 @@ func truncateToBucket(t time.Time, bucket string) time.Time {
 		}
 		day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 		return day.AddDate(0, 0, -off)
-	case "month":
-		return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
 	default:
 		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 	}
@@ -191,8 +187,6 @@ func nextBucket(t time.Time, bucket string) time.Time {
 		return t.Add(time.Hour)
 	case "week":
 		return t.AddDate(0, 0, 7)
-	case "month":
-		return t.AddDate(0, 1, 0)
 	default:
 		return t.AddDate(0, 0, 1)
 	}
@@ -206,8 +200,6 @@ func bucketLabel(t time.Time, bucket string) string {
 	case "week":
 		y, w := t.ISOWeek()
 		return fmt.Sprintf("%04d-W%02d", y, w)
-	case "month":
-		return t.Format("2006-01")
 	default:
 		return t.Format("2006-01-02")
 	}

@@ -44,16 +44,12 @@ type Proxy struct {
 	InjectStreamUsage bool
 }
 
-func (p *Proxy) protocol() string {
-	return normalizeProtocol(p.Protocol)
-}
-
 func (p *Proxy) writeError(w http.ResponseWriter, status int, typ, message string) {
-	writeProtocolError(w, p.protocol(), status, typ, message)
+	writeProtocolError(w, p.Protocol, status, typ, message)
 }
 
 func (p *Proxy) clientErrorType(notFound bool) string {
-	if p.protocol() != protocolAnthropicMessages {
+	if p.Protocol != protocolAnthropicMessages {
 		return "invalid_request_error"
 	}
 	if notFound {
@@ -63,7 +59,7 @@ func (p *Proxy) clientErrorType(notFound bool) string {
 }
 
 func (p *Proxy) upstreamErrorType() string {
-	if p.protocol() == protocolAnthropicMessages {
+	if p.Protocol == protocolAnthropicMessages {
 		return "api_error"
 	}
 	return "upstream_error"
@@ -126,9 +122,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.writeError(w, http.StatusNotFound, p.clientErrorType(true), "the model `"+meta.Model+"` does not exist")
 		return
 	}
-	providers := p.Config.providersFor(meta.Model, p.protocol())
+	providers := p.Config.providersFor(meta.Model, p.Protocol)
 	if len(providers) == 0 {
-		p.writeError(w, http.StatusNotFound, p.clientErrorType(true), "the model `"+meta.Model+"` has no "+p.protocol()+" providers")
+		p.writeError(w, http.StatusNotFound, p.clientErrorType(true), "the model `"+meta.Model+"` has no "+p.Protocol+" providers")
 		return
 	}
 
@@ -156,9 +152,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMeta, provider Provider) error {
-	upstreamURL, providerModel, headers, ok := provider.resolve(p.protocol())
+	upstreamURL, providerModel, headers, ok := provider.resolve(p.Protocol)
 	if !ok {
-		err := fmt.Errorf("provider %q has no %s endpoint", provider.Name, p.protocol())
+		err := fmt.Errorf("provider %q has no %s endpoint", provider.Name, p.Protocol)
 		rec := CallRecord{
 			Model:       meta.Model,
 			Provider:    provider.Name,

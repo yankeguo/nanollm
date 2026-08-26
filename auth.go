@@ -71,12 +71,11 @@ func (s *Server) requireAPIKey(next http.Handler, protocol string) http.Handler 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := s.Config.lookupAPIKey(extractAPIKey(r))
 		if key == nil {
-			if protocol != protocolAnthropicMessages {
-				w.Header().Set("WWW-Authenticate", `Bearer realm="nanollm"`)
-			}
 			typ := "invalid_request_error"
 			if protocol == protocolAnthropicMessages {
 				typ = "authentication_error"
+			} else {
+				w.Header().Set("WWW-Authenticate", `Bearer realm="nanollm"`)
 			}
 			writeProtocolError(w, protocol, http.StatusUnauthorized, typ, "invalid api key")
 			return
