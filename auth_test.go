@@ -20,7 +20,7 @@ func TestHealthzDoesNotRequireAPIKey(t *testing.T) {
 
 func TestAPIKeyRequired(t *testing.T) {
 	h := testProxy(t, cfgFast(Provider{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}))
-	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api.openai.com/v1/models", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
@@ -29,7 +29,7 @@ func TestAPIKeyRequired(t *testing.T) {
 
 func TestAPIKeyRejectsUnknown(t *testing.T) {
 	h := testProxy(t, cfgFast(Provider{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}))
-	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api.openai.com/v1/models", nil)
 	req.Header.Set("Authorization", "Bearer sk-wrong")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -39,25 +39,25 @@ func TestAPIKeyRejectsUnknown(t *testing.T) {
 func TestAPIKeyAcceptsBearerAndXApiKey(t *testing.T) {
 	h := testProxy(t, cfgFast(Provider{Name: "x", Model: "x", OpenAICompletions: ep("http://example.invalid")}))
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api.openai.com/v1/models", nil)
 	req.Header.Set("Authorization", "Bearer "+testAPIKey)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
 
-	req = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api.openai.com/v1/models", nil)
 	req.Header.Set("Authorization", "bearer "+testAPIKey)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
 
-	req = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api.openai.com/v1/models", nil)
 	req.Header.Set("X-Api-Key", testAPIKey)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
 
-	req = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api.openai.com/v1/models", nil)
 	req.Header.Set("Api-Key", testAPIKey)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -90,7 +90,7 @@ func TestLookupAPIKeyScansAllKeys(t *testing.T) {
 
 func TestAnthropicAPIKeyUnauthorized(t *testing.T) {
 	h := testProxy(t, cfgFast(Provider{Name: "x", Model: "x", AnthropicMessages: ep("http://example.invalid")}))
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", jsonBody(map[string]any{"model": "x"}))
+	req := httptest.NewRequest(http.MethodPost, "/api.anthropic.com/v1/messages", jsonBody(map[string]any{"model": "x"}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
@@ -108,7 +108,7 @@ func TestAnthropicAPIKeyAcceptsXApiKey(t *testing.T) {
 	cfg := cfgFast(Provider{Name: "x", Model: "x", AnthropicMessages: ep(up.URL)})
 	cfg.Models[0].Name = "claude"
 	h := NewServer(cfg, nil, nil).Handler()
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", jsonBody(map[string]any{"model": "claude"}))
+	req := httptest.NewRequest(http.MethodPost, "/api.anthropic.com/v1/messages", jsonBody(map[string]any{"model": "claude"}))
 	req.Header.Set("X-Api-Key", testAPIKey)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

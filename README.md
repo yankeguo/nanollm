@@ -9,7 +9,7 @@ Providers for a model are tried **in order**, but only those whose `protocols` l
 
 ## Features
 
-- Standard `net/http` server: OpenAI `/v1/chat/completions` (plus completions, embeddings), OpenAI `/v1/responses`, and Anthropic `/v1/messages`
+- Standard `net/http` server: OpenAI chat/completions, embeddings, and Responses under `/api.openai.com/...`, Anthropic Messages under `/api.anthropic.com/...` (vendor host as the first path segment)
 - YAML config: top-level named vendors, named models that associate vendors plus a `protocols` subset, auth merged into `headers`
 - No body conversion between protocols; each inbound API only uses matching providers
 - Incoming API keys (`api_keys[].{name,value}`)
@@ -35,11 +35,13 @@ docker run --rm -p 8080:8080 \
   ghcr.io/yankeguo/nanollm:latest
 ```
 
-Point OpenAI clients at `http://127.0.0.1:8080/v1` with `Authorization: Bearer <api_keys.value>` and `"model": "<models[].name>"`. Chat Completions uses the vendor `openai_completions` block; the Responses API (`POST /v1/responses`) uses the `openai_responses` block; embeddings (`POST /v1/embeddings`) uses the `openai_embeddings` block.
+All LLM routes mirror the vendor's official URL shape: the vendor host is the first path segment, so clients only swap the endpoint host for this proxy. The host prefix also isolates vendor namespaces (OpenAI and Anthropic both have `/v1/files`, for example). No unprefixed legacy routes are served.
 
-Point Anthropic clients at `http://127.0.0.1:8080` with `x-api-key: <api_keys.value>` and the same `"model"` field. The model must list `anthropic_messages` on at least one associated provider.
+Point OpenAI clients at `http://127.0.0.1:8080/api.openai.com/v1` with `Authorization: Bearer <api_keys.value>` and `"model": "<models[].name>"`. Chat Completions uses the vendor `openai_completions` block; the Responses API (`POST /api.openai.com/v1/responses`) uses the `openai_responses` block; embeddings (`POST /api.openai.com/v1/embeddings`) uses the `openai_embeddings` block.
 
-Native vendor APIs mirror the official URL shape with the host as the first path segment. For the Aliyun Bailian multimodal embedding API, POST to `http://127.0.0.1:8080/dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding` with `Authorization: Bearer <api_keys.value>`; the model must list `bailian_multimodal_embedding` on at least one associated provider.
+Point Anthropic clients at `http://127.0.0.1:8080/api.anthropic.com` with `x-api-key: <api_keys.value>` and the same `"model"` field. The model must list `anthropic_messages` on at least one associated provider.
+
+For the Aliyun Bailian multimodal embedding API, POST to `http://127.0.0.1:8080/dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding` with `Authorization: Bearer <api_keys.value>`; the model must list `bailian_multimodal_embedding` on at least one associated provider.
 
 Open `http://127.0.0.1:8080/admin` to review token usage and call logs.
 
@@ -125,7 +127,7 @@ models:
 | `models[].providers` | yes | Ordered vendor associations (failover order) |
 | `models[].providers[].name` | yes | References a top-level `providers[].name` (unique within the model) |
 | `models[].providers[].model` | no | Upstream model for this association; overrides `providers[].model`. If both are empty, the client model is kept |
-| `models[].providers[].protocols` | yes | Non-empty subset of the vendor's protocol blocks. Chat/completions only use associations that list `openai_completions`; `POST /v1/embeddings` only uses `openai_embeddings`; `POST /v1/responses` only uses `openai_responses`; `POST /v1/messages` only uses `anthropic_messages`; `POST /dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding` only uses `bailian_multimodal_embedding` |
+| `models[].providers[].protocols` | yes | Non-empty subset of the vendor's protocol blocks. Chat/completions only use associations that list `openai_completions`; `POST /api.openai.com/v1/embeddings` only uses `openai_embeddings`; `POST /api.openai.com/v1/responses` only uses `openai_responses`; `POST /api.anthropic.com/v1/messages` only uses `anthropic_messages`; `POST /dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding` only uses `bailian_multimodal_embedding` |
 
 Rules:
 
@@ -151,7 +153,7 @@ LLM API routes except `GET /healthz` require a configured key:
 - `X-Api-Key: <value>`
 - `Api-Key: <value>`
 
-Unknown or missing keys return `401`. OpenAI routes use `{"error":{"type":"invalid_request_error","message":"invalid api key"}}`. Anthropic `POST /v1/messages` uses `{"type":"error","error":{"type":"authentication_error","message":"invalid api key"}}`. The Bailian multimodal embedding route uses the DashScope shape `{"code":"...","message":"..."}`.
+Unknown or missing keys return `401`. OpenAI routes use `{"error":{"type":"invalid_request_error","message":"invalid api key"}}`. Anthropic `POST /api.anthropic.com/v1/messages` uses `{"type":"error","error":{"type":"authentication_error","message":"invalid api key"}}`. The Bailian multimodal embedding route uses the DashScope shape `{"code":"...","message":"..."}`.
 
 The admin UI (`/admin`) uses `admin.username` / `admin.password` and an HttpOnly cookie (`nanollm_admin`, 12h, SameSite=Lax). `Secure` is set when the request is TLS or `X-Forwarded-Proto: https`. `/admin/login` is unauthenticated; failed logins are delayed by 1s to damp brute force.
 
@@ -180,13 +182,13 @@ This keeps prefix / prompt cache on the first healthy provider.
 | Method | Path | Auth | Notes |
 |---|---|---|---|
 | `GET` | `/healthz` | no | `OK` |
-| `GET` | `/v1/models` | yes | Lists configured `models[].name` |
-| `GET` | `/v1/models/{model}` | yes | Single configured model (ids may contain `/`) |
-| `POST` | `/v1/chat/completions` | yes | Also `/chat/completions` |
-| `POST` | `/v1/completions` | yes | Also `/completions` |
-| `POST` | `/v1/embeddings` | yes | Also `/embeddings`. Only associations that list `openai_embeddings` |
-| `POST` | `/v1/responses` | yes | Also `/responses`. Only associations that list `openai_responses` |
-| `POST` | `/v1/messages` | yes | Anthropic Messages; only associations that list `anthropic_messages` |
+| `GET` | `/api.openai.com/v1/models` | yes | Lists configured `models[].name` |
+| `GET` | `/api.openai.com/v1/models/{model}` | yes | Single configured model (ids may contain `/`) |
+| `POST` | `/api.openai.com/v1/chat/completions` | yes | Only associations that list `openai_completions` |
+| `POST` | `/api.openai.com/v1/completions` | yes | Legacy Completions; only associations that list `openai_completions` |
+| `POST` | `/api.openai.com/v1/embeddings` | yes | Only associations that list `openai_embeddings` |
+| `POST` | `/api.openai.com/v1/responses` | yes | Only associations that list `openai_responses` |
+| `POST` | `/api.anthropic.com/v1/messages` | yes | Anthropic Messages; only associations that list `anthropic_messages` |
 | `POST` | `/dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding` | yes | Aliyun Bailian multimodal embedding (official URL shape, host as first path segment); only associations that list `bailian_multimodal_embedding` |
 | `GET` | `/admin` | cookie | Usage tables and Chart.js graphs |
 | `GET` | `/admin/calls` | cookie | Paginated call log |
@@ -195,7 +197,7 @@ This keeps prefix / prompt cache on the first healthy provider.
 | `GET`/`POST` | `/admin/login` | no | Admin sign-in |
 | `POST` | `/admin/logout` | cookie | Clear admin cookie |
 
-The JSON body `model` field selects `models[].name`. nanollm rewrites only the top-level `model` (and, for OpenAI Chat Completions and Completions streaming, injects `stream_options.include_usage` when missing). Responses `stream_options` only documents `include_obfuscation`; Anthropic has no `stream_options`; embeddings are not given that field. Other JSON fields are copied as raw values and are not decoded into a typed tree. Each inbound path only uses associations that list the matching protocol: chat/completions → `openai_completions`, `/v1/embeddings` → `openai_embeddings`, `/v1/responses` → `openai_responses`, `/v1/messages` → `anthropic_messages`, the DashScope multimodal embedding path → `bailian_multimodal_embedding`.
+The JSON body `model` field selects `models[].name`. nanollm rewrites only the top-level `model` (and, for OpenAI Chat Completions and Completions streaming, injects `stream_options.include_usage` when missing). Responses `stream_options` only documents `include_obfuscation`; Anthropic has no `stream_options`; embeddings are not given that field. Other JSON fields are copied as raw values and are not decoded into a typed tree. Each inbound path only uses associations that list the matching protocol: chat/completions → `openai_completions`, `/api.openai.com/v1/embeddings` → `openai_embeddings`, `/api.openai.com/v1/responses` → `openai_responses`, `/api.anthropic.com/v1/messages` → `anthropic_messages`, the DashScope multimodal embedding path → `bailian_multimodal_embedding`.
 
 Streaming (`"stream": true` with `Content-Type: text/event-stream`) is copied through as SSE. JSON error bodies on a `stream: true` request stay JSON (no SSE comments). While the upstream SSE body is silent (long thinking / a long tool-using turn), nanollm writes SSE comments (`:` lines) so the client and any idle proxy do not time out; `Content-Length` is dropped on that path so the extra comments cannot desync HTTP/1.1 clients. Usage is parsed from a copy of the upstream body (including Responses `response.usage` on `response.completed`, whose payload can be larger than a single thinking delta, embeddings `prompt_tokens` / `total_tokens`, and DashScope multimodal embedding `input_tokens` + top-level `image_tokens`); keepalive comments are not stored in the call-log blob. Consecutive same-type text/argument deltas are coalesced in that blob only (Chat Completions `delta.content` / tool-call `arguments` / legacy `function_call.arguments`, Completions `choices[].text`, Anthropic `content_block_delta`, Responses `*.delta` strings); the client still receives the raw stream. Anthropic and Responses bodies are not rewritten beyond `model`.
 
