@@ -1,0 +1,79 @@
+{{define "head"}}
+<link href="{{cssAsset "main"}}" rel="stylesheet">
+{{end}}
+
+{{define "nav"}}
+<header class="border-b border-zinc-800 bg-zinc-950/80">
+  <div class="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
+    <span class="flex items-center gap-2 text-lg font-semibold tracking-tight text-white">
+      <span class="icon-[lucide--zap] text-indigo-400"></span> nanollm
+    </span>
+    <nav class="me-auto flex gap-1">
+      <a class="nav-link{{if eq .Nav "usage"}} active{{end}}" href="{{or .UsageURL "/usage"}}"><span class="icon-[lucide--activity]"></span> Usage</a>
+      <a class="nav-link{{if eq .Nav "calls"}} active{{end}}" href="{{or .CallsURL "/calls"}}"><span class="icon-[lucide--list]"></span> Calls</a>
+    </nav>
+    {{if .FilterAction}}
+    <form class="rangefilter flex flex-wrap items-center gap-2" method="get" action="{{.FilterAction}}">
+      {{if .Filter.Model}}<input type="hidden" name="model" value="{{.Filter.Model}}">{{end}}
+      {{if .Filter.Provider}}<input type="hidden" name="provider" value="{{.Filter.Provider}}">{{end}}
+      {{if .Filter.APIKey}}<input type="hidden" name="api_key" value="{{.Filter.APIKey}}">{{end}}
+      {{if .Filter.Outcome}}<input type="hidden" name="outcome" value="{{.Filter.Outcome}}">{{end}}
+      <span class="icon-[lucide--calendar] text-zinc-500"></span>
+      <select name="range" class="input input-sm input-auto" title="Time range">
+        {{range .RangeOpts}}<option value="{{.Value}}"{{if .On}} selected{{end}}>{{.Label}}</option>{{end}}
+      </select>
+      <span class="custombits flex flex-wrap items-center gap-2">
+        <input type="datetime-local" name="from" class="input input-sm w-48" value="{{.FromLocal}}"{{if .FromRFC}} data-utc="{{.FromRFC}}"{{end}} title="From">
+        <input type="datetime-local" name="to" class="input input-sm w-48" value="{{.ToLocal}}"{{if .ToRFC}} data-utc="{{.ToRFC}}"{{end}} title="To">
+        <select name="tz" class="input input-sm input-auto" title="Timezone for the custom range"{{if .TZExplicit}} data-explicit="1"{{end}}>
+          <option value="{{.TZone}}" selected>{{.TZone}}</option>
+        </select>
+        <button type="submit" class="btn btn-sm btn-primary" title="Apply range"><span class="icon-[lucide--check]"></span> Apply</button>
+      </span>
+    </form>
+    {{end}}
+    <form method="post" action="/logout"><button type="submit" class="btn btn-sm btn-outline-secondary"><span class="icon-[lucide--log-out]"></span> Sign out</button></form>
+  </div>
+</header>
+{{end}}
+
+{{define "filters"}}
+<div class="card mb-6">
+  <div class="card-body flex flex-wrap items-center gap-x-6 gap-y-2">
+    <form class="dim-filter flex flex-wrap items-center gap-x-5 gap-y-2" method="get" action="{{.FilterAction}}">
+      {{if .RangeParam}}<input type="hidden" name="range" value="{{.RangeParam}}">{{end}}
+      {{if .TZExplicit}}<input type="hidden" name="tz" value="{{.TZone}}">{{end}}
+      {{if and (eq .Filter.Range "custom") .FromRFC}}<input type="hidden" name="from" value="{{.FromRFC}}">{{end}}
+      {{if and (eq .Filter.Range "custom") .ToRFC}}<input type="hidden" name="to" value="{{.ToRFC}}">{{end}}
+      <span class="text-xs font-semibold tracking-wider text-zinc-500 uppercase"><span class="icon-[lucide--filter]"></span> Filter</span>
+      <label class="flex items-center gap-2 text-sm text-zinc-400">Model
+        <select name="model" class="input input-sm input-auto{{if $.Filter.Model}} input-active{{end}}" onchange="this.form.submit()">
+          <option value="">Any</option>
+          {{range .ModelOpts}}<option value="{{.}}"{{if eq $.Filter.Model .}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      </label>
+      <label class="flex items-center gap-2 text-sm text-zinc-400">Provider
+        <select name="provider" class="input input-sm input-auto{{if $.Filter.Provider}} input-active{{end}}" onchange="this.form.submit()">
+          <option value="">Any</option>
+          {{range .ProviderOpts}}<option value="{{.}}"{{if eq $.Filter.Provider .}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      </label>
+      <label class="flex items-center gap-2 text-sm text-zinc-400">API key
+        <select name="api_key" class="input input-sm input-auto{{if $.Filter.APIKey}} input-active{{end}}" onchange="this.form.submit()">
+          <option value="">Any</option>
+          {{range .KeyOpts}}<option value="{{.}}"{{if eq $.Filter.APIKey .}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      </label>
+      <label class="flex items-center gap-2 text-sm text-zinc-400">Outcome
+        <select name="outcome" class="input input-sm input-auto{{if $.Filter.Outcome}} input-active{{end}}" onchange="this.form.submit()">
+          <option value="">Any</option>
+          <option value="ok"{{if eq .Filter.Outcome "ok"}} selected{{end}}>ok</option>
+          <option value="error"{{if eq .Filter.Outcome "error"}} selected{{end}}>error</option>
+          <option value="canceled"{{if eq .Filter.Outcome "canceled"}} selected{{end}}>canceled</option>
+          <option value="no_response"{{if eq .Filter.Outcome "no_response"}} selected{{end}}>no response</option>
+        </select>
+      </label>
+    </form>
+  </div>
+</div>
+{{end}}

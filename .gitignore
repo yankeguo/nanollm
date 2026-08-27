@@ -30,6 +30,11 @@ go.work.sum
 # local config with secrets
 /config.yaml
 
+# frontend
+web/node_modules/
+web/dist/*
+!web/dist/.gitkeep
+
 # Editor/IDE
 # .idea/
 # .vscode/

@@ -164,9 +164,9 @@ func TestAdminSecurityHeaders(t *testing.T) {
 	require.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
 	require.Equal(t, "DENY", rec.Header().Get("X-Frame-Options"))
 	require.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
-	require.Contains(t, rec.Header().Get("Content-Security-Policy"), "cdn.jsdelivr.net")
+	require.Contains(t, rec.Header().Get("Content-Security-Policy"), "script-src 'self'")
 	require.Contains(t, rec.Header().Get("Content-Security-Policy"), "connect-src 'self'")
-	require.Contains(t, rec.Header().Get("Content-Security-Policy"), "font-src https://cdn.jsdelivr.net")
+	require.Contains(t, rec.Header().Get("Content-Security-Policy"), "style-src 'self' 'unsafe-inline'")
 	require.Contains(t, rec.Header().Get("Content-Security-Policy"), "media-src 'self'")
 }
 
@@ -181,9 +181,9 @@ func TestAdminRootRedirect(t *testing.T) {
 
 func TestCallErrorClass(t *testing.T) {
 	require.Equal(t, "", callErrorClass(200, ""))
-	require.Equal(t, "text-secondary", callErrorClass(200, errCanceled))
-	require.Equal(t, "text-danger", callErrorClass(0, errCanceled))
-	require.Equal(t, "text-danger", callErrorClass(200, "upstream status 502"))
+	require.Equal(t, "text-zinc-500", callErrorClass(200, errCanceled))
+	require.Equal(t, "text-red-400", callErrorClass(0, errCanceled))
+	require.Equal(t, "text-red-400", callErrorClass(200, "upstream status 502"))
 }
 
 func TestFormatNum(t *testing.T) {
@@ -485,7 +485,7 @@ func TestAdminTemplatesRender(t *testing.T) {
 	require.Contains(t, body, `href="/usage?model=fast"`)
 	require.Contains(t, body, `/calls?`)
 	require.Contains(t, body, "model=fast")
-	require.Contains(t, body, "border-primary")
+	require.Contains(t, body, "input-active")
 	require.Contains(t, body, "Tokens by period")
 
 	cf := parseAdminFilter(url.Values{"model": []string{"fast"}}, now, "calls")
@@ -513,7 +513,7 @@ func TestAdminTemplatesRender(t *testing.T) {
 	require.Equal(t, 2, strings.Count(cbody, `aria-label="Older"`))
 	require.Equal(t, 2, strings.Count(cbody, `aria-current="page"`))
 	require.Equal(t, 2, strings.Count(cbody, "Page 2 of 5"))
-	require.Equal(t, 2, strings.Count(cbody, "justify-content-center"))
+	require.Equal(t, 2, strings.Count(cbody, "justify-center"))
 	require.Contains(t, cbody, `/calls?model=fast&amp;page=3`)
 
 	sha := strings.Repeat("a", 64)

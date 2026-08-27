@@ -235,10 +235,11 @@ Workflow: `.github/workflows/release.yml`.
 ## Development
 
 ```bash
+(cd web && bun install && bun run build)  # admin UI bundles (Tailwind + lucide + Chart.js)
 go test ./...
 ```
 
-Go 1.27+. `config.yaml` holds secrets and is gitignored.
+Go 1.27+. The admin UI assets live in `web/` (bun + TypeScript; `web/dist` is git-ignored and embedded at build time), so run the frontend build before `go build` — the Dockerfile does it in an `oven/bun` stage. `config.yaml` holds secrets and is gitignored.
 
 ## License
 

@@ -5,7 +5,7 @@ import (
 	"html/template"
 )
 
-//go:embed templates/*.html
+//go:embed web/view/*.html
 var adminFS embed.FS
 
 var adminTmpl = template.Must(template.New("").Funcs(template.FuncMap{
@@ -14,4 +14,6 @@ var adminTmpl = template.Must(template.New("").Funcs(template.FuncMap{
 	"outputBar":      outputBar,
 	"callErrorClass": callErrorClass,
 	"statusClass":    statusClass,
-}).ParseFS(adminFS, "templates/*.html"))
+	"jsAsset":        jsAsset,
+	"cssAsset":       cssAsset,
+}).ParseFS(adminFS, "web/view/*.html"))

@@ -42,6 +42,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/usage", http.StatusFound)
 	})
+	// The built JS/CSS bundles carry no secrets and the login page itself
+	// links the stylesheet, so /static/ is unauthenticated.
+	mux.Handle("GET /static/", staticHandler())
 	mux.Handle("GET /usage", s.requireAdmin(http.HandlerFunc(s.handleAdminUsage)))
 	mux.Handle("GET /calls", s.requireAdmin(http.HandlerFunc(s.handleAdminCalls)))
 	mux.Handle("GET /calls/{id}", s.requireAdmin(http.HandlerFunc(s.handleAdminCall)))
@@ -92,9 +95,8 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 			h.Set("Cache-Control", "no-store")
 			h.Set("Content-Security-Policy", strings.Join([]string{
 				"default-src 'none'",
-				"script-src https://cdn.jsdelivr.net 'unsafe-inline'",
-				"style-src https://cdn.jsdelivr.net 'unsafe-inline'",
-				"font-src https://cdn.jsdelivr.net",
+				"script-src 'self'",
+				"style-src 'self' 'unsafe-inline'",
 				"img-src 'self' data:",
 				"media-src 'self'",
 				"connect-src 'self'",

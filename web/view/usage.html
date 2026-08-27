@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>nanollm admin — usage</title>
+  {{template "head" .}}
+</head>
+<body>
+  {{template "nav" .}}
+  <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+    {{template "filters" .}}
+    <div class="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3">
+      <div class="card"><div class="card-body py-3">
+        <div class="text-sm text-zinc-500">Calls</div>
+        <div class="tnum text-2xl font-semibold">{{formatNum .Totals.Calls}}</div>
+      </div></div>
+      <div class="card"><div class="card-body py-3">
+        <div class="text-sm text-zinc-500">Input <span class="icon-[lucide--arrow-down] dir"></span></div>
+        <div class="tnum text-2xl font-semibold">{{formatNum .Totals.Input}}</div>
+        {{inputBar .Totals.Input .Totals.Cache}}
+      </div></div>
+      <div class="card"><div class="card-body py-3">
+        <div class="text-sm text-zinc-500">Output <span class="icon-[lucide--arrow-up] dir"></span></div>
+        <div class="tnum text-2xl font-semibold">{{formatNum .Totals.Output}}</div>
+        {{outputBar .Totals.Input .Totals.Output}}
+      </div></div>
+    </div>
+    <div class="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div class="card"><div class="card-body">
+        <h2 class="mb-3 text-sm font-semibold text-zinc-300">Tokens by period</h2>
+        <canvas id="tokensChart"></canvas>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <h2 class="mb-3 text-sm font-semibold text-zinc-300">Calls by period</h2>
+        <canvas id="callsChart"></canvas>
+      </div></div>
+    </div>
+  </main>
+  <script type="application/json" id="chart-data">{{.ChartJSON}}</script>
+  <script defer src="{{jsAsset "admin"}}"></script>
+  <script defer src="{{jsAsset "usage"}}"></script>
+</body>
+</html>
