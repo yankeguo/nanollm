@@ -142,3 +142,47 @@ document.querySelectorAll<HTMLFormElement>("form.rangefilter").forEach((form) =>
     });
   });
 });
+
+// Copy buttons: any [data-copy] copies the text of its previous sibling
+// (the <pre>/<code> it decorates) and flashes a check icon on success.
+// Buttons stay hidden where the async clipboard API is unavailable.
+{
+  const canCopy = !!(navigator.clipboard && window.isSecureContext !== false);
+  document.querySelectorAll<HTMLElement>("[data-copy]").forEach((btn) => {
+    if (!canCopy) {
+      btn.classList.add("hidden");
+      return;
+    }
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const src = btn.previousElementSibling;
+      if (!src || !src.textContent) return;
+      try {
+        await navigator.clipboard.writeText(src.textContent);
+      } catch {
+        return;
+      }
+      const icon = btn.querySelector("[class*='icon-[']");
+      if (!icon) return;
+      const prev = icon.getAttribute("class") || "";
+      icon.setAttribute("class", prev.replace(/icon-\[lucide--[\w-]+\]/, "icon-[lucide--check]"));
+      setTimeout(() => icon.setAttribute("class", prev), 1200);
+    });
+  });
+}
+
+// Rows with data-href (calls table) navigate on click; interactive elements
+// inside the row keep their own behavior, and modifier-clicks open a new tab.
+document.addEventListener("click", (e) => {
+  const t = e.target as Element | null;
+  if (!t || t.closest("a,button,select,input,textarea,label")) return;
+  const row = t.closest("tr[data-href]") as HTMLElement | null;
+  if (!row) return;
+  const href = row.dataset.href;
+  if (!href) return;
+  if (e.metaKey || e.ctrlKey) {
+    window.open(href, "_blank");
+  } else {
+    window.location.href = href;
+  }
+});

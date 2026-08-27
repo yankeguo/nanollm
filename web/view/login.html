@@ -7,14 +7,15 @@
   {{template "head" .}}
 </head>
 <body class="flex min-h-screen items-center justify-center px-4">
-  <form class="card w-[min(380px,92vw)] shadow-xl shadow-black/40" method="post" action="/login">
+  <form class="card w-[min(380px,92vw)] shadow-xl shadow-black/40 ring-1 ring-indigo-400/10" method="post" action="/login">
     <div class="flex flex-col gap-4 p-8">
-      <div class="mb-1 flex flex-col items-start gap-2">
+      <div class="mb-1 h-0.5 w-10 rounded-full bg-indigo-400/70"></div>
+      <div class="-mt-2 mb-1 flex flex-col items-start gap-2">
         <span class="icon-[lucide--zap] text-3xl text-indigo-400"></span>
         <h1 class="text-xl font-semibold tracking-tight text-white">nanollm</h1>
         <p class="-mt-2 text-sm text-zinc-500">Admin sign in</p>
       </div>
-      {{if .Error}}<p class="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-300 ring-1 ring-red-500/30 ring-inset">{{.Error}}</p>{{end}}
+      {{if .Error}}<p class="flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-300 ring-1 ring-red-500/30 ring-inset"><span class="icon-[lucide--circle-alert] shrink-0"></span> {{.Error}}</p>{{end}}
       <div>
         <label class="mb-1.5 block text-sm font-medium text-zinc-300" for="username"><span class="icon-[lucide--user] text-zinc-500"></span> Username</label>
         <input class="input" id="username" name="username" autocomplete="username" required autofocus>

@@ -11,29 +11,40 @@
   <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
     {{template "filters" .}}
     <div class="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3">
-      <div class="card"><div class="card-body py-3">
-        <div class="text-sm text-zinc-500">Calls</div>
-        <div class="tnum text-2xl font-semibold">{{formatNum .Totals.Calls}}</div>
+      <div class="card"><div class="card-body flex items-center gap-3 py-3">
+        <span class="stat-icon bg-indigo-500/15 text-indigo-300"><span class="icon-[lucide--activity]"></span></span>
+        <div>
+          <div class="text-xs font-medium tracking-wider text-zinc-500 uppercase">Calls</div>
+          <div class="tnum text-2xl font-semibold text-white">{{formatNum .Totals.Calls}}</div>
+        </div>
       </div></div>
-      <div class="card"><div class="card-body py-3">
-        <div class="text-sm text-zinc-500">Input <span class="icon-[lucide--arrow-down] dir"></span></div>
-        <div class="tnum text-2xl font-semibold">{{formatNum .Totals.Input}}</div>
-        {{inputBar .Totals.Input .Totals.Cache}}
+      <div class="card"><div class="card-body flex items-center gap-3 py-3">
+        <span class="stat-icon bg-sky-500/15 text-sky-300"><span class="icon-[lucide--arrow-down]"></span></span>
+        <div>
+          <div class="text-xs font-medium tracking-wider text-zinc-500 uppercase">Input tokens</div>
+          <div class="tnum text-2xl font-semibold text-white">{{formatNum .Totals.Input}}</div>
+          {{inputBar .Totals.Input .Totals.Cache}}
+        </div>
       </div></div>
-      <div class="card"><div class="card-body py-3">
-        <div class="text-sm text-zinc-500">Output <span class="icon-[lucide--arrow-up] dir"></span></div>
-        <div class="tnum text-2xl font-semibold">{{formatNum .Totals.Output}}</div>
-        {{outputBar .Totals.Input .Totals.Output}}
+      <div class="card"><div class="card-body flex items-center gap-3 py-3">
+        <span class="stat-icon bg-emerald-500/15 text-emerald-300"><span class="icon-[lucide--arrow-up]"></span></span>
+        <div>
+          <div class="text-xs font-medium tracking-wider text-zinc-500 uppercase">Output tokens</div>
+          <div class="tnum text-2xl font-semibold text-white">{{formatNum .Totals.Output}}</div>
+          {{outputBar .Totals.Input .Totals.Output}}
+        </div>
       </div></div>
     </div>
     <div class="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
       <div class="card"><div class="card-body">
-        <h2 class="mb-3 text-sm font-semibold text-zinc-300">Tokens by period</h2>
-        <canvas id="tokensChart"></canvas>
+        <h2 class="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-300"><span class="icon-[lucide--chart-column] text-zinc-500"></span> Tokens by period</h2>
+        <div class="relative h-64"><canvas id="tokensChart"></canvas></div>
+        <div class="empty hidden" id="tokensEmpty"><span class="icon-[lucide--chart-no-axes-column] text-2xl"></span> No token data in this range</div>
       </div></div>
       <div class="card"><div class="card-body">
-        <h2 class="mb-3 text-sm font-semibold text-zinc-300">Calls by period</h2>
-        <canvas id="callsChart"></canvas>
+        <h2 class="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-300"><span class="icon-[lucide--chart-line] text-zinc-500"></span> Calls by period</h2>
+        <div class="relative h-64"><canvas id="callsChart"></canvas></div>
+        <div class="empty hidden" id="callsEmpty"><span class="icon-[lucide--chart-no-axes-column] text-2xl"></span> No calls in this range</div>
       </div></div>
     </div>
   </main>

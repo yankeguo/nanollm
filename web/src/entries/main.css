@@ -11,13 +11,26 @@
 @source "../../view";
 @source "../../src";
 
-/* Dark chrome. */
+/* Semantic aliases for the dark chrome: templates reference surface/edge
+   instead of repeating raw zinc shades. */
+@theme {
+  --color-surface: var(--color-zinc-900);
+  --color-edge: var(--color-zinc-800);
+}
+
 :root {
   color-scheme: dark;
 }
 
 body {
   background-color: var(--color-zinc-950);
+  /* Faint indigo glow at the top of the page; keeps the dark theme readable. */
+  background-image: radial-gradient(
+    ellipse 80% 50% at 50% -20%,
+    rgb(99 102 241 / 0.08),
+    transparent
+  );
+  background-repeat: no-repeat;
   color: var(--color-zinc-200);
   -webkit-font-smoothing: antialiased;
 }
@@ -31,14 +44,14 @@ body {
    still override them on the same element. */
 @layer components {
   .card {
-    @apply rounded-xl border border-zinc-800 bg-zinc-900 shadow-lg shadow-black/20;
+    @apply rounded-xl border border-edge/80 bg-surface shadow-lg shadow-black/20;
   }
   .card-body {
     @apply p-5;
   }
 
   .btn {
-    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-transparent px-3.5 py-2 text-sm font-medium transition-all select-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-transparent px-3.5 py-2 text-sm font-medium transition-all duration-150 select-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50;
   }
   .btn-sm {
     @apply px-2.5 py-1.5 text-xs;
@@ -51,7 +64,7 @@ body {
   }
 
   .input {
-    @apply w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 transition-colors focus:border-indigo-400/60 focus:ring-2 focus:ring-indigo-400/30 focus:outline-none disabled:opacity-50;
+    @apply w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 transition-colors duration-150 focus:border-indigo-400/60 focus:ring-2 focus:ring-indigo-400/30 focus:outline-none disabled:opacity-50;
   }
   .input-sm {
     @apply px-2.5 py-1.5 text-xs;
@@ -66,7 +79,7 @@ body {
   }
 
   .nav-link {
-    @apply inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-zinc-800/70 hover:text-white;
+    @apply inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-zinc-400 transition-colors duration-150 hover:bg-zinc-800/70 hover:text-white;
   }
   .nav-link.active {
     @apply bg-zinc-800 text-white;
@@ -75,7 +88,11 @@ body {
   /* Status badges on the calls table and the call detail header. The
      variant class is chosen in Go by statusClass. */
   .badge {
-    @apply inline-block rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset;
+    @apply inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset;
+  }
+  .badge::before {
+    content: "";
+    @apply size-1.5 rounded-full bg-current;
   }
   .badge-ok {
     @apply bg-emerald-400/10 text-emerald-300 ring-emerald-400/30;
@@ -87,22 +104,23 @@ body {
     @apply bg-zinc-400/10 text-zinc-400 ring-zinc-400/30;
   }
 
-  /* Tables (.tbl on <table>). */
+  /* Tables (.tbl on <table>). The header sticks while the page scrolls,
+     sliding underneath the sticky top nav. */
   .tbl {
     @apply w-full text-sm;
   }
   .tbl thead th {
-    @apply border-b border-zinc-800 px-4 py-2.5 text-left text-xs font-medium tracking-wider text-zinc-500 uppercase;
+    @apply sticky top-0 z-[1] border-b border-edge bg-surface px-4 py-2.5 text-left text-xs font-medium tracking-wider text-zinc-500 uppercase;
   }
   .tbl tbody td,
   .tbl tbody th {
-    @apply border-b border-zinc-800/60 px-4 py-2.5 align-middle;
+    @apply border-b border-edge/60 px-4 py-2.5 align-middle;
   }
   .tbl tbody tr:last-child td {
     @apply border-b-0;
   }
   .tbl-hover tbody tr {
-    @apply transition-colors;
+    @apply transition-colors duration-150;
   }
   .tbl-hover tbody tr:hover {
     @apply bg-zinc-800/40;
@@ -110,7 +128,7 @@ body {
 
   /* Pagination buttons. */
   .page-btn {
-    @apply inline-flex h-8 min-w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 px-2 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white;
+    @apply inline-flex h-8 min-w-8 items-center justify-center rounded-lg border border-edge bg-surface px-2 text-sm text-zinc-300 transition-colors duration-150 hover:border-zinc-500 hover:text-white;
   }
   .page-btn-active {
     @apply border-indigo-500/60 bg-indigo-500/15 text-indigo-200;
@@ -137,10 +155,10 @@ body {
     @apply block h-full;
   }
   .inbar i {
-    background: #c9a45c;
+    background: var(--color-amber-300);
   }
   .outbar i {
-    background: #6dbe8a;
+    background: var(--color-emerald-300);
   }
   .sub {
     @apply mt-0.5 text-xs text-zinc-500;
@@ -156,8 +174,32 @@ body {
     @apply px-0.5 text-xs text-zinc-500;
   }
 
+  /* Stat-card icon chip on the usage page; the hue comes from inline
+     utility classes on the same element. */
+  .stat-icon {
+    @apply flex size-10 shrink-0 items-center justify-center rounded-lg text-lg;
+  }
+
+  /* Centered empty state: icon plus muted text (calls table, charts). */
+  .empty {
+    @apply flex flex-col items-center gap-2 py-10 text-center text-sm text-zinc-500;
+  }
+
+  /* JSON / transcript blocks on the call detail page. Bounded height so a
+     long SSE transcript does not push the rest of the page down. */
   .codebox {
-    @apply rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs break-words whitespace-pre-wrap;
+    @apply max-h-96 overflow-auto rounded-lg border border-edge bg-zinc-950 p-3 font-mono text-xs break-words whitespace-pre-wrap text-zinc-300;
+  }
+
+  /* Copy affordances wired up in admin.ts via [data-copy]: the button
+     copies the text of its previous sibling. .copybtn floats over a block
+     (wrap it and the block in a relative group/code container); .copy-inline
+     sits next to inline code. */
+  .copybtn {
+    @apply absolute top-2 right-2 inline-flex cursor-pointer items-center gap-1 rounded-md border border-edge bg-zinc-900/90 px-1.5 py-1 text-xs text-zinc-400 opacity-0 transition-opacity duration-150 group-hover/code:opacity-100 hover:text-white focus-visible:opacity-100 focus-visible:outline-none;
+  }
+  .copy-inline {
+    @apply cursor-pointer align-[-0.125em] text-zinc-500 transition-colors duration-150 hover:text-zinc-200;
   }
 }
 

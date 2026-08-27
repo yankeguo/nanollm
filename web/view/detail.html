@@ -9,50 +9,50 @@
 <body>
   {{template "nav" .}}
   <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-    <p class="mb-4"><a class="text-indigo-300 hover:text-indigo-200" href="{{or .CallsURL "/calls"}}"><span class="icon-[lucide--arrow-left]"></span> Calls</a></p>
+    <p class="mb-4"><a class="inline-flex items-center gap-1 text-sm text-indigo-300 transition-colors hover:text-indigo-200" href="{{or .CallsURL "/calls"}}"><span class="icon-[lucide--arrow-left]"></span> Calls</a></p>
     <div class="card mb-6"><div class="card-body">
       <div class="mb-4 flex items-center gap-3">
         <h2 class="text-lg font-semibold text-white">Call #{{.Call.ID}}</h2>
         <span class="badge {{statusClass .Call.HTTPStatus}}">{{if eq .Call.HTTPStatus 0}}no response{{else}}{{.Call.HTTPStatus}}{{end}}</span>
       </div>
       <dl class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <div><dt class="text-sm text-zinc-500">Time (<span data-tz>UTC</span>)</dt><dd class="tnum"><time datetime="{{.Call.CreatedAt.UTC.Format "2006-01-02T15:04:05Z"}}">{{.Call.CreatedAt.UTC.Format "2006-01-02 15:04:05"}}</time></dd></div>
-        <div><dt class="text-sm text-zinc-500">Model</dt><dd>{{.Call.Model}}</dd></div>
-        <div><dt class="text-sm text-zinc-500">Provider</dt><dd>{{.Call.Provider}}{{if .Call.ProviderModel}} <span class="text-zinc-500">→ {{.Call.ProviderModel}}</span>{{end}}</dd></div>
-        <div><dt class="text-sm text-zinc-500">API key</dt><dd>{{.Call.APIKeyName}}</dd></div>
-        <div><dt class="text-sm text-zinc-500">Input tokens</dt><dd class="tnum">{{formatNum .Call.InputTokens}}<span class="icon-[lucide--arrow-down] dir"></span>{{inputBar .Call.InputTokens .Call.CacheTokens}}</dd></div>
-        <div><dt class="text-sm text-zinc-500">Output tokens</dt><dd class="tnum">{{formatNum .Call.OutputTokens}}<span class="icon-[lucide--arrow-up] dir"></span>{{outputBar .Call.InputTokens .Call.OutputTokens}}</dd></div>
+        <div><dt class="text-xs font-medium tracking-wider text-zinc-500 uppercase">Time (<span data-tz>UTC</span>)</dt><dd class="tnum mt-1 font-medium"><time datetime="{{.Call.CreatedAt.UTC.Format "2006-01-02T15:04:05Z"}}">{{.Call.CreatedAt.UTC.Format "2006-01-02 15:04:05"}}</time></dd></div>
+        <div><dt class="text-xs font-medium tracking-wider text-zinc-500 uppercase">Model</dt><dd class="mt-1 font-medium">{{.Call.Model}}</dd></div>
+        <div><dt class="text-xs font-medium tracking-wider text-zinc-500 uppercase">Provider</dt><dd class="mt-1 font-medium">{{.Call.Provider}}{{if .Call.ProviderModel}} <span class="font-normal text-zinc-500">→ {{.Call.ProviderModel}}</span>{{end}}</dd></div>
+        <div><dt class="text-xs font-medium tracking-wider text-zinc-500 uppercase">API key</dt><dd class="mt-1 font-medium">{{.Call.APIKeyName}}</dd></div>
+        <div><dt class="text-xs font-medium tracking-wider text-zinc-500 uppercase">Input tokens</dt><dd class="tnum mt-1 font-medium">{{formatNum .Call.InputTokens}}<span class="icon-[lucide--arrow-down] dir"></span>{{inputBar .Call.InputTokens .Call.CacheTokens}}</dd></div>
+        <div><dt class="text-xs font-medium tracking-wider text-zinc-500 uppercase">Output tokens</dt><dd class="tnum mt-1 font-medium">{{formatNum .Call.OutputTokens}}<span class="icon-[lucide--arrow-up] dir"></span>{{outputBar .Call.InputTokens .Call.OutputTokens}}</dd></div>
       </dl>
-      {{if .Call.Error}}<p class="mt-4 rounded-lg border border-zinc-800 p-2 break-words {{callErrorClass .Call.HTTPStatus .Call.Error}}">{{.Call.Error}}</p>{{end}}
+      {{if .Call.Error}}<p class="mt-4 flex items-start gap-2 rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-sm break-words {{callErrorClass .Call.HTTPStatus .Call.Error}}"><span class="icon-[lucide--triangle-alert] mt-0.5 shrink-0"></span><span>{{.Call.Error}}</span></p>{{end}}
     </div></div>
     {{if .Files}}
     <div class="card mb-6"><div class="card-body">
-      <h2 class="mb-3 text-sm font-semibold text-zinc-300">Files</h2>
+      <h2 class="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-300"><span class="icon-[lucide--paperclip] text-zinc-500"></span> Files</h2>
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {{range .Files}}
         <div>
           {{if eq .Kind "image"}}
-          <img src="/files/{{.SHA256}}" alt="{{.MimeType}}" class="w-full rounded-lg border border-zinc-800" loading="lazy">
+          <img src="/files/{{.SHA256}}" alt="{{.MimeType}}" class="w-full rounded-lg border border-zinc-800 bg-zinc-950" loading="lazy">
           {{else if eq .Kind "video"}}
-          <video src="/files/{{.SHA256}}" class="w-full rounded-lg border border-zinc-800" controls preload="metadata"></video>
+          <video src="/files/{{.SHA256}}" class="w-full rounded-lg border border-zinc-800 bg-zinc-950" controls preload="metadata"></video>
           {{else if eq .Kind "audio"}}
           <audio src="/files/{{.SHA256}}" class="w-full" controls preload="metadata"></audio>
           {{else}}
           <a href="/files/{{.SHA256}}" class="btn btn-sm btn-outline-secondary"><span class="icon-[lucide--download]"></span> {{.MimeType}} ({{formatNum .Size}} bytes)</a>
           {{end}}
-          <div class="mt-1 text-sm break-all text-zinc-500"><code>{{printf "<file:%s>" .SHA256}}</code></div>
+          <div class="mt-1 text-xs break-all text-zinc-500"><code class="font-mono">{{printf "<file:%s>" .SHA256}}</code> <button type="button" class="copy-inline" data-copy title="Copy reference" aria-label="Copy file reference"><span class="icon-[lucide--copy]"></span></button></div>
         </div>
         {{end}}
       </div>
     </div></div>
     {{end}}
     <div class="card mb-6"><div class="card-body">
-      <h2 class="mb-3 text-sm font-semibold text-zinc-300">Request JSON</h2>
-      {{if .RequestPretty}}<pre class="codebox overflow-auto">{{.RequestPretty}}</pre>{{else}}<p class="text-zinc-500">detail not retained</p>{{end}}
+      <h2 class="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-300"><span class="icon-[lucide--arrow-up-right] text-zinc-500"></span> Request JSON</h2>
+      {{if .RequestPretty}}<div class="group/code relative"><pre class="codebox">{{.RequestPretty}}</pre><button type="button" class="copybtn" data-copy><span class="icon-[lucide--copy]"></span> copy</button></div>{{else}}<p class="text-sm text-zinc-500">detail not retained</p>{{end}}
     </div></div>
     <div class="card"><div class="card-body">
-      <h2 class="mb-3 text-sm font-semibold text-zinc-300">Response JSON</h2>
-      {{if .ResponsePretty}}<pre class="codebox overflow-auto">{{.ResponsePretty}}</pre>{{else}}<p class="text-zinc-500">detail not retained</p>{{end}}
+      <h2 class="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-300"><span class="icon-[lucide--arrow-down-left] text-zinc-500"></span> Response JSON</h2>
+      {{if .ResponsePretty}}<div class="group/code relative"><pre class="codebox">{{.ResponsePretty}}</pre><button type="button" class="copybtn" data-copy><span class="icon-[lucide--copy]"></span> copy</button></div>{{else}}<p class="text-sm text-zinc-500">detail not retained</p>{{end}}
     </div></div>
   </main>
   <script defer src="{{jsAsset "admin"}}"></script>
