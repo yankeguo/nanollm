@@ -492,7 +492,7 @@ func TestAdminTemplatesRender(t *testing.T) {
 	cdata := adminNavData("calls", cf)
 	cdata["Kind"] = "calls"
 	cdata["FilterAction"] = "/calls"
-	cdata["Rows"] = []callListRow{{ID: 7, Model: "fast", HasDetail: true}}
+	cdata["Rows"] = []callListRow{{ID: 7, Model: "fast", FirstTokenMs: 350, OutputSpeed: 42.3, HasDetail: true}}
 	cdata["Total"] = int64(250)
 	cdata["Page"] = 2
 	cdata["TotalPages"] = 5
@@ -509,6 +509,8 @@ func TestAdminTemplatesRender(t *testing.T) {
 	require.Contains(t, cbody, `name="model"`)
 	require.Contains(t, cbody, "all")
 	require.Contains(t, cbody, `/calls/7?model=fast&amp;page=2`)
+	require.Contains(t, cbody, "350ms")
+	require.Contains(t, cbody, "42.3 tok/s")
 	require.Equal(t, 2, strings.Count(cbody, `aria-label="Newer"`))
 	require.Equal(t, 2, strings.Count(cbody, `aria-label="Older"`))
 	require.Equal(t, 2, strings.Count(cbody, `aria-current="page"`))
@@ -518,7 +520,7 @@ func TestAdminTemplatesRender(t *testing.T) {
 
 	sha := strings.Repeat("a", 64)
 	ddata := adminNavData("calls", cf)
-	ddata["Call"] = LLMCall{ID: 7, Model: "fast", HTTPStatus: 200}
+	ddata["Call"] = LLMCall{ID: 7, Model: "fast", HTTPStatus: 200, FirstTokenMs: 1200, OutputSpeed: 12.5}
 	ddata["RequestPretty"] = `{"url":"<file:` + sha + `>"}`
 	ddata["ResponsePretty"] = ""
 	ddata["CallsURL"] = "/calls"
@@ -533,6 +535,8 @@ func TestAdminTemplatesRender(t *testing.T) {
 	dbody := buf.String()
 	require.Contains(t, dbody, `<img src="/files/`+sha+`"`)
 	require.Contains(t, dbody, "&lt;file:"+sha+"&gt;")
+	require.Contains(t, dbody, "1.20s")
+	require.Contains(t, dbody, "12.5 tok/s")
 }
 
 func TestCallFileViews(t *testing.T) {

@@ -19,6 +19,7 @@
           <tr>
             <th>Time (<span data-tz>UTC</span>)</th><th>Model</th><th>Provider</th><th>API key</th>
             <th class="text-center">Status</th><th class="text-right">In <span class="icon-[lucide--arrow-down]"></span></th><th><span class="icon-[lucide--arrow-up]"></span> Out</th>
+            <th class="text-right">TTFT</th><th class="text-right">tok/s</th>
             <th>Detail</th>
           </tr>
         </thead>
@@ -32,10 +33,12 @@
             <td class="text-center">{{if not .Error}}<span class="badge {{statusClass .HTTPStatus}}">{{if eq .HTTPStatus 0}}—{{else}}{{.HTTPStatus}}{{end}}</span>{{end}}{{template "callError" .}}</td>
             <td class="text-right">{{formatNum .InputTokens}}<span class="icon-[lucide--arrow-down] dir"></span>{{inputBar .InputTokens .CacheTokens}}</td>
             <td><span class="icon-[lucide--arrow-up] dir"></span>{{formatNum .OutputTokens}}{{outputBar .InputTokens .OutputTokens}}</td>
+            <td class="text-right">{{formatMs .FirstTokenMs}}</td>
+            <td class="text-right">{{formatSpeed .OutputSpeed}}</td>
             <td>{{if .HasDetail}}<a class="inline-flex items-center gap-1 text-indigo-300 transition-colors hover:text-indigo-200" href="/calls/{{.ID}}{{if $.ListQuery}}?{{$.ListQuery}}{{end}}"><span class="icon-[lucide--eye]"></span> view</a>{{else}}<span class="text-zinc-600">—</span>{{end}}</td>
           </tr>
         {{else}}
-          <tr><td colspan="8"><div class="empty"><span class="icon-[lucide--inbox] text-2xl"></span> No calls in this range</div></td></tr>
+          <tr><td colspan="10"><div class="empty"><span class="icon-[lucide--inbox] text-2xl"></span> No calls in this range</div></td></tr>
         {{end}}
         </tbody>
       </table>

@@ -407,6 +407,23 @@ func formatInt64(v int64) string {
 	return commaDigits(s)
 }
 
+func formatMs(ms int64) string {
+	if ms <= 0 {
+		return "—"
+	}
+	if ms < 1000 {
+		return strconv.FormatInt(ms, 10) + "ms"
+	}
+	return strconv.FormatFloat(float64(ms)/1000, 'f', 2, 64) + "s"
+}
+
+func formatSpeed(v float64) string {
+	if v <= 0 {
+		return "—"
+	}
+	return strconv.FormatFloat(v, 'f', 1, 64) + " tok/s"
+}
+
 func commaDigits(s string) string {
 	n := len(s)
 	if n <= 3 {

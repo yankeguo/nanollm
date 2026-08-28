@@ -208,6 +208,8 @@ Each provider attempt writes one row to `llm_calls`:
 
 - client model, provider name, upstream model, API key name
 - `input_tokens` / `output_tokens` / `cache_tokens` / `uncached_tokens` (0 when usage is missing)
+- `first_token_ms` (request sent → first token: the first SSE `data:` line, or the first response body byte for non-streaming; 0 when no token ever arrived)
+- `output_speed` (output tokens per second, measured from the first token to the end of the stream; 0 when usage or the first token is missing)
 - `http_status` (0 if no HTTP response, e.g. dial failure)
 - `error` (transport / rewrite / catastrophic status; `canceled` when the client hung up after the copy started; empty on a completed copy)
 - `request_json` / `response_json` (`MEDIUMBLOB`; SSE responses stored as a JSON string, with consecutive same-type text/argument deltas coalesced)

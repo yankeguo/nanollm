@@ -28,6 +28,8 @@ type callListRow struct {
 	InputTokens  int64
 	OutputTokens int64
 	CacheTokens  int64
+	FirstTokenMs int64
+	OutputSpeed  float64
 	HTTPStatus   int
 	Error        string
 	HasDetail    bool
@@ -147,7 +149,7 @@ func listCalls(db *gorm.DB, f adminFilter, offset, limit int) ([]callListRow, in
 		return nil, 0, err
 	}
 	var rows []callListRow
-	err := q.Select("id, created_at, model, provider, api_key_name, input_tokens, output_tokens, cache_tokens, http_status, error, (request_json IS NOT NULL OR response_json IS NOT NULL) AS has_detail").
+	err := q.Select("id, created_at, model, provider, api_key_name, input_tokens, output_tokens, cache_tokens, first_token_ms, output_speed, http_status, error, (request_json IS NOT NULL OR response_json IS NOT NULL) AS has_detail").
 		Order("id DESC").Offset(offset).Limit(limit).Find(&rows).Error
 	return rows, total, err
 }

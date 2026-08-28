@@ -22,6 +22,8 @@
         <div><dt class="text-xs font-medium tracking-wider text-zinc-500 uppercase">API key</dt><dd class="mt-1 font-medium">{{.Call.APIKeyName}}</dd></div>
         <div><dt class="text-xs font-medium tracking-wider text-zinc-500 uppercase">Input tokens</dt><dd class="tnum mt-1 font-medium">{{formatNum .Call.InputTokens}}<span class="icon-[lucide--arrow-down] dir"></span>{{inputBar .Call.InputTokens .Call.CacheTokens}}</dd></div>
         <div><dt class="text-xs font-medium tracking-wider text-zinc-500 uppercase">Output tokens</dt><dd class="tnum mt-1 font-medium">{{formatNum .Call.OutputTokens}}<span class="icon-[lucide--arrow-up] dir"></span>{{outputBar .Call.InputTokens .Call.OutputTokens}}</dd></div>
+        <div><dt class="text-xs font-medium tracking-wider text-zinc-500 uppercase">First token latency</dt><dd class="tnum mt-1 font-medium">{{formatMs .Call.FirstTokenMs}}</dd></div>
+        <div><dt class="text-xs font-medium tracking-wider text-zinc-500 uppercase">Output speed</dt><dd class="tnum mt-1 font-medium">{{formatSpeed .Call.OutputSpeed}}</dd></div>
       </dl>
       {{if .Call.Error}}<p class="mt-4 flex items-start gap-2 rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-sm break-words {{callErrorClass .Call.HTTPStatus .Call.Error}}"><span class="icon-[lucide--triangle-alert] mt-0.5 shrink-0"></span><span>{{.Call.Error}}</span></p>{{end}}
     </div></div>

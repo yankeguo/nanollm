@@ -10,6 +10,8 @@ var adminFS embed.FS
 
 var adminTmpl = template.Must(template.New("").Funcs(template.FuncMap{
 	"formatNum":      formatNum,
+	"formatMs":       formatMs,
+	"formatSpeed":    formatSpeed,
 	"inputBar":       inputBar,
 	"outputBar":      outputBar,
 	"callErrorClass": callErrorClass,

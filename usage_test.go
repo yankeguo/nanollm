@@ -52,8 +52,9 @@ func TestCopyAndScanSSE(t *testing.T) {
 		"data: {\"model\":\"gpt-4o\",\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":2,\"prompt_tokens_details\":{\"cached_tokens\":6}}}\n\n" +
 		"data: [DONE]\n\n")
 	var dst bytes.Buffer
-	u, err := copySSE(&dst, nil, src, 0)
+	u, first, err := copySSE(&dst, nil, src, 0)
 	require.NoError(t, err)
+	require.False(t, first.IsZero())
 	require.Equal(t, int64(9), u.Input)
 	require.Equal(t, int64(2), u.Output)
 	require.Equal(t, int64(6), u.CacheRead)
@@ -71,12 +72,15 @@ func TestCopySSEKeepalive(t *testing.T) {
 		_ = pw.Close()
 	}()
 	var data, pings bytes.Buffer
-	u, err := copySSE(&data, &pings, pr, 10*time.Millisecond)
+	start := time.Now()
+	u, first, err := copySSE(&data, &pings, pr, 10*time.Millisecond)
 	require.NoError(t, err)
 	require.Contains(t, pings.String(), ":")
 	require.NotContains(t, data.String(), sseComment)
 	require.Contains(t, data.String(), "prompt_tokens")
 	require.Equal(t, int64(2), u.Input)
+	// Keepalive comments must not count as the first token.
+	require.GreaterOrEqual(t, first.Sub(start), 25*time.Millisecond)
 }
 
 func TestCopyAndScanSSECapsScanBuffer(t *testing.T) {
@@ -86,9 +90,10 @@ func TestCopyAndScanSSECapsScanBuffer(t *testing.T) {
 
 	src := bytes.NewBuffer(bytes.Repeat([]byte("x"), 1000))
 	var dst bytes.Buffer
-	u, err := copySSE(&dst, nil, src, 0)
+	u, first, err := copySSE(&dst, nil, src, 0)
 	require.NoError(t, err)
 	require.True(t, u.empty())
+	require.True(t, first.IsZero())
 	require.Equal(t, 1000, dst.Len())
 }
 
@@ -253,8 +258,9 @@ func TestCopyAndScanSSEResponsesLargeCompleted(t *testing.T) {
 	payload := `{"type":"response.completed","response":{"model":"gpt-4o","output":[{"content":[{"text":"` + strings.Repeat("x", 64*1024) + `"}]}],"usage":{"input_tokens":9,"output_tokens":2}}}`
 	src := bytes.NewBufferString("event: response.completed\ndata: " + payload + "\n\n")
 	var dst bytes.Buffer
-	u, err := copySSE(&dst, nil, src, 0)
+	u, first, err := copySSE(&dst, nil, src, 0)
 	require.NoError(t, err)
+	require.False(t, first.IsZero())
 	require.Equal(t, int64(9), u.Input)
 	require.Equal(t, int64(2), u.Output)
 	require.Equal(t, "gpt-4o", u.ResponseModel)

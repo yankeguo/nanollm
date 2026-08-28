@@ -282,6 +282,8 @@ func TestProxyLogsCanceledAfter200(t *testing.T) {
 	require.Len(t, logger.calls, 1)
 	require.Equal(t, http.StatusOK, logger.calls[0].HTTPStatus)
 	require.Equal(t, errCanceled, logger.calls[0].Error)
+	// No usage event ever arrived, so speed stays unset.
+	require.Equal(t, float64(0), logger.calls[0].OutputSpeed)
 }
 
 func TestProxyLogsCanceledBeforeResponse(t *testing.T) {
@@ -545,6 +547,7 @@ func (m *memoryCallLogger) Record(rec CallRecord) {
 
 func TestProxyLogsSuccess(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(5 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"id":"1","choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":5,"completion_tokens":2,"prompt_tokens_details":{"cached_tokens":3}}}`)
 	}))
@@ -571,6 +574,8 @@ func TestProxyLogsSuccess(t *testing.T) {
 	require.Equal(t, int64(2), got.OutputTokens)
 	require.Equal(t, int64(3), got.CacheTokens)
 	require.Equal(t, int64(2), got.UncachedTokens)
+	require.GreaterOrEqual(t, got.FirstTokenMs, int64(4))
+	require.Greater(t, got.OutputSpeed, float64(0))
 	require.Equal(t, http.StatusOK, got.HTTPStatus)
 	require.Empty(t, got.Error)
 	require.Contains(t, string(got.RequestJSON), `"model":"gpt-4o-mini"`)
@@ -669,7 +674,12 @@ func TestProxyDoesNotFailoverAfterResponseStarted(t *testing.T) {
 func TestProxyLogsStreamUsage(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
+		time.Sleep(5 * time.Millisecond)
 		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		time.Sleep(5 * time.Millisecond)
 		io.WriteString(w, "data: {\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":1}}\n\n")
 		io.WriteString(w, "data: [DONE]\n\n")
 	}))
@@ -687,6 +697,8 @@ func TestProxyLogsStreamUsage(t *testing.T) {
 	require.Len(t, logger.calls, 1)
 	require.Equal(t, int64(4), logger.calls[0].InputTokens)
 	require.Equal(t, int64(1), logger.calls[0].OutputTokens)
+	require.GreaterOrEqual(t, logger.calls[0].FirstTokenMs, int64(4))
+	require.Greater(t, logger.calls[0].OutputSpeed, float64(0))
 	require.Contains(t, rec.Body.String(), "[DONE]")
 }
 

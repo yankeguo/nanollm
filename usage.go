@@ -259,13 +259,23 @@ func parseUsageSSELine(line []byte) tokenUsage {
 	return parseUsageJSON(payload)
 }
 
-func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (tokenUsage, error) {
+func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (tokenUsage, time.Time, error) {
 	if ping == nil {
 		ping = dst
 	}
 	var usage tokenUsage
+	var firstToken time.Time
 	var carry []byte
 	buf := make([]byte, 32*1024)
+
+	scan := func(line []byte) {
+		// The first data: line is the first token signal. Keepalive comments
+		// never reach this point, so they cannot false-trigger TTFT.
+		if firstToken.IsZero() && isSSEDataLine(line) {
+			firstToken = time.Now()
+		}
+		mergeUsage(&usage, parseUsageSSELine(line))
+	}
 
 	consume := func(chunk []byte) error {
 		if _, err := dst.Write(chunk); err != nil {
@@ -279,23 +289,23 @@ func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (token
 			}
 			line := bytes.TrimRight(carry[:i], "\r")
 			carry = carry[i+1:]
-			mergeUsage(&usage, parseUsageSSELine(line))
+			scan(line)
 		}
 		if len(carry) > maxSSEScan {
-			mergeUsage(&usage, parseUsageSSELine(carry))
+			scan(carry)
 			carry = carry[:0]
 		}
 		return nil
 	}
 
-	finish := func(err error) (tokenUsage, error) {
+	finish := func(err error) (tokenUsage, time.Time, error) {
 		if err == nil || errors.Is(err, io.EOF) {
 			if len(carry) > 0 {
-				mergeUsage(&usage, parseUsageSSELine(carry))
+				scan(carry)
 			}
-			return usage, nil
+			return usage, firstToken, nil
 		}
-		return usage, err
+		return usage, firstToken, err
 	}
 
 	if keepalive <= 0 {
@@ -303,7 +313,7 @@ func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (token
 			n, err := src.Read(buf)
 			if n > 0 {
 				if werr := consume(buf[:n]); werr != nil {
-					return usage, werr
+					return usage, firstToken, werr
 				}
 			}
 			if err != nil {
@@ -333,7 +343,7 @@ func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (token
 			ticker.Reset(keepalive)
 			if op.n > 0 {
 				if err := consume(buf[:op.n]); err != nil {
-					return usage, err
+					return usage, firstToken, err
 				}
 			}
 			if op.err != nil {
@@ -342,10 +352,16 @@ func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (token
 			startRead()
 		case <-ticker.C:
 			if _, err := ping.Write([]byte(sseComment)); err != nil {
-				return usage, err
+				return usage, firstToken, err
 			}
 		}
 	}
+}
+
+// isSSEDataLine reports whether an SSE line carries a non-empty data: payload.
+func isSSEDataLine(line []byte) bool {
+	line = bytes.TrimSpace(line)
+	return bytes.HasPrefix(line, []byte("data:")) && len(bytes.TrimSpace(line[len("data:"):])) > 0
 }
 
 func encodeResponseBlob(body []byte, sse bool) []byte {

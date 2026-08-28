@@ -30,6 +30,8 @@ type CallRecord struct {
 	OutputTokens   int64
 	CacheTokens    int64
 	UncachedTokens int64
+	FirstTokenMs   int64
+	OutputSpeed    float64
 	HTTPStatus     int
 	Error          string
 	RequestJSON    []byte
@@ -47,6 +49,8 @@ type LLMCall struct {
 	OutputTokens   int64     `gorm:"column:output_tokens;type:bigint;not null"`
 	CacheTokens    int64     `gorm:"column:cache_tokens;type:bigint;not null"`
 	UncachedTokens int64     `gorm:"column:uncached_tokens;type:bigint;not null"`
+	FirstTokenMs   int64     `gorm:"column:first_token_ms;type:bigint;not null"`
+	OutputSpeed    float64   `gorm:"column:output_speed;type:double;not null"`
 	HTTPStatus     int       `gorm:"column:http_status;type:int;not null"`
 	Error          string    `gorm:"column:error;type:varchar(1024);not null"`
 	RequestJSON    []byte    `gorm:"column:request_json;type:mediumblob"`
@@ -166,6 +170,8 @@ func (l *gormCallLogger) Record(rec CallRecord) {
 		OutputTokens:   rec.OutputTokens,
 		CacheTokens:    rec.CacheTokens,
 		UncachedTokens: rec.UncachedTokens,
+		FirstTokenMs:   rec.FirstTokenMs,
+		OutputSpeed:    rec.OutputSpeed,
 		HTTPStatus:     rec.HTTPStatus,
 		Error:          clipError(rec.Error),
 		RequestJSON:    clipBlob(req),

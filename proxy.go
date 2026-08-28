@@ -203,6 +203,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	req.Header.Del("Accept-Encoding")
 	req.ContentLength = int64(len(payload))
 
+	sentAt := time.Now()
 	resp, err := p.client().Do(req)
 	if err != nil {
 		rec.Error = copyErrText(err)
@@ -235,14 +236,23 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 
 	buf := &capBuffer{max: maxMediumBlob}
 	var usage tokenUsage
+	var firstToken time.Time
 	if sse {
 		fw := newFlushWriter(w)
 		logw := newSSELogWriter(buf)
-		usage, err = copySSE(io.MultiWriter(fw, logw), fw, resp.Body, keepalive)
+		usage, firstToken, err = copySSE(io.MultiWriter(fw, logw), fw, resp.Body, keepalive)
 		logw.Flush()
 	} else {
-		_, err = io.Copy(io.MultiWriter(w, buf), resp.Body)
+		fr := &firstReadReader{r: resp.Body}
+		_, err = io.Copy(io.MultiWriter(w, buf), fr)
+		firstToken = fr.first
 		usage = parseUsageJSON(buf.Bytes())
+	}
+	if !firstToken.IsZero() {
+		rec.FirstTokenMs = firstToken.Sub(sentAt).Milliseconds()
+		if usage.Output > 0 {
+			rec.OutputSpeed = float64(usage.Output) / time.Since(firstToken).Seconds()
+		}
 	}
 	rec.ResponseJSON = encodeResponseBlob(buf.Bytes(), sse)
 	rec.InputTokens = usage.Input
@@ -287,6 +297,21 @@ func newFlushWriter(w http.ResponseWriter) flushWriter {
 func (w flushWriter) Write(p []byte) (int, error) {
 	n, err := w.w.Write(p)
 	_ = w.rc.Flush()
+	return n, err
+}
+
+// firstReadReader records when the first body byte arrives, used as the
+// time-to-first-token signal for non-streaming (JSON) responses.
+type firstReadReader struct {
+	r     io.Reader
+	first time.Time
+}
+
+func (f *firstReadReader) Read(p []byte) (int, error) {
+	n, err := f.r.Read(p)
+	if n > 0 && f.first.IsZero() {
+		f.first = time.Now()
+	}
 	return n, err
 }
 
