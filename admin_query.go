@@ -11,12 +11,14 @@ import (
 const adminDistinctLimit = 200
 
 type usageBucket struct {
-	Bucket   string
-	Calls    int64
-	Input    int64
-	Output   int64
-	Cache    int64
-	Uncached int64
+	Bucket       string
+	Calls        int64
+	Input        int64
+	Output       int64
+	Cache        int64
+	Uncached     int64
+	FirstTokenMs float64
+	OutputSpeed  float64
 }
 
 type callListRow struct {
@@ -101,7 +103,9 @@ SELECT DATE_FORMAT(created_at, ?) AS bucket,
        COALESCE(SUM(input_tokens), 0) AS input,
        COALESCE(SUM(output_tokens), 0) AS output,
        COALESCE(SUM(cache_tokens), 0) AS cache,
-       COALESCE(SUM(uncached_tokens), 0) AS uncached
+       COALESCE(SUM(uncached_tokens), 0) AS uncached,
+       COALESCE(AVG(NULLIF(first_token_ms, 0)), 0) AS first_token_ms,
+       COALESCE(AVG(NULLIF(output_speed, 0)), 0) AS output_speed
 FROM llm_calls
 WHERE 1=1`+extra+`
 GROUP BY bucket

@@ -46,6 +46,16 @@
         <div class="relative h-64"><canvas id="callsChart"></canvas></div>
         <div class="empty hidden" id="callsEmpty"><span class="icon-[lucide--chart-no-axes-column] text-2xl"></span> No calls in this range</div>
       </div></div>
+      <div class="card"><div class="card-body">
+        <h2 class="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-300"><span class="icon-[lucide--timer] text-zinc-500"></span> First token latency by period</h2>
+        <div class="relative h-64"><canvas id="ttftChart"></canvas></div>
+        <div class="empty hidden" id="ttftEmpty"><span class="icon-[lucide--chart-no-axes-column] text-2xl"></span> No latency data in this range</div>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <h2 class="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-300"><span class="icon-[lucide--gauge] text-zinc-500"></span> Output speed by period</h2>
+        <div class="relative h-64"><canvas id="speedChart"></canvas></div>
+        <div class="empty hidden" id="speedEmpty"><span class="icon-[lucide--chart-no-axes-column] text-2xl"></span> No speed data in this range</div>
+      </div></div>
     </div>
   </main>
   <script type="application/json" id="chart-data">{{.ChartJSON}}</script>

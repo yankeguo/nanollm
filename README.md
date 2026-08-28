@@ -221,7 +221,7 @@ Periodically (every 50 inserts), blobs and `llm_call_files` rows older than `det
 
 Insert/prune errors are logged and do not change the client response.
 
-Browse the same data at `/usage` after signing in with `admin.username` / `admin.password`. Usage and Calls share a time window (quick ranges or a custom range with a timezone, defaulting to the browser's) and combinable filters for model, provider, API key, and outcome (`ok` / `canceled` / `no_response` / `error`, partitioning every recorded call). Usage is grouped by hour, day, or week, derived from the window span.
+Browse the same data at `/usage` after signing in with `admin.username` / `admin.password`. Usage and Calls share a time window (quick ranges or a custom range with a timezone, defaulting to the browser's) and combinable filters for model, provider, API key, and outcome (`ok` / `canceled` / `no_response` / `error`, partitioning every recorded call). Usage is grouped by hour, day, or week, derived from the window span. Besides token and call charts, the page charts per-bucket average `first_token_ms` and `output_speed` (calls where the metric is unavailable, e.g. failures, are excluded from the averages).
 
 ## Docker / GHCR
 

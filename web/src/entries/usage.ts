@@ -9,6 +9,8 @@ interface UsageChartData {
   input: number[];
   output: number[];
   cache: number[];
+  first_token: number[];
+  output_speed: number[];
 }
 
 // zinc-500 ticks, zinc-800 grid, series in sky/amber/emerald/indigo 300-400.
@@ -33,12 +35,15 @@ Chart.defaults.color = "#71717a";
 Chart.defaults.borderColor = "#27272a";
 
 // Swap a chart canvas for its empty-state block when there is nothing to draw.
-function renderOrEmpty(canvasId: string, emptyId: string, build: (el: HTMLCanvasElement) => void) {
+// A metric series of all zeros (e.g. every call in the window failed) also
+// counts as empty.
+function renderOrEmpty(canvasId: string, emptyId: string, build: (el: HTMLCanvasElement) => void, series?: number[]) {
   const el = document.getElementById(canvasId) as HTMLCanvasElement | null;
   if (!el) return;
   const holder = document.getElementById("chart-data");
   const data: UsageChartData = JSON.parse(holder?.textContent || "{}");
-  if (!data.labels || data.labels.length === 0) {
+  const noMetric = series !== undefined && !series.some((v) => v > 0);
+  if (!data.labels || data.labels.length === 0 || noMetric) {
     el.parentElement?.classList.add("hidden");
     document.getElementById(emptyId)?.classList.remove("hidden");
     return;
@@ -103,4 +108,62 @@ if (holder) {
       },
     });
   });
+
+  // 0 marks a bucket with no measurable calls (all failed/canceled); map it to
+  // null so the line shows a gap instead of dipping to zero.
+  const gaps = (series: number[]) => series.map((v) => (v > 0 ? v : null));
+
+  renderOrEmpty("ttftChart", "ttftEmpty", (el) => {
+    new Chart(el, {
+      type: "line",
+      data: {
+        labels: data.labels,
+        datasets: [
+          {
+            label: "avg first token latency (ms)",
+            data: gaps(data.first_token),
+            borderColor: "#f0abfc",
+            backgroundColor: "rgb(240 171 252 / 0.12)",
+            tension: 0.3,
+            fill: true,
+            pointRadius: 2,
+            pointBackgroundColor: "#f0abfc",
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend, tooltip },
+        scales: { x: { ticks: tick, grid: { display: false } }, y: { ticks: tick, grid: grid, beginAtZero: true } },
+      },
+    });
+  }, data.first_token);
+
+  renderOrEmpty("speedChart", "speedEmpty", (el) => {
+    new Chart(el, {
+      type: "line",
+      data: {
+        labels: data.labels,
+        datasets: [
+          {
+            label: "avg output speed (tok/s)",
+            data: gaps(data.output_speed),
+            borderColor: "#fdba74",
+            backgroundColor: "rgb(253 186 116 / 0.12)",
+            tension: 0.3,
+            fill: true,
+            pointRadius: 2,
+            pointBackgroundColor: "#fdba74",
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend, tooltip },
+        scales: { x: { ticks: tick, grid: { display: false } }, y: { ticks: tick, grid: grid, beginAtZero: true } },
+      },
+    });
+  }, data.output_speed);
 }

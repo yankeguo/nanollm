@@ -477,7 +477,7 @@ func TestAdminTemplatesRender(t *testing.T) {
 	data["Kind"] = "usage"
 	data["FilterAction"] = "/usage"
 	data["Totals"] = usageTotals{Calls: 1, Input: 2, Output: 3}
-	data["ChartJSON"] = template.JS(`{"labels":["2026-08-20"],"calls":[1],"input":[2],"output":[3],"cache":[0],"uncached":[2]}`)
+	data["ChartJSON"] = template.JS(`{"labels":["2026-08-20"],"calls":[1],"input":[2],"output":[3],"cache":[0],"uncached":[2],"first_token":[120.5],"output_speed":[42.3]}`)
 	mergeFilterView(data, f, "usage", filterOptions{Models: []string{"fast"}})
 	var buf bytes.Buffer
 	require.NoError(t, adminTmpl.ExecuteTemplate(&buf, "usage.html", data))

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"html/template"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -29,12 +30,14 @@ type usageTotals struct {
 }
 
 type usageChart struct {
-	Labels   []string `json:"labels"`
-	Calls    []int64  `json:"calls"`
-	Input    []int64  `json:"input"`
-	Output   []int64  `json:"output"`
-	Cache    []int64  `json:"cache"`
-	Uncached []int64  `json:"uncached"`
+	Labels      []string  `json:"labels"`
+	Calls       []int64   `json:"calls"`
+	Input       []int64   `json:"input"`
+	Output      []int64   `json:"output"`
+	Cache       []int64   `json:"cache"`
+	Uncached    []int64   `json:"uncached"`
+	FirstToken  []float64 `json:"first_token"`
+	OutputSpeed []float64 `json:"output_speed"`
 }
 
 type callFileView struct {
@@ -133,12 +136,14 @@ func (s *Server) handleAdminUsage(w http.ResponseWriter, r *http.Request) {
 		chartSeries = fillUsageBuckets(f.window(), series)
 	}
 	chart := usageChart{
-		Labels:   make([]string, 0, len(chartSeries)),
-		Calls:    make([]int64, 0, len(chartSeries)),
-		Input:    make([]int64, 0, len(chartSeries)),
-		Output:   make([]int64, 0, len(chartSeries)),
-		Cache:    make([]int64, 0, len(chartSeries)),
-		Uncached: make([]int64, 0, len(chartSeries)),
+		Labels:      make([]string, 0, len(chartSeries)),
+		Calls:       make([]int64, 0, len(chartSeries)),
+		Input:       make([]int64, 0, len(chartSeries)),
+		Output:      make([]int64, 0, len(chartSeries)),
+		Cache:       make([]int64, 0, len(chartSeries)),
+		Uncached:    make([]int64, 0, len(chartSeries)),
+		FirstToken:  make([]float64, 0, len(chartSeries)),
+		OutputSpeed: make([]float64, 0, len(chartSeries)),
 	}
 	for _, b := range chartSeries {
 		chart.Labels = append(chart.Labels, b.Bucket)
@@ -147,6 +152,8 @@ func (s *Server) handleAdminUsage(w http.ResponseWriter, r *http.Request) {
 		chart.Output = append(chart.Output, b.Output)
 		chart.Cache = append(chart.Cache, b.Cache)
 		chart.Uncached = append(chart.Uncached, b.Uncached)
+		chart.FirstToken = append(chart.FirstToken, math.Round(b.FirstTokenMs*10)/10)
+		chart.OutputSpeed = append(chart.OutputSpeed, math.Round(b.OutputSpeed*10)/10)
 		totals.Calls += b.Calls
 		totals.Input += b.Input
 		totals.Output += b.Output
