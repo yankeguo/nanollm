@@ -47,25 +47,25 @@
       {{if and (eq .Filter.Range "custom") .ToRFC}}<input type="hidden" name="to" value="{{.ToRFC}}">{{end}}
       <span class="text-xs font-semibold tracking-wider text-zinc-500 uppercase"><span class="icon-[lucide--filter]"></span> Filter</span>
       <label class="flex items-center gap-2 text-sm text-zinc-400">Model
-        <select name="model" class="input input-sm input-auto{{if $.Filter.Model}} input-active{{end}}" onchange="this.form.submit()">
+        <select name="model" class="input input-sm input-auto{{if $.Filter.Model}} input-active{{end}}">
           <option value="">Any</option>
           {{range .ModelOpts}}<option value="{{.}}"{{if eq $.Filter.Model .}} selected{{end}}>{{.}}</option>{{end}}
         </select>
       </label>
       <label class="flex items-center gap-2 text-sm text-zinc-400">Provider
-        <select name="provider" class="input input-sm input-auto{{if $.Filter.Provider}} input-active{{end}}" onchange="this.form.submit()">
+        <select name="provider" class="input input-sm input-auto{{if $.Filter.Provider}} input-active{{end}}">
           <option value="">Any</option>
           {{range .ProviderOpts}}<option value="{{.}}"{{if eq $.Filter.Provider .}} selected{{end}}>{{.}}</option>{{end}}
         </select>
       </label>
       <label class="flex items-center gap-2 text-sm text-zinc-400">API key
-        <select name="api_key" class="input input-sm input-auto{{if $.Filter.APIKey}} input-active{{end}}" onchange="this.form.submit()">
+        <select name="api_key" class="input input-sm input-auto{{if $.Filter.APIKey}} input-active{{end}}">
           <option value="">Any</option>
           {{range .KeyOpts}}<option value="{{.}}"{{if eq $.Filter.APIKey .}} selected{{end}}>{{.}}</option>{{end}}
         </select>
       </label>
       <label class="flex items-center gap-2 text-sm text-zinc-400">Outcome
-        <select name="outcome" class="input input-sm input-auto{{if $.Filter.Outcome}} input-active{{end}}" onchange="this.form.submit()">
+        <select name="outcome" class="input input-sm input-auto{{if $.Filter.Outcome}} input-active{{end}}">
           <option value="">Any</option>
           <option value="ok"{{if eq .Filter.Outcome "ok"}} selected{{end}}>ok</option>
           <option value="error"{{if eq .Filter.Outcome "error"}} selected{{end}}>error</option>

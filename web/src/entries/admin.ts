@@ -143,6 +143,13 @@ document.querySelectorAll<HTMLFormElement>("form.rangefilter").forEach((form) =>
   });
 });
 
+// Dimension filters (model/provider/api_key/outcome) auto-submit on change.
+// The handler lives here, not in an inline onchange, because the admin CSP
+// (script-src 'self') blocks inline event handlers.
+document.querySelectorAll<HTMLSelectElement>("form.dim-filter select").forEach((sel) => {
+  sel.addEventListener("change", () => sel.form?.submit());
+});
+
 // Copy buttons: any [data-copy] copies the text of its previous sibling
 // (the <pre>/<code> it decorates) and flashes a check icon on success.
 // Buttons stay hidden where the async clipboard API is unavailable.
