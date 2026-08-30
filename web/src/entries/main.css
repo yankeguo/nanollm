@@ -137,35 +137,21 @@ body {
     @apply pointer-events-none opacity-40;
   }
 
-  /* Token proportion bars (inputBar/outputBar in admin.go). The bar length
-     represents the full token total; the fill is the cached/output share,
-     colored like the usage chart. */
-  .inbar,
-  .outbar {
-    @apply mt-1 h-1 w-16 overflow-hidden rounded-sm;
-  }
+  /* Token proportion bar (inputBar in admin.go). The bar length represents
+     the full input token total; the fill is the cached share, colored like
+     the usage chart. */
   .inbar {
-    @apply bg-sky-400/40;
-  }
-  .outbar {
-    @apply bg-zinc-700;
-  }
-  .inbar i,
-  .outbar i {
-    @apply block h-full;
+    @apply mt-1 h-1 w-16 overflow-hidden rounded-sm bg-sky-400/40;
   }
   .inbar i {
+    @apply block h-full;
     background: var(--color-amber-300);
-  }
-  .outbar i {
-    background: var(--color-emerald-300);
   }
   .sub {
     @apply mt-0.5 text-xs text-zinc-500;
   }
-  /* Right-aligned table cells keep their bars flush right. */
-  td.text-right .inbar,
-  td.text-right .outbar {
+  /* Right-aligned table cells keep their bar flush right. */
+  td.text-right .inbar {
     @apply ms-auto;
   }
 

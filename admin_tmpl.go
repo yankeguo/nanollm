@@ -13,7 +13,6 @@ var adminTmpl = template.Must(template.New("").Funcs(template.FuncMap{
 	"formatMs":       formatMs,
 	"formatSpeed":    formatSpeed,
 	"inputBar":       inputBar,
-	"outputBar":      outputBar,
 	"callErrorClass": callErrorClass,
 	"statusClass":    statusClass,
 	"jsAsset":        jsAsset,

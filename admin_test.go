@@ -195,25 +195,6 @@ func TestFormatNum(t *testing.T) {
 	require.Equal(t, "1,000", formatNum(uint64(1000)))
 }
 
-func TestOutputBar(t *testing.T) {
-	cases := []struct {
-		name   string
-		input  int64
-		output int64
-		want   string
-	}{
-		{"zero total", 0, 0, `<div class="outbar"><i style="width:0%"></i></div><div class="sub">&nbsp;</div>`},
-		{"quarter of total", 3000, 1000, `<div class="outbar"><i style="width:25%"></i></div><div class="sub">&nbsp;</div>`},
-		{"all output", 0, 500, `<div class="outbar"><i style="width:100%"></i></div><div class="sub">&nbsp;</div>`},
-		{"negative total clamps", -100, 50, `<div class="outbar"><i style="width:0%"></i></div><div class="sub">&nbsp;</div>`},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			require.Equal(t, template.HTML(c.want), outputBar(c.input, c.output))
-		})
-	}
-}
-
 func TestInputBar(t *testing.T) {
 	cases := []struct {
 		name  string
