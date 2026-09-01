@@ -429,7 +429,7 @@ models:
         protocols: [openai_completions]
 `), 0o644))
 	_, err := loadConfig(path)
-	require.ErrorContains(t, err, "must set openai_completions, openai_responses, openai_embeddings, anthropic_messages, or bailian_multimodal_embedding")
+	require.ErrorContains(t, err, "must set openai_completions, openai_responses, openai_embeddings, anthropic_messages, bailian_multimodal_embedding, or ollama_chat")
 }
 
 func TestLoadConfigBailianMultimodalEmbedding(t *testing.T) {
@@ -471,6 +471,47 @@ models:
 	// The association only lists bailian_multimodal_embedding, so other
 	// protocols stay unmatched for this model.
 	require.Empty(t, cfg.providersFor("mme", protocolOpenAIEmbeddings))
+}
+
+func TestLoadConfigOllamaChat(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+admin:
+  username: admin
+  password: REPLACE_ME
+api_keys:
+  - name: alice
+    value: sk-alice
+providers:
+  - name: ollama
+    headers:
+      Authorization: Bearer ollama
+    ollama_chat:
+      url: https://ollama.com/api/chat
+      model: qwen3:8b
+models:
+  - name: qwen
+    providers:
+      - name: ollama
+        protocols: [ollama_chat]
+`), 0o644))
+	cfg, err := loadConfig(path)
+	require.NoError(t, err)
+
+	providers := cfg.providersFor("qwen", protocolOllamaChat)
+	require.Len(t, providers, 1)
+	u, model, headers, ok := providers[0].resolve(protocolOllamaChat)
+	require.True(t, ok)
+	require.Equal(t, "https://ollama.com/api/chat", u)
+	require.Equal(t, "qwen3:8b", model)
+	require.Equal(t, "Bearer ollama", headers["Authorization"])
+
+	// The association only lists ollama_chat, so other protocols stay
+	// unmatched for this model.
+	require.Empty(t, cfg.providersFor("qwen", protocolOpenAICompletions))
 }
 
 func TestLoadConfigNestedProviderEndpoints(t *testing.T) {

@@ -212,7 +212,9 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	}
 	defer resp.Body.Close()
 	rec.HTTPStatus = resp.StatusCode
-	sse := responseIsSSE(meta.Stream, resp.Header.Get("Content-Type"))
+	contentType := resp.Header.Get("Content-Type")
+	sse := responseIsSSE(meta.Stream, contentType)
+	ndjson := !sse && isNDJSON(contentType)
 
 	if isCatastrophic(nil, resp.StatusCode) {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxStatusBlob))
@@ -242,6 +244,11 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 		logw := newSSELogWriter(buf)
 		usage, firstToken, err = copySSE(io.MultiWriter(fw, logw), fw, resp.Body, keepalive)
 		logw.Flush()
+	} else if ndjson {
+		// NDJSON is copied raw (no coalescing, no keepalive comments); the log
+		// blob is the transcript wrapped as a JSON string, like SSE.
+		fw := newFlushWriter(w)
+		usage, firstToken, err = copyNDJSON(io.MultiWriter(fw, buf), resp.Body)
 	} else {
 		fr := &firstReadReader{r: resp.Body}
 		_, err = io.Copy(io.MultiWriter(w, buf), fr)
@@ -254,7 +261,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 			rec.OutputSpeed = float64(usage.Output) / time.Since(firstToken).Seconds()
 		}
 	}
-	rec.ResponseJSON = encodeResponseBlob(buf.Bytes(), sse)
+	rec.ResponseJSON = encodeResponseBlob(buf.Bytes(), sse || ndjson)
 	rec.InputTokens = usage.Input
 	rec.OutputTokens = usage.Output
 	rec.CacheTokens = usage.CacheRead
@@ -388,6 +395,13 @@ func copyResponseHeaders(dst, src http.Header) {
 
 func isSSE(contentType string) bool {
 	return strings.Contains(strings.ToLower(contentType), "text/event-stream")
+}
+
+// isNDJSON reports an Ollama-style newline-delimited JSON stream
+// (application/x-ndjson). It is checked after responseIsSSE: the "json"
+// substring would otherwise never classify it as SSE anyway.
+func isNDJSON(contentType string) bool {
+	return strings.Contains(strings.ToLower(contentType), "x-ndjson")
 }
 
 // responseIsSSE reports whether the upstream body should be copied as SSE

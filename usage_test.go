@@ -265,3 +265,26 @@ func TestCopyAndScanSSEResponsesLargeCompleted(t *testing.T) {
 	require.Equal(t, int64(2), u.Output)
 	require.Equal(t, "gpt-4o", u.ResponseModel)
 }
+
+func TestParseUsageJSONOllama(t *testing.T) {
+	u := parseUsageJSON([]byte(`{"model":"qwen3:8b","message":{"role":"assistant","content":"ok"},"done":true,"prompt_eval_count":26,"eval_count":7}`))
+	require.Equal(t, int64(26), u.Input)
+	require.Equal(t, int64(7), u.Output)
+	require.Equal(t, int64(26), u.Uncached)
+	require.Equal(t, "qwen3:8b", u.ResponseModel)
+}
+
+func TestCopyAndScanNDJSON(t *testing.T) {
+	body := "{\"model\":\"qwen3:8b\",\"message\":{\"role\":\"assistant\",\"content\":\"Hel\"},\"done\":false}\n" +
+		"{\"model\":\"qwen3:8b\",\"message\":{\"role\":\"assistant\",\"content\":\"lo\"},\"done\":false}\n" +
+		"{\"model\":\"qwen3:8b\",\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true,\"prompt_eval_count\":26,\"eval_count\":7}\n"
+	src := bytes.NewBufferString(body)
+	var dst bytes.Buffer
+	u, first, err := copyNDJSON(&dst, src)
+	require.NoError(t, err)
+	require.False(t, first.IsZero())
+	require.Equal(t, int64(26), u.Input)
+	require.Equal(t, int64(7), u.Output)
+	require.Equal(t, "qwen3:8b", u.ResponseModel)
+	require.Equal(t, body, dst.String())
+}

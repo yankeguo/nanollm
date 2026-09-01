@@ -33,6 +33,8 @@ providers:
       Authorization: Bearer ollama
     openai_completions:
       url: http://127.0.0.1:11434/v1/chat/completions
+    ollama_chat:
+      url: http://127.0.0.1:11434/api/chat
   - name: anthropic
     headers:
       x-api-key: REPLACE_ME
@@ -58,7 +60,7 @@ models:
     providers:
       - name: ollama
         model: llama3.1
-        protocols: [openai_completions]
+        protocols: [openai_completions, ollama_chat]
   - name: text-embedding-3-small
     providers:
       - name: openai

@@ -68,6 +68,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api.anthropic.com/v1/messages", anth)
 	mme := auth(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Protocol: protocolBailianMultimodalEmbedding})
 	mux.Handle("POST /dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding", mme)
+	ochat := s.requireAPIKey(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Protocol: protocolOllamaChat}, protocolOllamaChat)
+	mux.Handle("POST /ollama.com/api/chat", ochat)
 	return withSecurityHeaders(mux)
 }
 
@@ -185,6 +187,13 @@ func writeProtocolError(w http.ResponseWriter, protocol string, status int, typ,
 		writeJSON(w, status, map[string]any{
 			"code":    typ,
 			"message": message,
+		})
+		return
+	}
+	if protocol == protocolOllamaChat {
+		// Ollama errors are {"error": ...} with a plain string.
+		writeJSON(w, status, map[string]any{
+			"error": message,
 		})
 		return
 	}

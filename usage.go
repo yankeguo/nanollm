@@ -108,6 +108,10 @@ type usageFields struct {
 	CacheCreationInputTokens jsonInt64 `json:"cache_creation_input_tokens"`
 	PromptCacheHitTokens     jsonInt64 `json:"prompt_cache_hit_tokens"`
 	PromptCacheMissTokens    jsonInt64 `json:"prompt_cache_miss_tokens"`
+	// PromptEvalCount/EvalCount are Ollama /api/chat's flat top-level usage
+	// fields (prompt and completion token counts).
+	PromptEvalCount jsonInt64 `json:"prompt_eval_count"`
+	EvalCount       jsonInt64 `json:"eval_count"`
 	// ImageTokens is a top-level field only on DashScope multimodal embedding
 	// responses (qwen*-vl-embedding, multimodal-embedding-v1), where
 	// input_tokens excludes visual tokens.
@@ -158,6 +162,10 @@ func (u usageFields) asTokenUsage() tokenUsage {
 		// instead of cache_read_input_tokens, so this add is a no-op there.
 		in += int64(u.CacheReadInputTokens) + cacheCreation
 	}
+	if in == 0 {
+		// Ollama /api/chat reports a flat prompt_eval_count.
+		in = int64(u.PromptEvalCount)
+	}
 	// DashScope qwen multimodal embeddings report visual tokens as a
 	// top-level image_tokens not included in input_tokens. The tongyi
 	// series puts them in input_tokens_details instead and already counts
@@ -166,6 +174,10 @@ func (u usageFields) asTokenUsage() tokenUsage {
 	out := int64(u.CompletionTokens)
 	if out == 0 {
 		out = int64(u.OutputTokens)
+	}
+	if out == 0 {
+		// Ollama /api/chat reports a flat eval_count.
+		out = int64(u.EvalCount)
 	}
 	// Embeddings (and some gateways) report only total_tokens, or omit
 	// prompt_tokens. Do not let total_tokens override an already-parsed input.
@@ -227,6 +239,13 @@ func parseUsageJSON(body []byte) tokenUsage {
 		return tokenUsage{}
 	}
 	var out tokenUsage
+	// Ollama /api/chat has no usage object: prompt_eval_count/eval_count sit
+	// flat at the top level. Other protocols leave these fields zero, so this
+	// merge is a no-op for them.
+	var flat usageFields
+	if err := json.Unmarshal(body, &flat); err == nil {
+		mergeUsage(&out, flat.asTokenUsage())
+	}
 	// Anthropic-style {"type":"message_start","message":{"model":...,"usage":...}}
 	mergeNestedUsage(&out, resp.Message)
 	// OpenAI Responses SSE {"type":"response.completed","response":{"model":...,"usage":...}}
@@ -260,22 +279,46 @@ func parseUsageSSELine(line []byte) tokenUsage {
 }
 
 func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (tokenUsage, time.Time, error) {
-	if ping == nil {
-		ping = dst
-	}
 	var usage tokenUsage
 	var firstToken time.Time
-	var carry []byte
-	buf := make([]byte, 32*1024)
-
-	scan := func(line []byte) {
+	err := pumpStream(dst, ping, src, keepalive, func(line []byte) {
 		// The first data: line is the first token signal. Keepalive comments
 		// never reach this point, so they cannot false-trigger TTFT.
 		if firstToken.IsZero() && isSSEDataLine(line) {
 			firstToken = time.Now()
 		}
 		mergeUsage(&usage, parseUsageSSELine(line))
+	})
+	return usage, firstToken, err
+}
+
+// copyNDJSON copies an Ollama-style newline-delimited JSON stream. NDJSON has
+// no comment syntax, so no keepalive can be injected; every non-empty line is
+// a JSON object and the first one is the TTFT signal.
+func copyNDJSON(dst io.Writer, src io.Reader) (tokenUsage, time.Time, error) {
+	var usage tokenUsage
+	var firstToken time.Time
+	err := pumpStream(dst, dst, src, 0, func(line []byte) {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			return
+		}
+		if firstToken.IsZero() {
+			firstToken = time.Now()
+		}
+		mergeUsage(&usage, parseUsageJSON(line))
+	})
+	return usage, firstToken, err
+}
+
+// pumpStream copies src to dst while feeding each completed line to scan.
+// While keepalive > 0 and src is idle, SSE comments are written to ping.
+func pumpStream(dst, ping io.Writer, src io.Reader, keepalive time.Duration, scan func(line []byte)) error {
+	if ping == nil {
+		ping = dst
 	}
+	var carry []byte
+	buf := make([]byte, 32*1024)
 
 	consume := func(chunk []byte) error {
 		if _, err := dst.Write(chunk); err != nil {
@@ -298,14 +341,14 @@ func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (token
 		return nil
 	}
 
-	finish := func(err error) (tokenUsage, time.Time, error) {
+	finish := func(err error) error {
 		if err == nil || errors.Is(err, io.EOF) {
 			if len(carry) > 0 {
 				scan(carry)
 			}
-			return usage, firstToken, nil
+			return nil
 		}
-		return usage, firstToken, err
+		return err
 	}
 
 	if keepalive <= 0 {
@@ -313,7 +356,7 @@ func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (token
 			n, err := src.Read(buf)
 			if n > 0 {
 				if werr := consume(buf[:n]); werr != nil {
-					return usage, firstToken, werr
+					return werr
 				}
 			}
 			if err != nil {
@@ -343,7 +386,7 @@ func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (token
 			ticker.Reset(keepalive)
 			if op.n > 0 {
 				if err := consume(buf[:op.n]); err != nil {
-					return usage, firstToken, err
+					return err
 				}
 			}
 			if op.err != nil {
@@ -352,7 +395,7 @@ func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (token
 			startRead()
 		case <-ticker.C:
 			if _, err := ping.Write([]byte(sseComment)); err != nil {
-				return usage, firstToken, err
+				return err
 			}
 		}
 	}

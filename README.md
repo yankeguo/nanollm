@@ -2,10 +2,10 @@
 
 OpenAI- and Anthropic-compatible reverse proxy for LLM APIs. Point coding tools at nanollm and map one client-facing model name to one or more upstream providers.
 
-Providers for a model are tried **in order**, but only those whose `protocols` list matches the inbound API (`openai_completions`, `openai_responses`, `openai_embeddings`, `anthropic_messages`, or `bailian_multimodal_embedding`). The next provider is used only when the current one is catastrophically unavailable. Rate limits, 4xx, and ordinary 5xx stay on the same provider so prompt cache is not thrown away.
+Providers for a model are tried **in order**, but only those whose `protocols` list matches the inbound API (`openai_completions`, `openai_responses`, `openai_embeddings`, `anthropic_messages`, `bailian_multimodal_embedding`, or `ollama_chat`). The next provider is used only when the current one is catastrophically unavailable. Rate limits, 4xx, and ordinary 5xx stay on the same provider so prompt cache is not thrown away.
 
 > [!WARNING]
-> Protocol conversion is intentionally **not** supported: nanollm never rewrites a body between Chat Completions, Responses, and Anthropic Messages. This is a deliberate design choice to maximize field-level compatibility (every non-`model` field is forwarded untouched) and forwarding performance. If a model has no associated vendor listing the matching protocol, the request fails with `404` instead of being converted.
+> Protocol conversion is intentionally **not** supported: nanollm never rewrites a body between Chat Completions, Responses, Anthropic Messages, and Ollama chat. This is a deliberate design choice to maximize field-level compatibility (every non-`model` field is forwarded untouched) and forwarding performance. If a model has no associated vendor listing the matching protocol, the request fails with `404` instead of being converted.
 
 ## Features
 
@@ -42,6 +42,8 @@ Point OpenAI clients at `http://127.0.0.1:8080/api.openai.com/v1` with `Authoriz
 Point Anthropic clients at `http://127.0.0.1:8080/api.anthropic.com` with `x-api-key: <api_keys.value>` and the same `"model"` field. The model must list `anthropic_messages` on at least one associated provider.
 
 For the Aliyun Bailian multimodal embedding API, POST to `http://127.0.0.1:8080/dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding` with `Authorization: Bearer <api_keys.value>`; the model must list `bailian_multimodal_embedding` on at least one associated provider.
+
+Point Ollama clients at `http://127.0.0.1:8080/ollama.com` with `Authorization: Bearer <api_keys.value>` and the same `"model"` field; `POST /ollama.com/api/chat` uses the vendor `ollama_chat` block. Streaming answers are newline-delimited JSON (`application/x-ndjson`), passed through byte-for-byte.
 
 Open `http://127.0.0.1:8080/` (redirects to `/usage`) to review token usage and call logs.
 
@@ -119,15 +121,15 @@ models:
 | `providers[].name` | yes | Vendor name (globally unique). Used for `llm_calls.provider` |
 | `providers[].model` | no | Default upstream model for associations that omit `model` |
 | `providers[].headers` | no | Default extra headers (including upstream auth); a protocol block may override keys |
-| `providers[].openai_completions` / `providers[].openai_responses` / `providers[].openai_embeddings` / `providers[].anthropic_messages` / `providers[].bailian_multimodal_embedding` | at least one | Protocol endpoint URLs. A model only uses a vendor for an inbound API when that protocol is listed on the association |
-| `openai_completions.url` / `openai_responses.url` / `openai_embeddings.url` / `anthropic_messages.url` / `bailian_multimodal_embedding.url` | yes (when the block is present) | Full `http`/`https` upstream URL (not a base URL) |
-| `openai_completions.model` / `openai_responses.model` / `openai_embeddings.model` / `anthropic_messages.model` / `bailian_multimodal_embedding.model` | no | Overrides the bound `model` for that protocol |
-| `openai_completions.headers` / `openai_responses.headers` / `openai_embeddings.headers` / `anthropic_messages.headers` / `bailian_multimodal_embedding.headers` | no | Overlay on vendor-level `headers` (`Set` per key) |
+| `providers[].openai_completions` / `providers[].openai_responses` / `providers[].openai_embeddings` / `providers[].anthropic_messages` / `providers[].bailian_multimodal_embedding` / `providers[].ollama_chat` | at least one | Protocol endpoint URLs. A model only uses a vendor for an inbound API when that protocol is listed on the association |
+| `openai_completions.url` / `openai_responses.url` / `openai_embeddings.url` / `anthropic_messages.url` / `bailian_multimodal_embedding.url` / `ollama_chat.url` | yes (when the block is present) | Full `http`/`https` upstream URL (not a base URL) |
+| `openai_completions.model` / `openai_responses.model` / `openai_embeddings.model` / `anthropic_messages.model` / `bailian_multimodal_embedding.model` / `ollama_chat.model` | no | Overrides the bound `model` for that protocol |
+| `openai_completions.headers` / `openai_responses.headers` / `openai_embeddings.headers` / `anthropic_messages.headers` / `bailian_multimodal_embedding.headers` / `ollama_chat.headers` | no | Overlay on vendor-level `headers` (`Set` per key) |
 | `models[].name` | yes | Client-facing model id |
 | `models[].providers` | yes | Ordered vendor associations (failover order) |
 | `models[].providers[].name` | yes | References a top-level `providers[].name` (unique within the model) |
 | `models[].providers[].model` | no | Upstream model for this association; overrides `providers[].model`. If both are empty, the client model is kept |
-| `models[].providers[].protocols` | yes | Non-empty subset of the vendor's protocol blocks. Chat/completions only use associations that list `openai_completions`; `POST /api.openai.com/v1/embeddings` only uses `openai_embeddings`; `POST /api.openai.com/v1/responses` only uses `openai_responses`; `POST /api.anthropic.com/v1/messages` only uses `anthropic_messages`; `POST /dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding` only uses `bailian_multimodal_embedding` |
+| `models[].providers[].protocols` | yes | Non-empty subset of the vendor's protocol blocks. Chat/completions only use associations that list `openai_completions`; `POST /api.openai.com/v1/embeddings` only uses `openai_embeddings`; `POST /api.openai.com/v1/responses` only uses `openai_responses`; `POST /api.anthropic.com/v1/messages` only uses `anthropic_messages`; `POST /dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding` only uses `bailian_multimodal_embedding`; `POST /ollama.com/api/chat` only uses `ollama_chat` |
 
 Rules:
 
@@ -135,12 +137,12 @@ Rules:
 - MySQL DSN is required; timestamps are stored in UTC
 - At least one API key, one provider, and one model
 - Provider names unique globally; model names unique; association names unique **within** a model
-- Each vendor **must** set at least one of `openai_completions`, `openai_responses`, `openai_embeddings`, `anthropic_messages`, or `bailian_multimodal_embedding`. Inference and embeddings blocks may coexist on the same vendor; nanollm does not enforce that split. Unused top-level vendors are allowed.
+- Each vendor **must** set at least one of `openai_completions`, `openai_responses`, `openai_embeddings`, `anthropic_messages`, `bailian_multimodal_embedding`, or `ollama_chat`. Inference and embeddings blocks may coexist on the same vendor; nanollm does not enforce that split. Unused top-level vendors are allowed.
 - Each association's `protocols` must be a non-empty subset of that vendor's defined blocks
 - API key names unique; API key values unique
 - Incoming `Authorization` / `X-Api-Key` / `Api-Key` are **not** forwarded; client `Cookie` is stripped from upstream requests and upstream `Set-Cookie` is dropped from responses
 - Request bodies larger than 64 MiB return `413`
-- nanollm does **not** convert bodies between chat completions, Responses, and Anthropic. If a model has no association listing the matching protocol, the request fails with `404`
+- nanollm does **not** convert bodies between chat completions, Responses, Anthropic, and Ollama. If a model has no association listing the matching protocol, the request fails with `404`
 - `config.yaml` is gitignored; commit `config.example.yaml` only
 
 See `config.example.yaml`.
@@ -190,6 +192,7 @@ This keeps prefix / prompt cache on the first healthy provider.
 | `POST` | `/api.openai.com/v1/responses` | yes | Only associations that list `openai_responses` |
 | `POST` | `/api.anthropic.com/v1/messages` | yes | Anthropic Messages; only associations that list `anthropic_messages` |
 | `POST` | `/dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding` | yes | Aliyun Bailian multimodal embedding (official URL shape, host as first path segment); only associations that list `bailian_multimodal_embedding` |
+| `POST` | `/ollama.com/api/chat` | yes | Ollama chat; only associations that list `ollama_chat` |
 | `GET` | `/` | no | 302 redirect to `/usage` |
 | `GET` | `/usage` | cookie | Usage tables and Chart.js graphs |
 | `GET` | `/calls` | cookie | Paginated call log |
@@ -198,9 +201,11 @@ This keeps prefix / prompt cache on the first healthy provider.
 | `GET`/`POST` | `/login` | no | Admin sign-in |
 | `POST` | `/logout` | cookie | Clear admin cookie |
 
-The JSON body `model` field selects `models[].name`. nanollm rewrites only the top-level `model` (and, for OpenAI Chat Completions and Completions streaming, injects `stream_options.include_usage` when missing). Responses `stream_options` only documents `include_obfuscation`; Anthropic has no `stream_options`; embeddings are not given that field. Other JSON fields are copied as raw values and are not decoded into a typed tree. Each inbound path only uses associations that list the matching protocol: chat/completions → `openai_completions`, `/api.openai.com/v1/embeddings` → `openai_embeddings`, `/api.openai.com/v1/responses` → `openai_responses`, `/api.anthropic.com/v1/messages` → `anthropic_messages`, the DashScope multimodal embedding path → `bailian_multimodal_embedding`.
+The JSON body `model` field selects `models[].name`. nanollm rewrites only the top-level `model` (and, for OpenAI Chat Completions and Completions streaming, injects `stream_options.include_usage` when missing). Responses `stream_options` only documents `include_obfuscation`; Anthropic has no `stream_options`; embeddings and Ollama are not given that field. Other JSON fields are copied as raw values and are not decoded into a typed tree. Each inbound path only uses associations that list the matching protocol: chat/completions → `openai_completions`, `/api.openai.com/v1/embeddings` → `openai_embeddings`, `/api.openai.com/v1/responses` → `openai_responses`, `/api.anthropic.com/v1/messages` → `anthropic_messages`, the DashScope multimodal embedding path → `bailian_multimodal_embedding`, `/ollama.com/api/chat` → `ollama_chat`.
 
 Streaming (`"stream": true` with `Content-Type: text/event-stream`) is copied through as SSE. JSON error bodies on a `stream: true` request stay JSON (no SSE comments). While the upstream SSE body is silent (long thinking / a long tool-using turn), nanollm writes SSE comments (`:` lines) so the client and any idle proxy do not time out; `Content-Length` is dropped on that path so the extra comments cannot desync HTTP/1.1 clients. Usage is parsed from a copy of the upstream body (including Responses `response.usage` on `response.completed`, whose payload can be larger than a single thinking delta, embeddings `prompt_tokens` / `total_tokens`, and DashScope multimodal embedding `input_tokens` + top-level `image_tokens`); keepalive comments are not stored in the call-log blob. Consecutive same-type text/argument deltas are coalesced in that blob only (Chat Completions `delta.content` / tool-call `arguments` / legacy `function_call.arguments`, Completions `choices[].text`, Anthropic `content_block_delta`, Responses `*.delta` strings); the client still receives the raw stream. Anthropic and Responses bodies are not rewritten beyond `model`.
+
+Ollama `/api/chat` streams newline-delimited JSON (`application/x-ndjson`; `stream` defaults to true upstream when the field is omitted). NDJSON has no comment syntax, so no keepalive bytes can be injected and deltas are not coalesced; the transcript is still stored as a JSON string in the call log. Usage comes from the final `done` chunk's flat `prompt_eval_count` / `eval_count` (also present on non-streaming responses).
 
 ## Call log (MySQL)
 

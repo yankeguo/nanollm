@@ -50,7 +50,7 @@ func providerRef(p Provider) ProviderRef {
 // providerProtocols lists the protocol blocks set on a vendor, so test
 // configs can associate every block without repeating them.
 func providerProtocols(p Provider) []string {
-	out := make([]string, 0, 5)
+	out := make([]string, 0, 6)
 	if p.OpenAICompletions != nil {
 		out = append(out, protocolOpenAICompletions)
 	}
@@ -65,6 +65,9 @@ func providerProtocols(p Provider) []string {
 	}
 	if p.BailianMultimodalEmbedding != nil {
 		out = append(out, protocolBailianMultimodalEmbedding)
+	}
+	if p.OllamaChat != nil {
+		out = append(out, protocolOllamaChat)
 	}
 	return out
 }
@@ -1319,4 +1322,105 @@ func TestProxySSEDropsContentLength(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Empty(t, rec.Header().Get("Content-Length"))
 	require.Equal(t, upstream, rec.Body.Bytes())
+}
+
+func TestProxyOllamaChat(t *testing.T) {
+	var gotBody []byte
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"model":"qwen3:8b","created_at":"2026-09-02T00:00:00Z","message":{"role":"assistant","content":"ok"},"done":true,"done_reason":"stop","prompt_eval_count":26,"eval_count":7}`)
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(Provider{
+		Name:  "ollama",
+		Model: "qwen3:8b",
+		OllamaChat: &ProviderEndpoint{
+			URL:     up.URL + "/api/chat",
+			Headers: map[string]string{"Authorization": "Bearer ollama"},
+		},
+	}), logger, nil).Handler()
+
+	respBody := `{"model":"qwen3:8b","created_at":"2026-09-02T00:00:00Z","message":{"role":"assistant","content":"ok"},"done":true,"done_reason":"stop","prompt_eval_count":26,"eval_count":7}`
+	req := httptest.NewRequest(http.MethodPost, "/ollama.com/api/chat", jsonBody(map[string]any{
+		"model":    "fast",
+		"stream":   false,
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	// The upstream response is passed through byte-for-byte.
+	require.JSONEq(t, respBody, rec.Body.String())
+
+	// model is rewritten; stream_options is never injected on Ollama bodies.
+	var sent map[string]any
+	require.NoError(t, json.Unmarshal(gotBody, &sent))
+	require.Equal(t, "qwen3:8b", sent["model"])
+	_, has := sent["stream_options"]
+	require.False(t, has)
+
+	require.Len(t, logger.calls, 1)
+	got := logger.calls[0]
+	require.Equal(t, "fast", got.Model)
+	require.Equal(t, "ollama", got.Provider)
+	require.Equal(t, "qwen3:8b", got.ProviderModel)
+	require.Equal(t, int64(26), got.InputTokens)
+	require.Equal(t, int64(7), got.OutputTokens)
+	require.Equal(t, int64(26), got.UncachedTokens)
+}
+
+func TestProxyOllamaChatStream(t *testing.T) {
+	upstream := []byte("{\"model\":\"qwen3:8b\",\"message\":{\"role\":\"assistant\",\"content\":\"Hel\"},\"done\":false}\n" +
+		"{\"model\":\"qwen3:8b\",\"message\":{\"role\":\"assistant\",\"content\":\"lo\"},\"done\":false}\n" +
+		"{\"model\":\"qwen3:8b\",\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true,\"done_reason\":\"stop\",\"prompt_eval_count\":26,\"eval_count\":7}\n")
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = w.Write(upstream)
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(Provider{
+		Name:       "ollama",
+		Model:      "qwen3:8b",
+		OllamaChat: ep(up.URL + "/api/chat"),
+	}), logger, nil).Handler()
+
+	// Ollama streams by default: the client omits stream and the upstream
+	// still answers NDJSON, detected by Content-Type.
+	req := httptest.NewRequest(http.MethodPost, "/ollama.com/api/chat", jsonBody(map[string]any{
+		"model":    "fast",
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "application/x-ndjson", rec.Header().Get("Content-Type"))
+	// The NDJSON stream is passed through byte-for-byte.
+	require.Equal(t, upstream, rec.Body.Bytes())
+
+	require.Len(t, logger.calls, 1)
+	got := logger.calls[0]
+	require.Equal(t, int64(26), got.InputTokens)
+	require.Equal(t, int64(7), got.OutputTokens)
+	// The transcript is stored as a JSON string, like SSE.
+	var transcript string
+	require.NoError(t, json.Unmarshal(got.ResponseJSON, &transcript))
+	require.Equal(t, string(upstream), transcript)
+}
+
+func TestProxyOllamaChatMissingProviders(t *testing.T) {
+	h := testProxy(t, cfgFast(Provider{Name: "m", OpenAICompletions: ep("http://127.0.0.1:0")}))
+	req := httptest.NewRequest(http.MethodPost, "/ollama.com/api/chat", jsonBody(map[string]any{
+		"model":    "fast",
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	// Ollama-style error shape: a plain string.
+	require.JSONEq(t, `{"error":"the model `+"`fast`"+` has no ollama_chat providers"}`, rec.Body.String())
 }
