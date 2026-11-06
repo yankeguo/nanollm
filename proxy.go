@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -12,9 +13,87 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 var maxRequestBody int64 = 64 << 20
+
+// Request bodies may arrive compressed (TypeSafe System One documents gzip and
+// zstd). nanollm has to decode the JSON to rewrite `model`, so it decodes one
+// compression layer and forwards the rewritten request uncompressed.
+var (
+	errUnsupportedContentEncoding = errors.New("unsupported content-encoding")
+	errDecodedBodyTooLarge        = errors.New("decoded request body too large")
+)
+
+// contentEncoding returns the single non-identity encoding applied to a
+// request body, or "" when the body is not encoded. More than one layer is
+// rejected: one layer is all the vendors document, and nested decoding buys
+// nothing for a proxy that only needs the JSON.
+func contentEncoding(h http.Header) (string, error) {
+	var encodings []string
+	for _, v := range h.Values("Content-Encoding") {
+		for _, part := range strings.Split(v, ",") {
+			part = strings.ToLower(strings.TrimSpace(part))
+			if part == "" || part == "identity" {
+				continue
+			}
+			encodings = append(encodings, part)
+		}
+	}
+	if len(encodings) == 0 {
+		return "", nil
+	}
+	if len(encodings) > 1 {
+		return "", fmt.Errorf("%w: only one compression layer is supported", errUnsupportedContentEncoding)
+	}
+	return encodings[0], nil
+}
+
+// decodeRequestBody undoes the request body's Content-Encoding. The decoded
+// body is capped at maxRequestBody so a small compressed body cannot expand
+// into an unbounded allocation.
+func decodeRequestBody(body []byte, h http.Header) ([]byte, error) {
+	enc, err := contentEncoding(h)
+	if err != nil {
+		return nil, err
+	}
+	if enc == "" {
+		return body, nil
+	}
+	var r io.Reader
+	switch enc {
+	case "gzip", "x-gzip":
+		gz, err := gzip.NewReader(bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("invalid gzip request body: %w", err)
+		}
+		defer gz.Close()
+		r = gz
+	case "zstd":
+		zs, err := zstd.NewReader(
+			bytes.NewReader(body),
+			zstd.WithDecoderConcurrency(1),
+			zstd.WithDecoderMaxMemory(uint64(maxRequestBody)),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("invalid zstd request body: %w", err)
+		}
+		defer zs.Close()
+		r = zs
+	default:
+		return nil, fmt.Errorf("%w %q", errUnsupportedContentEncoding, enc)
+	}
+	decoded, err := io.ReadAll(io.LimitReader(r, maxRequestBody+1))
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s request body: %w", enc, err)
+	}
+	if int64(len(decoded)) > maxRequestBody {
+		return nil, errDecodedBodyTooLarge
+	}
+	return decoded, nil
+}
 
 // maxStatusBlob caps how much of an upstream error body is read (and stored)
 // before failing over on a catastrophic status; the full body is not worth
@@ -112,6 +191,19 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	body, err = decodeRequestBody(body, r.Header)
+	if err != nil {
+		switch {
+		case errors.Is(err, errUnsupportedContentEncoding):
+			p.writeError(w, http.StatusUnsupportedMediaType, p.clientErrorType(false), err.Error())
+		case errors.Is(err, errDecodedBodyTooLarge):
+			p.writeError(w, http.StatusRequestEntityTooLarge, p.clientErrorType(false), "request body too large")
+		default:
+			p.writeError(w, http.StatusBadRequest, p.clientErrorType(false), err.Error())
+		}
+		return
+	}
+
 	meta, err := parseRequest(body)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, p.clientErrorType(false), err.Error())
@@ -201,6 +293,10 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Del("Accept-Encoding")
+	// The rewritten payload is always plain JSON: the client's encoding was
+	// decoded above, so forwarding the header would make the upstream try to
+	// decode an identity body.
+	req.Header.Del("Content-Encoding")
 	req.ContentLength = int64(len(payload))
 
 	sentAt := time.Now()

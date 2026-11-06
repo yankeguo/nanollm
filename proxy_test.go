@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/require"
 )
 
@@ -541,6 +543,27 @@ func TestProxyCatastrophicStatusReturnsError(t *testing.T) {
 func jsonBody(v any) io.Reader {
 	b, _ := json.Marshal(v)
 	return bytes.NewReader(b)
+}
+
+func gzipBytes(t *testing.T, body []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	_, err := zw.Write(body)
+	require.NoError(t, err)
+	require.NoError(t, zw.Close())
+	return buf.Bytes()
+}
+
+func zstdBytes(t *testing.T, body []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw, err := zstd.NewWriter(&buf)
+	require.NoError(t, err)
+	_, err = zw.Write(body)
+	require.NoError(t, err)
+	require.NoError(t, zw.Close())
+	return buf.Bytes()
 }
 
 type memoryCallLogger struct {
@@ -1522,4 +1545,93 @@ func TestProxyTypeSafeSystemOneAuthError(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
 	// TypeSafe authentication errors carry an error_type object under detail.
 	require.JSONEq(t, `{"detail":{"error_type":"authentication_error","message":"invalid api key"}}`, rec.Body.String())
+}
+
+func TestProxyDecodesCompressedRequestBodies(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		encoding string
+		encode   func(*testing.T, []byte) []byte
+	}{
+		{name: "gzip", encoding: "gzip", encode: gzipBytes},
+		{name: "x-gzip", encoding: "x-gzip", encode: gzipBytes},
+		{name: "zstd", encoding: "zstd", encode: zstdBytes},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotBody []byte
+			var gotEncoding string
+			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotBody, _ = io.ReadAll(r.Body)
+				gotEncoding = r.Header.Get("Content-Encoding")
+				w.Header().Set("Content-Type", "application/json")
+				io.WriteString(w, `{"id":"1","model":"m","choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":5,"completion_tokens":1}}`)
+			}))
+			t.Cleanup(up.Close)
+
+			h := testProxy(t, cfgFast(Provider{Name: "m", Model: "m", OpenAICompletions: ep(up.URL)}))
+			payload, err := json.Marshal(map[string]any{
+				"model":    "fast",
+				"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+			})
+			require.NoError(t, err)
+			req := httptest.NewRequest(http.MethodPost, "/api.openai.com/v1/chat/completions", bytes.NewReader(tc.encode(t, payload)))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Content-Encoding", tc.encoding)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, authed(req))
+			require.Equal(t, http.StatusOK, rec.Code)
+
+			// The body is decoded, its model rewritten, and sent upstream as
+			// plain JSON without the client's Content-Encoding.
+			var sent map[string]any
+			require.NoError(t, json.Unmarshal(gotBody, &sent))
+			require.Equal(t, "m", sent["model"])
+			require.Len(t, sent["messages"], 1)
+			require.Empty(t, gotEncoding)
+		})
+	}
+}
+
+func TestProxyRejectsUnsupportedRequestEncoding(t *testing.T) {
+	h := testProxy(t, cfgFast(Provider{Name: "m", Model: "m", OpenAICompletions: ep("http://127.0.0.1:0")}))
+	req := httptest.NewRequest(http.MethodPost, "/api.openai.com/v1/chat/completions", bytes.NewReader([]byte(`{"model":"fast"}`)))
+	req.Header.Set("Content-Encoding", "br")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusUnsupportedMediaType, rec.Code)
+	require.Contains(t, rec.Body.String(), "unsupported content-encoding")
+}
+
+func TestProxyRejectsMultipleRequestEncodings(t *testing.T) {
+	h := testProxy(t, cfgFast(Provider{Name: "m", Model: "m", OpenAICompletions: ep("http://127.0.0.1:0")}))
+	req := httptest.NewRequest(http.MethodPost, "/api.openai.com/v1/chat/completions", bytes.NewReader([]byte(`{"model":"fast"}`)))
+	req.Header.Set("Content-Encoding", "gzip, zstd")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusUnsupportedMediaType, rec.Code)
+	require.Contains(t, rec.Body.String(), "one compression layer")
+}
+
+func TestProxyRejectsMalformedCompressedBody(t *testing.T) {
+	h := testProxy(t, cfgFast(Provider{Name: "m", Model: "m", OpenAICompletions: ep("http://127.0.0.1:0")}))
+	req := httptest.NewRequest(http.MethodPost, "/api.openai.com/v1/chat/completions", bytes.NewReader([]byte(`{"model":"fast"}`)))
+	req.Header.Set("Content-Encoding", "gzip")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "invalid gzip request body")
+}
+
+func TestProxyRejectsOversizedDecodedBody(t *testing.T) {
+	orig := maxRequestBody
+	maxRequestBody = 64
+	t.Cleanup(func() { maxRequestBody = orig })
+
+	h := testProxy(t, cfgFast(Provider{Name: "m", Model: "m", OpenAICompletions: ep("http://127.0.0.1:0")}))
+	payload := bytes.Repeat([]byte("a"), 256)
+	req := httptest.NewRequest(http.MethodPost, "/api.openai.com/v1/chat/completions", bytes.NewReader(gzipBytes(t, payload)))
+	req.Header.Set("Content-Encoding", "gzip")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
 }

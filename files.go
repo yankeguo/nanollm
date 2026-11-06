@@ -41,6 +41,15 @@ var audioFormats = map[string]string{
 	"webm":  "audio/webm",
 }
 
+// systemOneImageFormats maps the formats TypeSafe System One accepts for image
+// assets to their MIME types. They are client-controlled, so only known image
+// formats are extracted.
+var systemOneImageFormats = map[string]string{
+	"png":  "image/png",
+	"jpg":  "image/jpeg",
+	"jpeg": "image/jpeg",
+}
+
 func filePlaceholder(sha string) string {
 	return filePlaceholderPrefix + sha + filePlaceholderSuffix
 }
@@ -56,6 +65,21 @@ func validFileSHA256(s string) bool {
 		}
 	}
 	return true
+}
+
+// systemOneAssetMime reports the MIME type of a TypeSafe System One image
+// asset object ({"type":"image","format":"png",...}), or "" when the object is
+// not one.
+func systemOneAssetMime(obj map[string]json.RawMessage) string {
+	format, _ := rawJSONString(obj["format"])
+	mime, ok := systemOneImageFormats[strings.ToLower(strings.TrimSpace(format))]
+	if !ok {
+		return ""
+	}
+	if typ, _ := rawJSONString(obj["type"]); typ != "" && typ != "image" {
+		return ""
+	}
+	return mime
 }
 
 func fileKind(mime string) string {
@@ -234,6 +258,24 @@ func rewriteJSONObject(raw, trimmed []byte, files *[]extractedFile, seen map[str
 					addExtracted(files, seen, f)
 					obj["data"] = p
 					skip["data"] = true
+					changed = true
+				}
+			}
+		}
+	}
+
+	// TypeSafe System One image assets are {"type":"image","format":"png",
+	// "data_base64":...}; every other protocol in this proxy spells the field
+	// "data" or "b64_json", so requiring both the type/format pair keeps
+	// unrelated fields untouched.
+	if data, err := rawJSONString(obj["data_base64"]); err == nil && data != "" {
+		if mime := systemOneAssetMime(obj); mime != "" {
+			if f, ok := fileFromBase64(data, mime); ok {
+				p, err := encodeJSONValue(filePlaceholder(f.SHA256))
+				if err == nil {
+					addExtracted(files, seen, f)
+					obj["data_base64"] = p
+					skip["data_base64"] = true
 					changed = true
 				}
 			}

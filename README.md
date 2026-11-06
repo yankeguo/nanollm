@@ -45,7 +45,7 @@ For the Aliyun Bailian multimodal embedding API, POST to `http://127.0.0.1:8080/
 
 Point Ollama clients at `http://127.0.0.1:8080/ollama.com` with `Authorization: Bearer <api_keys.value>` and the same `"model"` field; `POST /ollama.com/api/chat` uses the vendor `ollama_chat` block. Streaming answers are newline-delimited JSON (`application/x-ndjson`), passed through byte-for-byte.
 
-For TypeSafe System One decision models, POST a `{model, state, questions}` JSON body to `http://127.0.0.1:8080/api.typesafe.ai/v1/systemone` with `Authorization: Bearer <api_keys.value>`; the model must list `typesafe_systemone` on at least one associated provider. The endpoint returns `{model, answers, usage}` in one plain-JSON pass (no streaming, no `stream_options`), and nanollm only rewrites the top-level `model`. The same wire protocol is served by other vendors, so only the upstream `url`/`model` under `typesafe_systemone` changes: Fireworks (`https://api.fireworks.ai/inference/v1/systemone`, model such as `accounts/<account>/models/rune`) and Aliyun Bailian's decision model (`https://{WorkspaceId}.{region}.maas.aliyuncs.com/compatible-mode/v1/systemone`, model `decision-model-preview`). Send the body uncompressed: nanollm parses the JSON to rewrite `model`, so `Content-Encoding: gzip`/`zstd` request bodies are rejected with `400`.
+For TypeSafe System One decision models, POST a `{model, state, questions}` JSON body to `http://127.0.0.1:8080/api.typesafe.ai/v1/systemone` with `Authorization: Bearer <api_keys.value>`; the model must list `typesafe_systemone` on at least one associated provider. The endpoint returns `{model, answers, usage}` in one plain-JSON pass (no streaming, no `stream_options`), and nanollm only rewrites the top-level `model`. The same wire protocol is served by other vendors, so only the upstream `url`/`model` under `typesafe_systemone` changes: Fireworks (`https://api.fireworks.ai/inference/v1/systemone`, model such as `accounts/<account>/models/rune`) and Aliyun Bailian's decision model (`https://{WorkspaceId}.{region}.maas.aliyuncs.com/compatible-mode/v1/systemone`, model `decision-model-preview`). The JSON body may be sent with `Content-Encoding: gzip` (or `x-gzip`) or `zstd`; nanollm decodes one compression layer so it can rewrite `model`, then forwards the request uncompressed. Send images inline as base64 JSON assets; `multipart/form-data` request bodies are not supported.
 
 Open `http://127.0.0.1:8080/` (redirects to `/usage`) to review token usage and call logs.
 
@@ -154,7 +154,8 @@ Rules:
 - API key names unique; API key values unique
 - Incoming `Authorization` / `X-Api-Key` / `Api-Key` are **not** forwarded; client `Cookie` is stripped from upstream requests and upstream `Set-Cookie` is dropped from responses
 - Request bodies larger than 64 MiB return `413`
-- nanollm does **not** convert bodies between chat completions, Responses, Anthropic, and Ollama. If a model has no association listing the matching protocol, the request fails with `404`
+- Request bodies may be compressed with `Content-Encoding: gzip` (or `x-gzip`) or `zstd`. nanollm decodes one compression layer so it can rewrite `model`, then sends the request upstream uncompressed (the header is dropped). Unsupported encodings or more than one layer return `415`; malformed compressed bodies return `400`; the 64 MiB cap applies to both the encoded and the decoded body
+- nanollm does **not** convert bodies between chat completions, Responses, Anthropic, Ollama, and System One. If a model has no association listing the matching protocol, the request fails with `404`
 - `config.yaml` is gitignored; commit `config.example.yaml` only
 
 See `config.example.yaml`.
@@ -231,7 +232,7 @@ Each provider attempt writes one row to `llm_calls`:
 - `http_status` (0 if no HTTP response, e.g. dial failure)
 - `error` (transport / rewrite / catastrophic status; `canceled` when the client hung up after the copy started; empty on a completed copy)
 - `request_json` / `response_json` (`MEDIUMBLOB`; SSE responses stored as a JSON string, with consecutive same-type text/argument deltas coalesced)
-- multimodal base64 in those blobs is replaced with `<file:{sha256}>` before insert (data URLs, Anthropic `type=base64` sources, OpenAI `input_audio`, and `b64_json`); decoded bytes go to `llm_files` (`MEDIUMBLOB`, SHA256 primary key) with `llm_call_files` linking each call. Upstream request/response bytes are not rewritten.
+- multimodal base64 in those blobs is replaced with `<file:{sha256}>` before insert (data URLs, Anthropic `type=base64` sources, OpenAI `input_audio`, `b64_json`, and TypeSafe System One image assets `assets.*.data_base64`); decoded bytes go to `llm_files` (`MEDIUMBLOB`, SHA256 primary key) with `llm_call_files` linking each call. Upstream request/response bytes are not rewritten.
 
 Failures and failover hops are recorded so you can see which hop died. The synthetic “all upstreams unavailable” client error is not an extra row.
 

@@ -102,6 +102,27 @@ func TestExtractFilesHTTPURLUnchanged(t *testing.T) {
 	require.Equal(t, in, out)
 }
 
+func TestExtractFilesSystemOneImageAsset(t *testing.T) {
+	raw, b64, sha := testPNG()
+	in := []byte(`{"model":"jev-latest","state":"photo","questions":{"red":{"type":"box","instructions":"Locate the red rectangle."}},"assets":{"photo":{"type":"image","format":"png","data_base64":"` + b64 + `"}}}`)
+	out, files := extractFiles(in)
+	require.Len(t, files, 1)
+	require.Equal(t, sha, files[0].SHA256)
+	require.Equal(t, "image/png", files[0].MimeType)
+	require.Equal(t, raw, files[0].Data)
+	require.Contains(t, string(out), `"data_base64":"`+filePlaceholder(sha)+`"`)
+	require.NotContains(t, string(out), b64)
+}
+
+func TestExtractFilesSystemOneAssetNeedsImageFormat(t *testing.T) {
+	_, b64, _ := testPNG()
+	// Without the type/format pair the object is not a System One image asset.
+	in := []byte(`{"data_base64":"` + b64 + `"}`)
+	out, files := extractFiles(in)
+	require.Empty(t, files)
+	require.Equal(t, in, out)
+}
+
 func TestExtractFilesShortAndInvalid(t *testing.T) {
 	short := []byte(`{"url":"data:image/png;base64,QQ=="}`)
 	out, files := extractFiles(short)
