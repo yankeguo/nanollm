@@ -429,7 +429,7 @@ models:
         protocols: [openai_completions]
 `), 0o644))
 	_, err := loadConfig(path)
-	require.ErrorContains(t, err, "must set openai_completions, openai_responses, openai_embeddings, anthropic_messages, bailian_multimodal_embedding, or ollama_chat")
+	require.ErrorContains(t, err, "must set openai_completions, openai_responses, openai_embeddings, anthropic_messages, bailian_multimodal_embedding, ollama_chat, or typesafe_systemone")
 }
 
 func TestLoadConfigBailianMultimodalEmbedding(t *testing.T) {
@@ -512,6 +512,47 @@ models:
 	// The association only lists ollama_chat, so other protocols stay
 	// unmatched for this model.
 	require.Empty(t, cfg.providersFor("qwen", protocolOpenAICompletions))
+}
+
+func TestLoadConfigTypeSafeSystemOne(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+mysql:
+  dsn: nanollm:REPLACE_ME@tcp(127.0.0.1:3306)/nanollm
+admin:
+  username: admin
+  password: REPLACE_ME
+api_keys:
+  - name: alice
+    value: sk-alice
+providers:
+  - name: typesafe
+    headers:
+      Authorization: Bearer sk-typesafe
+    typesafe_systemone:
+      url: https://api.typesafe.ai/v1/systemone
+      model: jev-latest
+models:
+  - name: decision
+    providers:
+      - name: typesafe
+        protocols: [typesafe_systemone]
+`), 0o644))
+	cfg, err := loadConfig(path)
+	require.NoError(t, err)
+
+	providers := cfg.providersFor("decision", protocolTypeSafeSystemOne)
+	require.Len(t, providers, 1)
+	u, model, headers, ok := providers[0].resolve(protocolTypeSafeSystemOne)
+	require.True(t, ok)
+	require.Equal(t, "https://api.typesafe.ai/v1/systemone", u)
+	require.Equal(t, "jev-latest", model)
+	require.Equal(t, "Bearer sk-typesafe", headers["Authorization"])
+
+	// The association only lists typesafe_systemone, so other protocols stay
+	// unmatched for this model.
+	require.Empty(t, cfg.providersFor("decision", protocolOpenAICompletions))
 }
 
 func TestLoadConfigNestedProviderEndpoints(t *testing.T) {

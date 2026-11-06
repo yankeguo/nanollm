@@ -47,6 +47,12 @@ providers:
     bailian_multimodal_embedding:
       url: https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding
       model: qwen3-vl-embedding
+  - name: typesafe
+    headers:
+      Authorization: Bearer sk-REPLACE_ME
+    typesafe_systemone:
+      url: https://api.typesafe.ai/v1/systemone
+      model: jev-latest
 models:
   - name: gpt-4o
     providers:
@@ -78,3 +84,7 @@ models:
     providers:
       - name: bailian
         protocols: [bailian_multimodal_embedding]
+  - name: decision
+    providers:
+      - name: typesafe
+        protocols: [typesafe_systemone]

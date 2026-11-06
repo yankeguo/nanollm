@@ -70,6 +70,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding", mme)
 	ochat := s.requireAPIKey(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Protocol: protocolOllamaChat}, protocolOllamaChat)
 	mux.Handle("POST /ollama.com/api/chat", ochat)
+	sysone := s.requireAPIKey(&Proxy{Config: s.Config, Client: s.Client, Logger: s.Logger, Protocol: protocolTypeSafeSystemOne}, protocolTypeSafeSystemOne)
+	mux.Handle("POST /api.typesafe.ai/v1/systemone", sysone)
 	return withSecurityHeaders(mux)
 }
 
@@ -194,6 +196,23 @@ func writeProtocolError(w http.ResponseWriter, protocol string, status int, typ,
 		// Ollama errors are {"error": ...} with a plain string.
 		writeJSON(w, status, map[string]any{
 			"error": message,
+		})
+		return
+	}
+	if protocol == protocolTypeSafeSystemOne {
+		// TypeSafe errors are {"detail": ...}; authentication failures carry an
+		// error_type object, other failures a plain string.
+		if typ == "authentication_error" {
+			writeJSON(w, status, map[string]any{
+				"detail": map[string]any{
+					"error_type": typ,
+					"message":    message,
+				},
+			})
+			return
+		}
+		writeJSON(w, status, map[string]any{
+			"detail": message,
 		})
 		return
 	}

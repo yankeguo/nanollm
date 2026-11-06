@@ -50,7 +50,7 @@ func providerRef(p Provider) ProviderRef {
 // providerProtocols lists the protocol blocks set on a vendor, so test
 // configs can associate every block without repeating them.
 func providerProtocols(p Provider) []string {
-	out := make([]string, 0, 6)
+	out := make([]string, 0, 7)
 	if p.OpenAICompletions != nil {
 		out = append(out, protocolOpenAICompletions)
 	}
@@ -68,6 +68,9 @@ func providerProtocols(p Provider) []string {
 	}
 	if p.OllamaChat != nil {
 		out = append(out, protocolOllamaChat)
+	}
+	if p.TypeSafeSystemOne != nil {
+		out = append(out, protocolTypeSafeSystemOne)
 	}
 	return out
 }
@@ -1423,4 +1426,100 @@ func TestProxyOllamaChatMissingProviders(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	// Ollama-style error shape: a plain string.
 	require.JSONEq(t, `{"error":"the model `+"`fast`"+` has no ollama_chat providers"}`, rec.Body.String())
+}
+
+func TestProxyTypeSafeSystemOne(t *testing.T) {
+	respBody := `{"model":"jev-latest","answers":{"task_complete":{"type":"noul","noul":0.98},"next_action":{"type":"choice","choice":"rerun_tests","confidence":0.4,"probabilities":{"rerun_tests":0.7,"finish":0.3}}},"usage":{"input_tokens":120,"output_tokens":12}}`
+	var gotBody []byte
+	var gotAuth, gotDangerZone string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		gotAuth = r.Header.Get("Authorization")
+		gotDangerZone = r.Header.Get("TypeSafe-Danger-Zone-Images")
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, respBody)
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(Provider{
+		Name:  "typesafe",
+		Model: "jev-latest",
+		TypeSafeSystemOne: &ProviderEndpoint{
+			URL:     up.URL + "/v1/systemone",
+			Headers: map[string]string{"Authorization": "Bearer sk-upstream"},
+		},
+	}), logger, nil).Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/api.typesafe.ai/v1/systemone", jsonBody(map[string]any{
+		"model": "fast",
+		"state": map[string]any{"test_output": "FAIL retry.test.ts"},
+		"questions": map[string]any{
+			"task_complete": map[string]any{"type": "noul", "instructions": "Is the request done?"},
+			"next_action": map[string]any{
+				"type":         "choice",
+				"instructions": "What should the agent do next?",
+				"criteria":     map[string]any{"rerun_tests": "Run the tests again", "finish": "Report done"},
+			},
+		},
+	}))
+	req.Header.Set("TypeSafe-Danger-Zone-Images", "true")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusOK, rec.Code)
+	// The upstream response is passed through byte-for-byte.
+	require.JSONEq(t, respBody, rec.Body.String())
+
+	// model is rewritten; every other field is passed through untouched.
+	var sent map[string]any
+	require.NoError(t, json.Unmarshal(gotBody, &sent))
+	require.Equal(t, "jev-latest", sent["model"])
+	require.Equal(t, map[string]any{"test_output": "FAIL retry.test.ts"}, sent["state"])
+	questions, ok := sent["questions"].(map[string]any)
+	require.True(t, ok)
+	require.Len(t, questions, 2)
+	_, has := sent["stream_options"]
+	require.False(t, has)
+	// Custom protocol headers reach the upstream; the client key does not.
+	require.Equal(t, "Bearer sk-upstream", gotAuth)
+	require.Equal(t, "true", gotDangerZone)
+
+	require.Len(t, logger.calls, 1)
+	got := logger.calls[0]
+	require.Equal(t, "fast", got.Model)
+	require.Equal(t, "typesafe", got.Provider)
+	require.Equal(t, "jev-latest", got.ProviderModel)
+	require.Equal(t, int64(120), got.InputTokens)
+	require.Equal(t, int64(12), got.OutputTokens)
+	require.Equal(t, int64(120), got.UncachedTokens)
+	require.Contains(t, string(got.RequestJSON), `"model":"jev-latest"`)
+	require.Contains(t, string(got.ResponseJSON), `"noul":0.98`)
+}
+
+func TestProxyTypeSafeSystemOneMissingProviders(t *testing.T) {
+	h := testProxy(t, cfgFast(Provider{Name: "m", OpenAICompletions: ep("http://127.0.0.1:0")}))
+	req := httptest.NewRequest(http.MethodPost, "/api.typesafe.ai/v1/systemone", jsonBody(map[string]any{
+		"model":     "fast",
+		"state":     "hi",
+		"questions": map[string]any{"q": map[string]any{"type": "noul"}},
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	// TypeSafe-style error shape: {"detail": ...}.
+	require.JSONEq(t, `{"detail":"the model `+"`fast`"+` has no typesafe_systemone providers"}`, rec.Body.String())
+}
+
+func TestProxyTypeSafeSystemOneAuthError(t *testing.T) {
+	h := testProxy(t, cfgFast(Provider{Name: "m", TypeSafeSystemOne: ep("http://127.0.0.1:0")}))
+	req := httptest.NewRequest(http.MethodPost, "/api.typesafe.ai/v1/systemone", jsonBody(map[string]any{
+		"model":     "fast",
+		"state":     "hi",
+		"questions": map[string]any{"q": map[string]any{"type": "noul"}},
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	// TypeSafe authentication errors carry an error_type object under detail.
+	require.JSONEq(t, `{"detail":{"error_type":"authentication_error","message":"invalid api key"}}`, rec.Body.String())
 }

@@ -72,7 +72,7 @@ func (s *Server) requireAPIKey(next http.Handler, protocol string) http.Handler 
 		key := s.Config.lookupAPIKey(extractAPIKey(r))
 		if key == nil {
 			typ := "invalid_request_error"
-			if protocol == protocolAnthropicMessages {
+			if protocol == protocolAnthropicMessages || protocol == protocolTypeSafeSystemOne {
 				typ = "authentication_error"
 			} else {
 				w.Header().Set("WWW-Authenticate", `Bearer realm="nanollm"`)

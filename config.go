@@ -20,6 +20,7 @@ const (
 	protocolAnthropicMessages          = "anthropic_messages"
 	protocolBailianMultimodalEmbedding = "bailian_multimodal_embedding"
 	protocolOllamaChat                 = "ollama_chat"
+	protocolTypeSafeSystemOne          = "typesafe_systemone"
 )
 
 type Config struct {
@@ -131,11 +132,12 @@ type Provider struct {
 	AnthropicMessages          *ProviderEndpoint `yaml:"anthropic_messages"`
 	BailianMultimodalEmbedding *ProviderEndpoint `yaml:"bailian_multimodal_embedding"`
 	OllamaChat                 *ProviderEndpoint `yaml:"ollama_chat"`
+	TypeSafeSystemOne          *ProviderEndpoint `yaml:"typesafe_systemone"`
 }
 
 func isKnownProtocol(protocol string) bool {
 	switch protocol {
-	case protocolOpenAICompletions, protocolOpenAIResponses, protocolOpenAIEmbeddings, protocolAnthropicMessages, protocolBailianMultimodalEmbedding, protocolOllamaChat:
+	case protocolOpenAICompletions, protocolOpenAIResponses, protocolOpenAIEmbeddings, protocolAnthropicMessages, protocolBailianMultimodalEmbedding, protocolOllamaChat, protocolTypeSafeSystemOne:
 		return true
 	default:
 		return false
@@ -156,6 +158,8 @@ func (p Provider) endpoint(protocol string) *ProviderEndpoint {
 		return p.BailianMultimodalEmbedding
 	case protocolOllamaChat:
 		return p.OllamaChat
+	case protocolTypeSafeSystemOne:
+		return p.TypeSafeSystemOne
 	}
 	return nil
 }
@@ -186,6 +190,9 @@ func (p Provider) bind(ref ProviderRef) Provider {
 	}
 	if _, ok := allowed[protocolOllamaChat]; !ok {
 		out.OllamaChat = nil
+	}
+	if _, ok := allowed[protocolTypeSafeSystemOne]; !ok {
+		out.TypeSafeSystemOne = nil
 	}
 	return out
 }
@@ -338,8 +345,8 @@ func (c *Config) validate() error {
 }
 
 func (p *Provider) validate() error {
-	if p.OpenAICompletions == nil && p.OpenAIResponses == nil && p.OpenAIEmbeddings == nil && p.AnthropicMessages == nil && p.BailianMultimodalEmbedding == nil && p.OllamaChat == nil {
-		return fmt.Errorf("config: provider %q must set openai_completions, openai_responses, openai_embeddings, anthropic_messages, bailian_multimodal_embedding, or ollama_chat", p.Name)
+	if p.OpenAICompletions == nil && p.OpenAIResponses == nil && p.OpenAIEmbeddings == nil && p.AnthropicMessages == nil && p.BailianMultimodalEmbedding == nil && p.OllamaChat == nil && p.TypeSafeSystemOne == nil {
+		return fmt.Errorf("config: provider %q must set openai_completions, openai_responses, openai_embeddings, anthropic_messages, bailian_multimodal_embedding, ollama_chat, or typesafe_systemone", p.Name)
 	}
 	for _, item := range []struct {
 		protocol string
@@ -351,6 +358,7 @@ func (p *Provider) validate() error {
 		{protocolAnthropicMessages, p.AnthropicMessages},
 		{protocolBailianMultimodalEmbedding, p.BailianMultimodalEmbedding},
 		{protocolOllamaChat, p.OllamaChat},
+		{protocolTypeSafeSystemOne, p.TypeSafeSystemOne},
 	} {
 		if err := validateEndpointURL(p.Name, item.protocol, item.ep); err != nil {
 			return err
