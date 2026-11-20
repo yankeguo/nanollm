@@ -42,7 +42,7 @@ Tests live next to the code (`*_test.go`). Use `github.com/stretchr/testify`. Pr
 - Incoming `Authorization` / `X-Api-Key` / `Api-Key` authenticate against `api_keys` and must not be copied upstream. Client `Cookie` is stripped from upstream requests; upstream `Set-Cookie` is dropped from responses.
 - At least one API key is required; missing/invalid keys → 401 except `GET /healthz` and the admin pages (`/login` is public; `/usage` / `/calls` / `/files` redirect to it).
 - Do not commit `config.yaml` (secrets). Change `config.example.yaml` and README when the config schema changes.
-- Images: `ghcr.io/${{ github.repository }}`. Push `main` → `latest`; push a git tag → that tag. Workflow: `.github/workflows/release.yml`.
+- Images: `docker.io/yankeguo/nanollm`, `ghcr.io/${{ github.repository }}`, and `quay.io/yankeguo/nanollm`. Docker Hub and Quay both log in as `yankeguo` using `DOCKERHUB_TOKEN` and `QUAY_TOKEN`; GHCR uses `GITHUB_TOKEN`. Only a `v*` tag push publishes; every semver tag produces its full version, while non-prereleases additionally produce major.minor, major, and `latest`. Prereleases never move those aliases. Workflow: `.github/workflows/release.yml`.
 
 ## Style
 

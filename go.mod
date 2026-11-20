@@ -1,10 +1,10 @@
 module github.com/yankeguo/nanollm
 
-go 1.27.0
+go 1.27.4
 
 require (
-	github.com/go-sql-driver/mysql v1.10.1
-	github.com/klauspost/compress v1.20.3
+	github.com/go-sql-driver/mysql v1.10.2
+	github.com/klauspost/compress v1.20.4
 	github.com/stretchr/testify v1.12.1
 	github.com/yankeguo/rg v1.3.1
 	gopkg.in/yaml.v3 v3.0.1
@@ -17,8 +17,9 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
-	github.com/rogpeppe/go-internal v1.14.1 // indirect
+	github.com/mattn/go-sqlite3 v1.14.53 // indirect
+	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.6 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )

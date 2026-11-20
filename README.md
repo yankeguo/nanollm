@@ -242,16 +242,38 @@ Insert/prune errors are logged and do not change the client response.
 
 Browse the same data at `/usage` after signing in with `admin.username` / `admin.password`. Usage and Calls share a time window (quick ranges or a custom range with a timezone, defaulting to the browser's) and combinable filters for model, provider, API key, and outcome (`ok` / `canceled` / `no_response` / `error`, partitioning every recorded call). Usage is grouped by hour, day, or week, derived from the window span. Besides token and call charts, the page charts per-bucket average `first_token_ms` and `output_speed` (calls where the metric is unavailable, e.g. failures, are excluded from the averages).
 
-## Docker / GHCR
+## Docker / releases
 
-Images: `ghcr.io/yankeguo/nanollm`
+The same image is published to all three registries:
 
-| Git event | Image tag |
+- `docker.io/yankeguo/nanollm`
+- `ghcr.io/yankeguo/nanollm`
+- `quay.io/yankeguo/nanollm`
+
+Both Docker Hub and Quay use `yankeguo` as the login username and image namespace.
+
+Pushing a semantic-version tag triggers `.github/workflows/release.yml`; branch pushes never publish images. For example, `v1.2.3` publishes `1.2.3`, `1.2`, `1`, and `latest`, while `v1.2.3-rc.1` publishes only `1.2.3-rc.1`. Prereleases never move the minor, major, or `latest` aliases. Images currently target `linux/amd64`.
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+### Release credentials
+
+Only two repository Actions secrets are required (each command prompts for the value, so it is not saved in shell history):
+
+```bash
+gh secret set DOCKERHUB_TOKEN -R yankeguo/nanollm
+gh secret set QUAY_TOKEN -R yankeguo/nanollm
+```
+
+| Secret | Purpose |
 |---|---|
-| Push `main` | `latest` |
-| Push a git tag | that tag (e.g. `v1.0.0`) |
+| `DOCKERHUB_TOKEN` | Docker Hub personal access token with permission to push as `yankeguo` |
+| `QUAY_TOKEN` | Quay token with permission to push to `yankeguo/nanollm` |
 
-Workflow: `.github/workflows/release.yml`.
+GHCR uses the workflow's automatic `GITHUB_TOKEN`; no additional secret is required. The release workflow explicitly grants `contents: read` and `packages: write` to that token. This repository's default workflow permission is currently **read**. If GitHub still rejects the GHCR push, go to **Settings → Actions → General → Workflow permissions** and select **Read and write**. As an alternative, store a PAT with `write:packages` as a repository secret and use it for the GHCR login instead.
 
 ## Development
 
