@@ -250,9 +250,19 @@ The same image is published to all three registries:
 - `ghcr.io/yankeguo/nanollm`
 - `quay.io/yankeguo/nanollm`
 
-Both Docker Hub and Quay use `yankeguo` as the login username and image namespace.
+Both Docker Hub and Quay use `yankeguo` as the login username and image namespace. Quay may create `quay.io/yankeguo/nanollm` as **private** on the first push; to allow anonymous pulls, change the repository visibility to **public** in its Quay settings, or use an authenticated pull. Changing visibility does not affect existing tags.
 
-Pushing a semantic-version tag triggers `.github/workflows/release.yml`; branch pushes never publish images. For example, `v1.2.3` publishes `1.2.3`, `1.2`, `1`, and `latest`, while `v1.2.3-rc.1` publishes only `1.2.3-rc.1`. Prereleases never move the minor, major, or `latest` aliases. Images currently target `linux/amd64`.
+Pushing a tag matching `v*.*.*` triggers `.github/workflows/release.yml`; branch pushes and other tag shapes never publish images. Matching tags must still be valid semantic versions. Each registry receives the following tags:
+
+| Git tag | Image tags |
+|---|---|
+| `v0.2.0` | `0.2.0`, `0.2`, `latest` |
+| `v0.2.0-rc.1` | `0.2.0-rc.1` |
+| `v1.2.3` | `1.2.3`, `1.2`, `1`, `latest` |
+| `v1.2.3-rc.1` | `1.2.3-rc.1` |
+| `v2.0.0-beta.2` | `2.0.0-beta.2` |
+
+Prereleases never move the minor, major, or `latest` aliases. Non-prereleases from v1 onward also move the major alias; v0.x releases do not. The early v0.1.0 release published a `0` alias, which remains published as a historical tag; v0.x releases after this workflow fix no longer generate `0`. Images currently target `linux/amd64`.
 
 ```bash
 git tag vX.Y.Z
@@ -273,7 +283,9 @@ gh secret set QUAY_TOKEN -R yankeguo/nanollm
 | `DOCKERHUB_TOKEN` | Docker Hub personal access token with permission to push as `yankeguo` |
 | `QUAY_TOKEN` | Quay token with permission to push to `yankeguo/nanollm` |
 
-GHCR uses the workflow's automatic `GITHUB_TOKEN`; no additional secret is required. The release workflow explicitly grants `contents: read` and `packages: write` to that token. This repository's default workflow permission is currently **read**. If GitHub still rejects the GHCR push, go to **Settings → Actions → General → Workflow permissions** and select **Read and write**. As an alternative, store a PAT with `write:packages` as a repository secret and use it for the GHCR login instead.
+GHCR uses the workflow's automatic `GITHUB_TOKEN`; no additional PAT is required. The release job explicitly grants that token `contents: read` and `packages: write`, which are sufficient for GHCR pushes without changing the repository-wide default workflow permission. Only if GitHub rejects the GHCR push should you check **Settings → Actions → General → Workflow permissions**, or alternatively store a PAT with `write:packages` as a repository secret and use it for the GHCR login.
+
+Reproducibility note: the workflow currently references Actions by floating major versions rather than immutable commit SHAs. Pinning them to SHAs would provide stricter supply-chain reproducibility, but is not done here.
 
 ## Development
 

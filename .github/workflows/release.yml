@@ -2,7 +2,7 @@ name: release
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*.*.*"]
 
 jobs:
   build:
@@ -47,10 +47,12 @@ jobs:
             docker.io/yankeguo/nanollm
             ghcr.io/${{ github.repository }}
             quay.io/yankeguo/nanollm
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
-            type=semver,pattern={{major}},enable=${{ !contains(github.ref_name, '-') }}
+            type=semver,pattern={{major}},enable=${{ !contains(github.ref_name, '-') && !startsWith(github.ref_name, 'v0.') }}
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - name: docker-build-and-push
