@@ -457,7 +457,7 @@ func isSSEFirstTokenLine(line []byte) bool {
 	if json.Unmarshal(payload, &event) != nil {
 		return true
 	}
-	if !jsonBlank(event.Error) {
+	if streamErrorValue(event.Error) {
 		return false
 	}
 	if !jsonBlank(event.Choices) {
@@ -579,9 +579,11 @@ func isSSETerminalLine(line []byte) bool {
 }
 
 // isSSEErrorLine reports whether an SSE line announces an in-stream error:
-// either the SSE `event: error` field or a JSON data payload with a non-empty
-// top-level `error` member. Such a stream may still end with a completion
-// marker (and a clean copy), but it is not a successful measurement window.
+// the SSE `event: error` field, a JSON data payload with a non-empty top-level
+// `error` member, or a data payload whose top-level `type` is `"error"` (the
+// Responses error-event shape, which some compatible gateways send without the
+// `event:` line). Such a stream may still end with a completion marker (and a
+// clean copy), but it is not a successful measurement window.
 func isSSEErrorLine(line []byte) bool {
 	line = bytes.TrimSpace(line)
 	if bytes.HasPrefix(line, []byte("event:")) {
@@ -592,10 +594,14 @@ func isSSEErrorLine(line []byte) bool {
 		return false
 	}
 	var event struct {
+		Type  string          `json:"type"`
 		Error json.RawMessage `json:"error"`
 	}
 	if json.Unmarshal(payload, &event) != nil {
 		return false
+	}
+	if event.Type == "error" {
+		return true
 	}
 	return streamErrorValue(event.Error)
 }
@@ -613,7 +619,7 @@ func isNDJSONFirstTokenLine(line []byte) bool {
 	if json.Unmarshal(line, &event) != nil {
 		return true // not a JSON object: preserve historical behavior
 	}
-	if !jsonBlank(event.Error) {
+	if streamErrorValue(event.Error) {
 		return false
 	}
 	if event.Done != nil && *event.Done {
@@ -663,14 +669,41 @@ func isNDJSONErrorLine(line []byte) bool {
 }
 
 // streamErrorValue reports whether a streamed `error` field carries content.
-// Healthy chunks usually omit the field or send `null`; empty placeholders do
-// not count, so a normal chunk is never mistaken for an error event.
+// Healthy chunks usually omit the field or send an empty placeholder. Emptiness
+// is decided by JSON semantics rather than string comparison, so formatting
+// variants such as `{ }` and `0.0` are placeholders too: null, "", {}, [], false,
+// 0 (and numeric spellings of zero) mean no error, while a non-empty
+// object/array/string, a non-zero number, or true means error. This is the
+// single placeholder rule used by both the in-band-error detection and the
+// first-token eligibility checks.
 func streamErrorValue(raw json.RawMessage) bool {
-	switch string(bytes.TrimSpace(raw)) {
-	case "", "null", `""`, "{}", "[]", "false":
+	s := bytes.TrimSpace(raw)
+	if len(s) == 0 {
 		return false
 	}
-	return true
+	var value any
+	if err := json.Unmarshal(s, &value); err != nil {
+		// Unreachable through the object payloads above (they must already be
+		// valid JSON); treat unparseable content as an error rather than a
+		// placeholder.
+		return true
+	}
+	switch value := value.(type) {
+	case nil:
+		return false
+	case bool:
+		return value
+	case string:
+		return value != ""
+	case float64:
+		return value != 0
+	case []any:
+		return len(value) > 0
+	case map[string]any:
+		return len(value) > 0
+	default:
+		return true
+	}
 }
 
 // jsonZeroValue reports whether raw is absent or an empty JSON value (null,

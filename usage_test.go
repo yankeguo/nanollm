@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -427,12 +428,22 @@ func TestIsSSEErrorLine(t *testing.T) {
 		{name: "data error object", line: `data: {"type":"error","error":{"message":"boom"}}`, want: true},
 		{name: "data error string", line: `data: {"error":"boom"}`, want: true},
 		{name: "data error then done", line: `data: {"error":"boom","done":true}`, want: true},
+		{name: "data error true", line: `data: {"error":true}`, want: true},
+		{name: "data error non-empty array", line: `data: {"error":[{"message":"boom"}]}`, want: true},
+		{name: "data type error no event line", line: `data: {"type":"error","code":"upstream_error","message":"boom"}`, want: true},
+		{name: "data type error without error member", line: `data: {"type":"error"}`, want: true},
 		{name: "data error null", line: `data: {"error":null}`, want: false},
 		{name: "data error empty string", line: `data: {"error":""}`, want: false},
 		{name: "data error empty object", line: `data: {"error":{}}`, want: false},
+		{name: "data error spacey empty object", line: `data: {"error":{ }}`, want: false},
+		{name: "data error empty array", line: `data: {"error":[]}`, want: false},
 		{name: "data error false", line: `data: {"error":false}`, want: false},
+		{name: "data error zero", line: `data: {"error":0}`, want: false},
+		{name: "data error zero float", line: `data: {"error":0.0}`, want: false},
 		{name: "normal delta", line: `data: {"choices":[{"delta":{"content":"a"}}]}`, want: false},
 		{name: "normal chunk with null error", line: `data: {"choices":[{"delta":{"content":"a"}}],"error":null}`, want: false},
+		{name: "normal chunk with empty error object", line: `data: {"choices":[{"delta":{"content":"a"}}],"error":{ }}`, want: false},
+		{name: "data type message_stop", line: `data: {"type":"message_stop"}`, want: false},
 		{name: "done", line: "data: [DONE]", want: false},
 		{name: "comment", line: ":", want: false},
 		{name: "event message_stop", line: "event: message_stop", want: false},
@@ -453,15 +464,95 @@ func TestIsNDJSONErrorLine(t *testing.T) {
 	}{
 		{name: "ollama error", line: `{"error":"boom"}`, want: true},
 		{name: "error with done", line: `{"error":"boom","done":true}`, want: true},
+		{name: "error object", line: `{"error":{"message":"boom"}}`, want: true},
 		{name: "normal chunk", line: `{"message":{"content":"a"},"done":false}`, want: false},
 		{name: "done chunk", line: `{"done":true,"eval_count":2}`, want: false},
 		{name: "null error", line: `{"error":null,"done":false}`, want: false},
 		{name: "empty error", line: `{"error":"","done":false}`, want: false},
+		{name: "empty object error", line: `{"error":{},"done":false}`, want: false},
+		{name: "spacey empty object error", line: `{"error":{ },"done":false}`, want: false},
+		{name: "empty array error", line: `{"error":[],"done":false}`, want: false},
+		{name: "false error", line: `{"error":false,"done":false}`, want: false},
+		{name: "zero error", line: `{"error":0,"done":false}`, want: false},
 		{name: "non-json", line: `not-json`, want: false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.want, isNDJSONErrorLine([]byte(tc.line)))
+		})
+	}
+}
+
+// TestStreamErrorValue pins the JSON-semantic placeholder rule shared by the
+// in-band-error and first-token detectors: formatting variants of empty values
+// are placeholders, every non-empty or non-zero value is an error.
+func TestStreamErrorValue(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{name: "absent", raw: "", want: false},
+		{name: "null", raw: "null", want: false},
+		{name: "empty string", raw: `""`, want: false},
+		{name: "empty object", raw: "{}", want: false},
+		{name: "spacey empty object", raw: "{ }", want: false},
+		{name: "empty array", raw: "[]", want: false},
+		{name: "spacey empty array", raw: "[ ]", want: false},
+		{name: "false", raw: "false", want: false},
+		{name: "zero", raw: "0", want: false},
+		{name: "negative zero", raw: "-0", want: false},
+		{name: "zero float", raw: "0.0", want: false},
+		{name: "zero exponent", raw: "0e0", want: false},
+		{name: "string", raw: `"boom"`, want: true},
+		{name: "true", raw: "true", want: true},
+		{name: "object", raw: `{"message":"boom"}`, want: true},
+		{name: "array", raw: `[{"message":"boom"}]`, want: true},
+		{name: "non-zero number", raw: "1", want: true},
+		{name: "negative number", raw: "-1", want: true},
+		{name: "fraction", raw: "0.5", want: true},
+		{name: "malformed", raw: "{", want: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, streamErrorValue(json.RawMessage(tc.raw)))
+		})
+	}
+}
+
+// TestCopySSEPlaceholderErrorKeepsFirstToken covers the case the placeholder
+// rule exists for: a normal content chunk that carries an empty `error` member
+// (in any JSON spelling) is still a token and not an in-band error, so TTFT
+// survives.
+func TestCopySSEPlaceholderErrorKeepsFirstToken(t *testing.T) {
+	placeholders := []string{`""`, `{}`, `{ }`, `[]`, `false`, `0`, `null`}
+	for _, placeholder := range placeholders {
+		t.Run(placeholder, func(t *testing.T) {
+			body := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"a\"}}],\"error\":" + placeholder + "}\n\n"
+			var dst bytes.Buffer
+			usg, firstToken, _, sawError, err := copySSE(&dst, nil, bytes.NewBufferString(body), 0)
+			require.NoError(t, err)
+			require.Equal(t, body, dst.String())
+			require.True(t, usg.empty())
+			require.False(t, firstToken.IsZero(), "placeholder error must not hide the first token")
+			require.False(t, sawError, "placeholder error is not an in-band error event")
+		})
+	}
+}
+
+// TestCopyNDJSONPlaceholderErrorKeepsFirstToken is the NDJSON counterpart: an
+// output chunk with an empty `error` member is still the first token.
+func TestCopyNDJSONPlaceholderErrorKeepsFirstToken(t *testing.T) {
+	placeholders := []string{`""`, `{}`, `{ }`, `[]`, `false`, `0`, `null`}
+	for _, placeholder := range placeholders {
+		t.Run(placeholder, func(t *testing.T) {
+			body := "{\"message\":{\"role\":\"assistant\",\"content\":\"a\"},\"error\":" + placeholder + ",\"done\":false}\n"
+			var dst bytes.Buffer
+			_, firstToken, _, sawError, err := copyNDJSON(&dst, bytes.NewBufferString(body))
+			require.NoError(t, err)
+			require.Equal(t, body, dst.String())
+			require.False(t, firstToken.IsZero(), "placeholder error must not hide the first token")
+			require.False(t, sawError, "placeholder error is not an in-band error event")
 		})
 	}
 }
@@ -494,6 +585,20 @@ func TestCopySSETracksStreamError(t *testing.T) {
 				"data: {\"error\":{\"message\":\"boom\"}}\n\n" +
 				"data: [DONE]\n\n",
 			want: true,
+		},
+		{
+			name: "data-only type error then done",
+			body: "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n" +
+				"data: {\"type\":\"error\",\"code\":\"upstream_error\",\"message\":\"boom\"}\n\n" +
+				"data: [DONE]\n\n",
+			want: true,
+		},
+		{
+			name: "placeholder error then done",
+			body: "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}],\"error\":{ }}\n\n" +
+				"data: {\"choices\":[{\"delta\":{\"content\":\"b\"}}],\"error\":0}\n\n" +
+				"data: [DONE]\n\n",
+			want: false,
 		},
 	}
 	for _, tc := range tests {

@@ -486,7 +486,7 @@ func TestAdminTemplatesRender(t *testing.T) {
 	require.Contains(t, body, "input-active")
 	require.Contains(t, body, "Tokens by period")
 	require.Contains(t, body, "SSE/NDJSON rows with output tokens only")
-	require.Contains(t, body, "copy finished without error, with a protocol terminator and ≥10ms observation window")
+	require.Contains(t, body, "copy finished without error, with a protocol terminator, no in-band error event, and ≥10ms observation window")
 	require.Contains(t, body, "JSON and legacy rows are excluded")
 
 	cf := parseAdminFilter(url.Values{"model": []string{"fast"}}, now, "calls")

@@ -498,6 +498,36 @@ func TestProxyDoesNotLogSpeedForInStreamError(t *testing.T) {
 			},
 		},
 		{
+			// The Responses error-event shape without the `event: error` line:
+			// only the data payload's `type` marks the stream as failed.
+			name:        "SSE data-only type error",
+			path:        "/api.openai.com/v1/chat/completions",
+			contentType: "text/event-stream",
+			mode:        responseModeSSE,
+			first:       "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"a\"}}]}\n\n",
+			last: "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1000}}\n\n" +
+				"data: {\"type\":\"error\",\"code\":\"upstream_error\",\"message\":\"upstream boom\"}\n\n" +
+				"data: [DONE]\n\n",
+			provider: func(url string) Provider {
+				return Provider{Name: "m", Model: "m", OpenAICompletions: ep(url)}
+			},
+		},
+		{
+			// An error reported after the completion marker still invalidates
+			// the observation window.
+			name:        "SSE error after marker",
+			path:        "/api.openai.com/v1/chat/completions",
+			contentType: "text/event-stream",
+			mode:        responseModeSSE,
+			first:       "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"a\"}}]}\n\n",
+			last: "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1000}}\n\n" +
+				"data: [DONE]\n\n" +
+				"event: error\ndata: {\"type\":\"error\",\"error\":{\"message\":\"upstream boom\"}}\n\n",
+			provider: func(url string) Provider {
+				return Provider{Name: "m", Model: "m", OpenAICompletions: ep(url)}
+			},
+		},
+		{
 			name:        "NDJSON error then done",
 			path:        "/ollama.com/api/chat",
 			contentType: "application/x-ndjson",
