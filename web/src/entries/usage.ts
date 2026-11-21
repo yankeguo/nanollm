@@ -109,8 +109,9 @@ if (holder) {
     });
   });
 
-  // 0 marks a bucket with no measurable streaming calls (or only JSON/legacy
-  // rows); map it to null so the line shows a gap instead of dipping to zero.
+  // 0 marks a bucket with no measurable streaming calls (or only JSON/legacy/
+  // unmeasurable rows); map it to null so the line shows a gap instead of
+  // dipping to zero.
   const gaps = (series: number[]) => series.map((v) => (v > 0 ? v : null));
 
   renderOrEmpty("ttftChart", "ttftEmpty", (el) => {

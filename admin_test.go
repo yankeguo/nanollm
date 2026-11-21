@@ -412,6 +412,23 @@ func TestAdminFilterSQL(t *testing.T) {
 	require.Nil(t, args)
 }
 
+func TestUsageMetricSQLContract(t *testing.T) {
+	// The chart averages must only include measurable streaming samples. Assert
+	// the rendered statement (not just fragments) so a refactor cannot silently
+	// drop a condition.
+	require.Contains(t, usageSeriesSQL, "FROM llm_calls")
+	require.Contains(t, usageSeriesSQL, usageTTFTAvgSQL)
+	require.Contains(t, usageSeriesSQL, usageSpeedAvgSQL)
+	require.Contains(t, usageSeriesSQL, "output_tokens > 0")
+	require.Contains(t, usageSeriesSQL, `response_mode IN ('sse', 'ndjson')`)
+	// Both metric averages filter non-zero samples and non-streaming rows.
+	require.Equal(t, 2, strings.Count(usageSeriesSQL, "response_mode IN ('sse', 'ndjson')"))
+	require.Equal(t, 2, strings.Count(usageSeriesSQL, "NULLIF("))
+	// Only TTFT requires output tokens; speed is already 0 without them.
+	require.Contains(t, usageTTFTAvgSQL, "output_tokens > 0")
+	require.NotContains(t, usageSpeedAvgSQL, "output_tokens")
+}
+
 func TestFillUsageBuckets(t *testing.T) {
 	win := adminWindow{
 		Bucket: "hour",
@@ -468,6 +485,8 @@ func TestAdminTemplatesRender(t *testing.T) {
 	require.Contains(t, body, "model=fast")
 	require.Contains(t, body, "input-active")
 	require.Contains(t, body, "Tokens by period")
+	require.Contains(t, body, "SSE/NDJSON rows with output tokens only")
+	require.Contains(t, body, "copy finished without error, with a protocol terminator and ≥10ms observation window")
 	require.Contains(t, body, "JSON and legacy rows are excluded")
 
 	cf := parseAdminFilter(url.Values{"model": []string{"fast"}}, now, "calls")
@@ -528,6 +547,12 @@ func TestAdminTemplatesRender(t *testing.T) {
 	require.Contains(t, dbody, "900ms")
 	require.Contains(t, dbody, "1.20s")
 	require.Contains(t, dbody, "12.5 tok/s")
+	require.NotContains(t, dbody, "Legacy value retained")
+
+	ddata["Call"] = LLMCall{ID: 8, Model: "old", OutputSpeed: 1234}
+	buf.Reset()
+	require.NoError(t, adminTmpl.ExecuteTemplate(&buf, "detail.html", ddata))
+	require.Contains(t, buf.String(), "Legacy value retained under pre-migration semantics")
 }
 
 func TestCallFileViews(t *testing.T) {

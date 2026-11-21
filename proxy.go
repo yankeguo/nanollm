@@ -26,6 +26,15 @@ const (
 	responseModeJSON   = "json"
 )
 
+// minOutputSpeedWindow is the shortest first-token→completion-marker window
+// treated as a throughput measurement. A whole buffered stream copied in one
+// read spans microseconds to a couple of milliseconds, and a millisecond-scale
+// window is dominated by scheduler/timer jitter, so both are unmeasurable: the
+// speed stays 0 rather than becoming millions of tokens/sec or a capped guess.
+// 10ms keeps that jitter below ~10-20% of the denominator while still
+// measuring every genuinely streamed completion.
+const minOutputSpeedWindow = 10 * time.Millisecond
+
 // Request bodies may arrive compressed (TypeSafe System One documents gzip and
 // zstd). nanollm has to decode the JSON to rewrite `model`, so it decodes one
 // compression layer and forwards the rewritten request uncompressed.
@@ -353,17 +362,17 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 
 	buf := &capBuffer{max: maxMediumBlob}
 	var usage tokenUsage
-	var firstToken time.Time
+	var firstToken, completedAt time.Time
 	if sse {
 		fw := newFlushWriter(w)
 		logw := newSSELogWriter(buf)
-		usage, firstToken, err = copySSE(io.MultiWriter(fw, logw), fw, bodyReader, keepalive)
+		usage, firstToken, completedAt, err = copySSE(io.MultiWriter(fw, logw), fw, bodyReader, keepalive)
 		logw.Flush()
 	} else if ndjson {
 		// NDJSON is copied raw (no coalescing, no keepalive comments); the log
 		// blob is the transcript wrapped as a JSON string, like SSE.
 		fw := newFlushWriter(w)
-		usage, firstToken, err = copyNDJSON(io.MultiWriter(fw, buf), bodyReader)
+		usage, firstToken, completedAt, err = copyNDJSON(io.MultiWriter(fw, buf), bodyReader)
 	} else {
 		_, err = io.Copy(io.MultiWriter(w, buf), bodyReader)
 		usage = parseUsageJSON(buf.Bytes())
@@ -373,9 +382,15 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	}
 	if (sse || ndjson) && !firstToken.IsZero() {
 		rec.FirstTokenMs = max(1, firstToken.Sub(sentAt).Milliseconds())
-		elapsed := time.Since(firstToken).Seconds()
-		if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 && usage.Output > 0 && elapsed > 0 {
-			rec.OutputSpeed = float64(usage.Output) / elapsed
+		// Speed needs both ends of a meaningful observation window: the first
+		// output token and the protocol completion marker. A clean EOF without
+		// the marker is incomplete, and a window shorter than minOutputSpeedWindow
+		// is dominated by buffering, scheduler, and timer granularity. Both are
+		// unmeasurable (0), never capped or truncated.
+		elapsed := completedAt.Sub(firstToken)
+		if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 &&
+			usage.Output > 0 && !completedAt.IsZero() && elapsed >= minOutputSpeedWindow {
+			rec.OutputSpeed = float64(usage.Output) / elapsed.Seconds()
 		}
 	}
 	rec.ResponseJSON = encodeResponseBlob(buf.Bytes(), sse || ndjson)

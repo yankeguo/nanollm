@@ -52,9 +52,10 @@ func TestCopyAndScanSSE(t *testing.T) {
 		"data: {\"model\":\"gpt-4o\",\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":2,\"prompt_tokens_details\":{\"cached_tokens\":6}}}\n\n" +
 		"data: [DONE]\n\n")
 	var dst bytes.Buffer
-	u, first, err := copySSE(&dst, nil, src, 0)
+	u, first, completedAt, err := copySSE(&dst, nil, src, 0)
 	require.NoError(t, err)
 	require.False(t, first.IsZero())
+	require.False(t, completedAt.IsZero())
 	require.Equal(t, int64(9), u.Input)
 	require.Equal(t, int64(2), u.Output)
 	require.Equal(t, int64(6), u.CacheRead)
@@ -63,17 +64,68 @@ func TestCopyAndScanSSE(t *testing.T) {
 	require.Contains(t, dst.String(), "[DONE]")
 }
 
+func TestCopySSESkipsNonTokenEvents(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "OpenAI usage and done",
+			body: "data: {\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":2}}\n\n" +
+				"data: [DONE]\n\n",
+		},
+		{
+			name: "OpenAI metadata and done",
+			body: "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"}}]}\n\n" +
+				"data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":2}}\n\n" +
+				"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":2}}\n\n" +
+				"data: [DONE]\n\n",
+		},
+		{
+			name: "Anthropic lifecycle",
+			body: "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":6}}}\n\n" +
+				"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n" +
+				"event: ping\ndata: {\"type\":\"ping\"}\n\n" +
+				"event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n" +
+				"event: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":2}}\n\n" +
+				"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+		},
+		{
+			name: "Responses lifecycle",
+			body: "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"usage\":null}}\n\n" +
+				"event: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"response\":{}}\n\n" +
+				"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\"}}\n\n" +
+				"event: response.content_part.added\ndata: {\"type\":\"response.content_part.added\",\"item_id\":\"msg_1\",\"part\":{\"type\":\"output_text\",\"text\":\"\"}}\n\n" +
+				"event: response.output_text.done\ndata: {\"type\":\"response.output_text.done\",\"item_id\":\"msg_1\",\"text\":\"\"}\n\n" +
+				"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"output_tokens\":2}}}\n\n",
+		},
+		{
+			name: "error",
+			body: "event: error\ndata: {\"type\":\"error\",\"error\":{\"message\":\"boom\"}}\n\n",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var dst bytes.Buffer
+			_, first, _, err := copySSE(&dst, nil, bytes.NewBufferString(tc.body), 0)
+			require.NoError(t, err)
+			require.True(t, first.IsZero())
+			require.Equal(t, tc.body, dst.String())
+		})
+	}
+}
+
 func TestCopySSEKeepalive(t *testing.T) {
 	pr, pw := io.Pipe()
 	t.Cleanup(func() { _ = pr.Close(); _ = pw.Close() })
 	go func() {
 		time.Sleep(40 * time.Millisecond)
-		_, _ = pw.Write([]byte("data: {\"usage\":{\"prompt_tokens\":2}}\n\n"))
+		_, _ = pw.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}],\"usage\":{\"prompt_tokens\":2}}\n\n"))
 		_ = pw.Close()
 	}()
 	var data, pings bytes.Buffer
 	start := time.Now()
-	u, first, err := copySSE(&data, &pings, pr, 10*time.Millisecond)
+	u, first, _, err := copySSE(&data, &pings, pr, 10*time.Millisecond)
 	require.NoError(t, err)
 	require.Contains(t, pings.String(), ":")
 	require.NotContains(t, data.String(), sseComment)
@@ -90,7 +142,7 @@ func TestCopyAndScanSSECapsScanBuffer(t *testing.T) {
 
 	src := bytes.NewBuffer(bytes.Repeat([]byte("x"), 1000))
 	var dst bytes.Buffer
-	u, first, err := copySSE(&dst, nil, src, 0)
+	u, first, _, err := copySSE(&dst, nil, src, 0)
 	require.NoError(t, err)
 	require.True(t, u.empty())
 	require.True(t, first.IsZero())
@@ -258,9 +310,10 @@ func TestCopyAndScanSSEResponsesLargeCompleted(t *testing.T) {
 	payload := `{"type":"response.completed","response":{"model":"gpt-4o","output":[{"content":[{"text":"` + strings.Repeat("x", 64*1024) + `"}]}],"usage":{"input_tokens":9,"output_tokens":2}}}`
 	src := bytes.NewBufferString("event: response.completed\ndata: " + payload + "\n\n")
 	var dst bytes.Buffer
-	u, first, err := copySSE(&dst, nil, src, 0)
+	u, first, completedAt, err := copySSE(&dst, nil, src, 0)
 	require.NoError(t, err)
-	require.False(t, first.IsZero())
+	require.True(t, first.IsZero())
+	require.False(t, completedAt.IsZero())
 	require.Equal(t, int64(9), u.Input)
 	require.Equal(t, int64(2), u.Output)
 	require.Equal(t, "gpt-4o", u.ResponseModel)
@@ -274,15 +327,87 @@ func TestParseUsageJSONOllama(t *testing.T) {
 	require.Equal(t, "qwen3:8b", u.ResponseModel)
 }
 
+func TestCopyNDJSONSkipsNonTokenLines(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "error", body: "{\"error\":\"boom\"}\n"},
+		{name: "done with usage", body: "{\"done\":true,\"prompt_eval_count\":2,\"eval_count\":10}\n"},
+		{name: "role only", body: "{\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":false}\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var dst bytes.Buffer
+			_, first, _, err := copyNDJSON(&dst, bytes.NewBufferString(tc.body))
+			require.NoError(t, err)
+			require.True(t, first.IsZero())
+			require.Equal(t, tc.body, dst.String())
+		})
+	}
+}
+
+func TestCopySSEFirstTokenEvents(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "content delta", body: "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n", want: true},
+		{name: "reasoning delta", body: "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"think\"}}]}\n\n", want: true},
+		{name: "tool call delta", body: "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0}]}}]}\n\n", want: true},
+		{name: "legacy completions text", body: "data: {\"choices\":[{\"text\":\"a\"}]}\n\n", want: true},
+		{name: "non-standard message wrapper", body: "data: {\"choices\":[{\"message\":{\"content\":\"a\"}}]}\n\n", want: true},
+		{name: "non-json data", body: "data: hello\n\n", want: true},
+		{name: "done only", body: "data: [DONE]\n\n", want: false},
+		{name: "role only", body: "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"\"}}]}\n\n", want: false},
+		{name: "finish only", body: "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n", want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var dst bytes.Buffer
+			_, first, _, err := copySSE(&dst, nil, bytes.NewBufferString(tc.body), 0)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, !first.IsZero())
+		})
+	}
+}
+
+func TestCopyNDJSONFirstTokenLines(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "content", body: "{\"message\":{\"content\":\"a\"},\"done\":false}\n", want: true},
+		{name: "thinking", body: "{\"message\":{\"thinking\":\"hmm\"},\"done\":false}\n", want: true},
+		{name: "tool call", body: "{\"message\":{\"tool_calls\":[{\"function\":{\"name\":\"x\"}}]},\"done\":false}\n", want: true},
+		{name: "generate response", body: "{\"response\":\"a\",\"done\":false}\n", want: true},
+		{name: "unknown envelope", body: "{\"delta\":\"a\"}\n", want: true},
+		{name: "done", body: "{\"done\":true,\"eval_count\":1}\n", want: false},
+		{name: "done false only", body: "{\"done\":false}\n", want: false},
+		{name: "error", body: "{\"error\":\"boom\"}\n", want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var dst bytes.Buffer
+			_, first, _, err := copyNDJSON(&dst, bytes.NewBufferString(tc.body))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, !first.IsZero())
+		})
+	}
+}
+
 func TestCopyAndScanNDJSON(t *testing.T) {
 	body := "{\"model\":\"qwen3:8b\",\"message\":{\"role\":\"assistant\",\"content\":\"Hel\"},\"done\":false}\n" +
 		"{\"model\":\"qwen3:8b\",\"message\":{\"role\":\"assistant\",\"content\":\"lo\"},\"done\":false}\n" +
 		"{\"model\":\"qwen3:8b\",\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true,\"prompt_eval_count\":26,\"eval_count\":7}\n"
 	src := bytes.NewBufferString(body)
 	var dst bytes.Buffer
-	u, first, err := copyNDJSON(&dst, src)
+	u, first, completedAt, err := copyNDJSON(&dst, src)
 	require.NoError(t, err)
 	require.False(t, first.IsZero())
+	require.False(t, completedAt.IsZero())
 	require.Equal(t, int64(26), u.Input)
 	require.Equal(t, int64(7), u.Output)
 	require.Equal(t, "qwen3:8b", u.ResponseModel)

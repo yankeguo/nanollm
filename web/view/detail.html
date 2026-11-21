@@ -25,7 +25,7 @@
         <div><dt class="text-xs font-medium tracking-wider text-zinc-500 uppercase">Output tokens</dt><dd class="tnum mt-1 font-medium">{{formatNum .Call.OutputTokens}}<span class="icon-[lucide--arrow-up] dir"></span></dd></div>
         <div><dt class="text-xs font-medium tracking-wider text-zinc-500 uppercase">TTFB (first body byte)</dt><dd class="tnum mt-1 font-medium">{{formatMs .Call.TTFBMs}}</dd></div>
         <div><dt class="text-xs font-medium tracking-wider text-zinc-500 uppercase">First token latency (stream)</dt><dd class="tnum mt-1 font-medium">{{formatMs .Call.FirstTokenMs}}</dd></div>
-        <div><dt class="text-xs font-medium tracking-wider text-zinc-500 uppercase">Output speed</dt><dd class="tnum mt-1 font-medium">{{formatSpeed .Call.OutputSpeed}}</dd></div>
+        <div><dt class="text-xs font-medium tracking-wider text-zinc-500 uppercase">Output speed</dt><dd class="tnum mt-1 font-medium">{{formatSpeed .Call.OutputSpeed}}</dd>{{if not .Call.ResponseMode}}<p class="mt-1 text-xs text-zinc-500">Legacy value retained under pre-migration semantics; it may include non-streaming or incomplete samples.</p>{{end}}</div>
       </dl>
       {{if .Call.Error}}<p class="mt-4 flex items-start gap-2 rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-sm break-words {{callErrorClass .Call.HTTPStatus .Call.Error}}"><span class="icon-[lucide--triangle-alert] mt-0.5 shrink-0"></span><span>{{.Call.Error}}</span></p>{{end}}
     </div></div>

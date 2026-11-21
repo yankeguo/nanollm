@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 	"time"
 )
 
@@ -278,37 +279,45 @@ func parseUsageSSELine(line []byte) tokenUsage {
 	return parseUsageJSON(payload)
 }
 
-func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (tokenUsage, time.Time, error) {
+func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (tokenUsage, time.Time, time.Time, error) {
 	var usage tokenUsage
-	var firstToken time.Time
+	var firstToken, completedAt time.Time
 	err := pumpStream(dst, ping, src, keepalive, func(line []byte) {
-		// The first data: line is the first token signal. Keepalive comments
-		// never reach this point, so they cannot false-trigger TTFT.
-		if firstToken.IsZero() && isSSEDataLine(line) {
+		// Metadata, usage-only, error, and terminal events do not represent
+		// output. Keepalive comments never reach this point.
+		if firstToken.IsZero() && isSSEFirstTokenLine(line) {
 			firstToken = time.Now()
+		}
+		if completedAt.IsZero() && isSSETerminalLine(line) {
+			completedAt = time.Now()
 		}
 		mergeUsage(&usage, parseUsageSSELine(line))
 	})
-	return usage, firstToken, err
+	return usage, firstToken, completedAt, err
 }
 
 // copyNDJSON copies an Ollama-style newline-delimited JSON stream. NDJSON has
-// no comment syntax, so no keepalive can be injected; every non-empty line is
-// a JSON object and the first one is the TTFT signal.
-func copyNDJSON(dst io.Writer, src io.Reader) (tokenUsage, time.Time, error) {
+// no comment syntax, so no keepalive can be injected; the first output-bearing
+// line is the TTFT signal and `"done":true` is the completion marker.
+func copyNDJSON(dst io.Writer, src io.Reader) (tokenUsage, time.Time, time.Time, error) {
 	var usage tokenUsage
-	var firstToken time.Time
+	var firstToken, completedAt time.Time
 	err := pumpStream(dst, dst, src, 0, func(line []byte) {
 		line = bytes.TrimSpace(line)
 		if len(line) == 0 {
 			return
 		}
-		if firstToken.IsZero() {
+		// Ollama sends role-only/empty message chunks before real output and a
+		// final "done":true object; neither is a token.
+		if firstToken.IsZero() && isNDJSONFirstTokenLine(line) {
 			firstToken = time.Now()
+		}
+		if completedAt.IsZero() && isNDJSONTerminalLine(line) {
+			completedAt = time.Now()
 		}
 		mergeUsage(&usage, parseUsageJSON(line))
 	})
-	return usage, firstToken, err
+	return usage, firstToken, completedAt, err
 }
 
 // pumpStream copies src to dst while feeding each completed line to scan.
@@ -401,10 +410,217 @@ func pumpStream(dst, ping io.Writer, src io.Reader, keepalive time.Duration, sca
 	}
 }
 
-// isSSEDataLine reports whether an SSE line carries a non-empty data: payload.
-func isSSEDataLine(line []byte) bool {
+// sseDataPayload extracts a non-empty data payload and reports whether the
+// line was an SSE data line. [DONE] remains a payload so the caller can
+// recognize it as a terminal sentinel rather than streamed output.
+func sseDataPayload(line []byte) ([]byte, bool) {
 	line = bytes.TrimSpace(line)
-	return bytes.HasPrefix(line, []byte("data:")) && len(bytes.TrimSpace(line[len("data:"):])) > 0
+	if !bytes.HasPrefix(line, []byte("data:")) {
+		return nil, false
+	}
+	payload := bytes.TrimSpace(line[len("data:"):])
+	return payload, len(payload) > 0
+}
+
+// isSSEFirstTokenLine reports whether an SSE data line can carry the first
+// streamed output token. OpenAI Chat/Completions metadata chunks (role-only or
+// empty deltas), usage-only chunks, lifecycle events (Anthropic message_* and
+// content_block_*, OpenAI Responses response.*), error events, and the [DONE]
+// sentinel do not count. Unknown envelopes keep the historical data-line
+// behavior so compatible vendors that do not follow the standard shape still
+// get TTFT.
+func isSSEFirstTokenLine(line []byte) bool {
+	payload, ok := sseDataPayload(line)
+	if !ok || bytes.Equal(payload, []byte("[DONE]")) {
+		return false
+	}
+	var event struct {
+		Type    string          `json:"type"`
+		Choices json.RawMessage `json:"choices"`
+		Error   json.RawMessage `json:"error"`
+		Usage   json.RawMessage `json:"usage"`
+	}
+	if json.Unmarshal(payload, &event) != nil {
+		return true
+	}
+	if !jsonBlank(event.Error) {
+		return false
+	}
+	if !jsonBlank(event.Choices) {
+		// OpenAI Chat Completions (choices[].delta) and Completions
+		// (choices[].text).
+		return choicesCarryOutput(event.Choices)
+	}
+	if event.Type != "" {
+		return sseEventTypeCarriesOutput(event.Type)
+	}
+	// A data line without choices/type is output only if it is not a
+	// usage-only terminal chunk.
+	return jsonBlank(event.Usage)
+}
+
+// choicesCarryOutput reports whether an OpenAI choices array contains generated
+// output: legacy Completions `text`, a Chat Completions delta with a
+// non-empty output field (content, reasoning_content, tool_calls, ...), or a
+// non-standard choice shape that is not clearly metadata. Role-only and
+// finish_reason-only deltas are metadata, not output.
+func choicesCarryOutput(raw json.RawMessage) bool {
+	var choices []json.RawMessage
+	if json.Unmarshal(raw, &choices) != nil {
+		return true
+	}
+	for _, choice := range choices {
+		if choiceCarriesOutput(choice) {
+			return true
+		}
+	}
+	return false
+}
+
+func choiceCarriesOutput(choice json.RawMessage) bool {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(choice, &fields) != nil {
+		return true
+	}
+	if text, ok := fields["text"]; ok && !jsonZeroValue(text) {
+		return true
+	}
+	if delta, ok := fields["delta"]; ok {
+		return deltaCarriesOutput(delta)
+	}
+	// No delta: a non-standard wrapper (for example a per-chunk `message`)
+	// counts as output; finish_reason/index/logprobs-only chunks do not.
+	for key, value := range fields {
+		switch key {
+		case "index", "finish_reason", "logprobs":
+			continue
+		}
+		if !jsonZeroValue(value) {
+			return true
+		}
+	}
+	return false
+}
+
+func deltaCarriesOutput(raw json.RawMessage) bool {
+	if jsonBlank(raw) {
+		return false
+	}
+	var delta map[string]json.RawMessage
+	if json.Unmarshal(raw, &delta) != nil {
+		return true
+	}
+	for key, value := range delta {
+		if key == "role" || key == "finish_reason" {
+			continue
+		}
+		if !jsonZeroValue(value) {
+			return true
+		}
+	}
+	return false
+}
+
+// sseEventTypeCarriesOutput reports whether a typed SSE event can carry output.
+// Anthropic Messages emits output only in content_block_delta; OpenAI Responses
+// emits it only in *.delta events (output_text.delta,
+// function_call_arguments.delta, reasoning_summary_text.delta, ...). Lifecycle,
+// metadata, error, and terminal events return false.
+func sseEventTypeCarriesOutput(typ string) bool {
+	switch typ {
+	case "error", "ping", "message_start", "message_delta", "message_stop",
+		"content_block_start", "content_block_stop":
+		return false
+	}
+	if strings.HasPrefix(typ, "content_block_") {
+		return typ == "content_block_delta"
+	}
+	if strings.HasPrefix(typ, "response.") {
+		return strings.HasSuffix(typ, ".delta")
+	}
+	return true
+}
+
+// isSSETerminalLine recognizes the standard OpenAI Chat/Completions,
+// Anthropic Messages, and OpenAI Responses completion markers. A clean EOF
+// without one is treated as an incomplete stream.
+func isSSETerminalLine(line []byte) bool {
+	line = bytes.TrimSpace(line)
+	if bytes.HasPrefix(line, []byte("event:")) {
+		event := string(bytes.TrimSpace(line[len("event:"):]))
+		return event == "message_stop" || event == "response.completed"
+	}
+	payload, ok := sseDataPayload(line)
+	if !ok {
+		return false
+	}
+	if bytes.Equal(payload, []byte("[DONE]")) {
+		return true
+	}
+	var event struct {
+		Type string `json:"type"`
+	}
+	return json.Unmarshal(payload, &event) == nil &&
+		(event.Type == "message_stop" || event.Type == "response.completed")
+}
+
+// isNDJSONFirstTokenLine reports whether an Ollama-style NDJSON line carries
+// generated output rather than an error, keepalive metadata, or the final
+// `"done":true` object.
+func isNDJSONFirstTokenLine(line []byte) bool {
+	var event struct {
+		Done     *bool           `json:"done"`
+		Error    json.RawMessage `json:"error"`
+		Message  json.RawMessage `json:"message"`
+		Response json.RawMessage `json:"response"`
+	}
+	if json.Unmarshal(line, &event) != nil {
+		return true // not a JSON object: preserve historical behavior
+	}
+	if !jsonBlank(event.Error) {
+		return false
+	}
+	if event.Done != nil && *event.Done {
+		return false
+	}
+	if !jsonBlank(event.Message) {
+		var message struct {
+			Content   json.RawMessage `json:"content"`
+			Thinking  json.RawMessage `json:"thinking"`
+			ToolCalls json.RawMessage `json:"tool_calls"`
+		}
+		if json.Unmarshal(event.Message, &message) != nil {
+			return true
+		}
+		return !jsonZeroValue(message.Content) ||
+			!jsonZeroValue(message.Thinking) ||
+			!jsonZeroValue(message.ToolCalls)
+	}
+	if !jsonBlank(event.Response) {
+		// Ollama /api/generate uses a flat "response" string.
+		return !jsonZeroValue(event.Response)
+	}
+	// No recognized field: a done:false metadata object is not output, but an
+	// unknown envelope keeps the historical behavior for compatible vendors.
+	return event.Done == nil
+}
+
+// isNDJSONTerminalLine reports Ollama's `"done":true` completion marker.
+func isNDJSONTerminalLine(line []byte) bool {
+	var event struct {
+		Done bool `json:"done"`
+	}
+	return json.Unmarshal(line, &event) == nil && event.Done
+}
+
+// jsonZeroValue reports whether raw is absent or an empty JSON value (null,
+// "", {}, []). Streaming metadata deltas use these placeholder values.
+func jsonZeroValue(raw json.RawMessage) bool {
+	switch string(bytes.TrimSpace(raw)) {
+	case "", "null", `""`, "{}", "[]":
+		return true
+	}
+	return false
 }
 
 func encodeResponseBlob(body []byte, sse bool) []byte {

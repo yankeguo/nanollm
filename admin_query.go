@@ -95,21 +95,31 @@ func applyAdminFilter(q *gorm.DB, f adminFilter, skip string) *gorm.DB {
 	return q.Where(strings.TrimPrefix(sql, " AND "), args...)
 }
 
-func queryUsageSeries(db *gorm.DB, f adminFilter) ([]usageBucket, error) {
-	extra, extraArgs := adminFilterSQL(f, "")
-	args := append([]any{bucketSQLFormat(f.Bucket)}, extraArgs...)
-	var rows []usageBucket
-	err := db.Raw(`
-SELECT DATE_FORMAT(created_at, ?) AS bucket,
+// Usage chart averages include only measurable samples. Both exclude JSON,
+// incomplete, and legacy rows via response_mode; TTFT additionally requires
+// output tokens so usage-less/zero-output streams cannot skew latency. These
+// expressions are constants so their filter contract is unit-tested without a
+// database (see TestUsageMetricSQLContract).
+const (
+	usageTTFTAvgSQL  = `AVG(CASE WHEN response_mode IN ('sse', 'ndjson') AND output_tokens > 0 THEN NULLIF(first_token_ms, 0) END)`
+	usageSpeedAvgSQL = `AVG(CASE WHEN response_mode IN ('sse', 'ndjson') THEN NULLIF(output_speed, 0) END)`
+	usageSeriesSQL   = `SELECT DATE_FORMAT(created_at, ?) AS bucket,
        COUNT(*) AS calls,
        COALESCE(SUM(input_tokens), 0) AS input,
        COALESCE(SUM(output_tokens), 0) AS output,
        COALESCE(SUM(cache_tokens), 0) AS cache,
        COALESCE(SUM(uncached_tokens), 0) AS uncached,
-       COALESCE(AVG(CASE WHEN response_mode IN ('sse', 'ndjson') THEN NULLIF(first_token_ms, 0) END), 0) AS first_token_ms,
-       COALESCE(AVG(CASE WHEN response_mode IN ('sse', 'ndjson') THEN NULLIF(output_speed, 0) END), 0) AS output_speed
+       COALESCE(` + usageTTFTAvgSQL + `, 0) AS first_token_ms,
+       COALESCE(` + usageSpeedAvgSQL + `, 0) AS output_speed
 FROM llm_calls
-WHERE 1=1`+extra+`
+WHERE 1=1`
+)
+
+func queryUsageSeries(db *gorm.DB, f adminFilter) ([]usageBucket, error) {
+	extra, extraArgs := adminFilterSQL(f, "")
+	args := append([]any{bucketSQLFormat(f.Bucket)}, extraArgs...)
+	var rows []usageBucket
+	err := db.Raw(usageSeriesSQL+extra+`
 GROUP BY bucket
 ORDER BY bucket`, args...).Scan(&rows).Error
 	if err != nil {
