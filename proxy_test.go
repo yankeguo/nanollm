@@ -457,6 +457,139 @@ func TestProxyDoesNotLogSpeedForCleanEOFWithoutTerminator(t *testing.T) {
 	}
 }
 
+// TestProxyDoesNotLogSpeedForInStreamError covers a stream that reports an
+// error in-band and then still sends the protocol completion marker. The copy
+// itself is clean (no transport error, usage present, marker present, long
+// enough window), so only the sawError signal can reject output speed.
+func TestProxyDoesNotLogSpeedForInStreamError(t *testing.T) {
+	tests := []struct {
+		name        string
+		path        string
+		contentType string
+		mode        string
+		first       string
+		last        string
+		provider    func(string) Provider
+	}{
+		{
+			name:        "SSE error event",
+			path:        "/api.openai.com/v1/chat/completions",
+			contentType: "text/event-stream",
+			mode:        responseModeSSE,
+			first:       "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"a\"}}]}\n\n",
+			last: "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1000}}\n\n" +
+				"event: error\ndata: {\"type\":\"error\",\"error\":{\"message\":\"upstream boom\"}}\n\n" +
+				"data: [DONE]\n\n",
+			provider: func(url string) Provider {
+				return Provider{Name: "m", Model: "m", OpenAICompletions: ep(url)}
+			},
+		},
+		{
+			name:        "SSE inline error payload",
+			path:        "/api.openai.com/v1/chat/completions",
+			contentType: "text/event-stream",
+			mode:        responseModeSSE,
+			first:       "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"a\"}}]}\n\n",
+			last: "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1000}}\n\n" +
+				"data: {\"error\":{\"message\":\"upstream boom\"}}\n\n" +
+				"data: [DONE]\n\n",
+			provider: func(url string) Provider {
+				return Provider{Name: "m", Model: "m", OpenAICompletions: ep(url)}
+			},
+		},
+		{
+			name:        "NDJSON error then done",
+			path:        "/ollama.com/api/chat",
+			contentType: "application/x-ndjson",
+			mode:        responseModeNDJSON,
+			first:       "{\"message\":{\"role\":\"assistant\",\"content\":\"a\"},\"done\":false}\n",
+			last: "{\"error\":\"upstream boom\"}\n" +
+				"{\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true,\"prompt_eval_count\":2,\"eval_count\":1000}\n",
+			provider: func(url string) Provider {
+				return Provider{Name: "m", Model: "m", OllamaChat: ep(url)}
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", tc.contentType)
+				_, _ = io.WriteString(w, tc.first)
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+				// A real window above the floor: without the error signal the
+				// marker 40ms after the first token would report speed.
+				time.Sleep(4 * minOutputSpeedWindow)
+				_, _ = io.WriteString(w, tc.last)
+			}))
+			t.Cleanup(up.Close)
+
+			logger := &memoryCallLogger{}
+			h := NewServer(cfgFast(tc.provider(up.URL)), logger, nil).Handler()
+			req := httptest.NewRequest(http.MethodPost, tc.path, jsonBody(map[string]any{
+				"model":  "fast",
+				"stream": true,
+			}))
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, authed(req))
+
+			require.Equal(t, http.StatusOK, rec.Code)
+			// The error event is passed through untouched: only metrics change.
+			require.Equal(t, tc.first+tc.last, rec.Body.String())
+			require.Len(t, logger.calls, 1)
+			got := logger.calls[0]
+			require.Equal(t, tc.mode, got.ResponseMode)
+			require.Empty(t, got.Error, "the copy is clean; only the in-band error is abnormal")
+			require.Equal(t, int64(1000), got.OutputTokens)
+			require.Positive(t, got.FirstTokenMs, "TTFT before the error stays measurable")
+			require.Zero(t, got.OutputSpeed)
+		})
+	}
+}
+
+// TestProxyDoesNotLogSpeedForCopyWithErrorAfterMarker proves the marker alone
+// cannot make a broken copy measurable: a transport error after [DONE] keeps
+// speed at 0 even though the observation window is long enough.
+func TestProxyDoesNotLogSpeedForCopyWithErrorAfterMarker(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Content-Length", "1024")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		time.Sleep(4 * minOutputSpeedWindow)
+		_, _ = io.WriteString(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1000}}\n\ndata: [DONE]\n\n")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		if hj, ok := w.(http.Hijacker); ok {
+			if conn, _, err := hj.Hijack(); err == nil {
+				_ = conn.Close()
+			}
+		}
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(Provider{Name: "m", Model: "m", OpenAICompletions: ep(up.URL)}), logger, nil).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api.openai.com/v1/chat/completions", jsonBody(map[string]any{
+		"model":  "fast",
+		"stream": true,
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+
+	require.Len(t, logger.calls, 1)
+	got := logger.calls[0]
+	require.NotEmpty(t, got.Error)
+	require.Equal(t, int64(1000), got.OutputTokens)
+	require.Positive(t, got.FirstTokenMs)
+	require.Zero(t, got.OutputSpeed)
+}
+
 func TestProxyLogsCanceledBeforeResponse(t *testing.T) {
 	started := make(chan struct{})
 	block := make(chan struct{})

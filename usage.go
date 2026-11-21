@@ -279,12 +279,21 @@ func parseUsageSSELine(line []byte) tokenUsage {
 	return parseUsageJSON(payload)
 }
 
-func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (tokenUsage, time.Time, time.Time, error) {
+// copySSE returns the parsed usage, the first output-eligible line time, the
+// protocol completion-marker time, and whether the stream carried an in-band
+// error event. The error return is only the copy error: a stream that reports
+// an error event and then a completion marker copies cleanly, so sawError is
+// the separate signal callers use to reject the measurement window.
+func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (tokenUsage, time.Time, time.Time, bool, error) {
 	var usage tokenUsage
 	var firstToken, completedAt time.Time
+	var sawError bool
 	err := pumpStream(dst, ping, src, keepalive, func(line []byte) {
 		// Metadata, usage-only, error, and terminal events do not represent
 		// output. Keepalive comments never reach this point.
+		if isSSEErrorLine(line) {
+			sawError = true
+		}
 		if firstToken.IsZero() && isSSEFirstTokenLine(line) {
 			firstToken = time.Now()
 		}
@@ -293,19 +302,24 @@ func copySSE(dst, ping io.Writer, src io.Reader, keepalive time.Duration) (token
 		}
 		mergeUsage(&usage, parseUsageSSELine(line))
 	})
-	return usage, firstToken, completedAt, err
+	return usage, firstToken, completedAt, sawError, err
 }
 
 // copyNDJSON copies an Ollama-style newline-delimited JSON stream. NDJSON has
 // no comment syntax, so no keepalive can be injected; the first output-bearing
-// line is the TTFT signal and `"done":true` is the completion marker.
-func copyNDJSON(dst io.Writer, src io.Reader) (tokenUsage, time.Time, time.Time, error) {
+// line is the TTFT signal and `"done":true` is the completion marker. Like
+// copySSE, it reports an in-band error separately from the copy error.
+func copyNDJSON(dst io.Writer, src io.Reader) (tokenUsage, time.Time, time.Time, bool, error) {
 	var usage tokenUsage
 	var firstToken, completedAt time.Time
+	var sawError bool
 	err := pumpStream(dst, dst, src, 0, func(line []byte) {
 		line = bytes.TrimSpace(line)
 		if len(line) == 0 {
 			return
+		}
+		if isNDJSONErrorLine(line) {
+			sawError = true
 		}
 		// Ollama sends role-only/empty message chunks before real output and a
 		// final "done":true object; neither is a token.
@@ -317,7 +331,7 @@ func copyNDJSON(dst io.Writer, src io.Reader) (tokenUsage, time.Time, time.Time,
 		}
 		mergeUsage(&usage, parseUsageJSON(line))
 	})
-	return usage, firstToken, completedAt, err
+	return usage, firstToken, completedAt, sawError, err
 }
 
 // pumpStream copies src to dst while feeding each completed line to scan.
@@ -564,6 +578,28 @@ func isSSETerminalLine(line []byte) bool {
 		(event.Type == "message_stop" || event.Type == "response.completed")
 }
 
+// isSSEErrorLine reports whether an SSE line announces an in-stream error:
+// either the SSE `event: error` field or a JSON data payload with a non-empty
+// top-level `error` member. Such a stream may still end with a completion
+// marker (and a clean copy), but it is not a successful measurement window.
+func isSSEErrorLine(line []byte) bool {
+	line = bytes.TrimSpace(line)
+	if bytes.HasPrefix(line, []byte("event:")) {
+		return string(bytes.TrimSpace(line[len("event:"):])) == "error"
+	}
+	payload, ok := sseDataPayload(line)
+	if !ok || bytes.Equal(payload, []byte("[DONE]")) {
+		return false
+	}
+	var event struct {
+		Error json.RawMessage `json:"error"`
+	}
+	if json.Unmarshal(payload, &event) != nil {
+		return false
+	}
+	return streamErrorValue(event.Error)
+}
+
 // isNDJSONFirstTokenLine reports whether an Ollama-style NDJSON line carries
 // generated output rather than an error, keepalive metadata, or the final
 // `"done":true` object.
@@ -611,6 +647,30 @@ func isNDJSONTerminalLine(line []byte) bool {
 		Done bool `json:"done"`
 	}
 	return json.Unmarshal(line, &event) == nil && event.Done
+}
+
+// isNDJSONErrorLine reports whether an NDJSON line is an in-band error object
+// (`{"error":"..."}`). A later `"done":true` line makes the copy look clean, so
+// callers need this separate signal to reject the measurement window.
+func isNDJSONErrorLine(line []byte) bool {
+	var event struct {
+		Error json.RawMessage `json:"error"`
+	}
+	if json.Unmarshal(line, &event) != nil {
+		return false
+	}
+	return streamErrorValue(event.Error)
+}
+
+// streamErrorValue reports whether a streamed `error` field carries content.
+// Healthy chunks usually omit the field or send `null`; empty placeholders do
+// not count, so a normal chunk is never mistaken for an error event.
+func streamErrorValue(raw json.RawMessage) bool {
+	switch string(bytes.TrimSpace(raw)) {
+	case "", "null", `""`, "{}", "[]", "false":
+		return false
+	}
+	return true
 }
 
 // jsonZeroValue reports whether raw is absent or an empty JSON value (null,

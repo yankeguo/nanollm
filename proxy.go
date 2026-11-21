@@ -363,16 +363,20 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	buf := &capBuffer{max: maxMediumBlob}
 	var usage tokenUsage
 	var firstToken, completedAt time.Time
+	// streamError is an in-band error event (SSE `event: error` / data `error`,
+	// or NDJSON `{"error":...}`). It is independent of the copy error because a
+	// stream can report an error and still deliver a completion marker cleanly.
+	var streamError bool
 	if sse {
 		fw := newFlushWriter(w)
 		logw := newSSELogWriter(buf)
-		usage, firstToken, completedAt, err = copySSE(io.MultiWriter(fw, logw), fw, bodyReader, keepalive)
+		usage, firstToken, completedAt, streamError, err = copySSE(io.MultiWriter(fw, logw), fw, bodyReader, keepalive)
 		logw.Flush()
 	} else if ndjson {
 		// NDJSON is copied raw (no coalescing, no keepalive comments); the log
 		// blob is the transcript wrapped as a JSON string, like SSE.
 		fw := newFlushWriter(w)
-		usage, firstToken, completedAt, err = copyNDJSON(io.MultiWriter(fw, buf), bodyReader)
+		usage, firstToken, completedAt, streamError, err = copyNDJSON(io.MultiWriter(fw, buf), bodyReader)
 	} else {
 		_, err = io.Copy(io.MultiWriter(w, buf), bodyReader)
 		usage = parseUsageJSON(buf.Bytes())
@@ -384,11 +388,13 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 		rec.FirstTokenMs = max(1, firstToken.Sub(sentAt).Milliseconds())
 		// Speed needs both ends of a meaningful observation window: the first
 		// output token and the protocol completion marker. A clean EOF without
-		// the marker is incomplete, and a window shorter than minOutputSpeedWindow
-		// is dominated by buffering, scheduler, and timer granularity. Both are
-		// unmeasurable (0), never capped or truncated.
+		// the marker is incomplete, an in-band error event invalidates the
+		// window even when the upstream still emits the marker, and a window
+		// shorter than minOutputSpeedWindow is dominated by buffering,
+		// scheduler, and timer granularity. All are unmeasurable (0), never
+		// capped or truncated.
 		elapsed := completedAt.Sub(firstToken)
-		if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 &&
+		if err == nil && !streamError && resp.StatusCode >= 200 && resp.StatusCode < 300 &&
 			usage.Output > 0 && !completedAt.IsZero() && elapsed >= minOutputSpeedWindow {
 			rec.OutputSpeed = float64(usage.Output) / elapsed.Seconds()
 		}

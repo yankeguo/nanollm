@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -52,7 +53,7 @@ func TestCopyAndScanSSE(t *testing.T) {
 		"data: {\"model\":\"gpt-4o\",\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":2,\"prompt_tokens_details\":{\"cached_tokens\":6}}}\n\n" +
 		"data: [DONE]\n\n")
 	var dst bytes.Buffer
-	u, first, completedAt, err := copySSE(&dst, nil, src, 0)
+	u, first, completedAt, _, err := copySSE(&dst, nil, src, 0)
 	require.NoError(t, err)
 	require.False(t, first.IsZero())
 	require.False(t, completedAt.IsZero())
@@ -107,7 +108,7 @@ func TestCopySSESkipsNonTokenEvents(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var dst bytes.Buffer
-			_, first, _, err := copySSE(&dst, nil, bytes.NewBufferString(tc.body), 0)
+			_, first, _, _, err := copySSE(&dst, nil, bytes.NewBufferString(tc.body), 0)
 			require.NoError(t, err)
 			require.True(t, first.IsZero())
 			require.Equal(t, tc.body, dst.String())
@@ -125,7 +126,7 @@ func TestCopySSEKeepalive(t *testing.T) {
 	}()
 	var data, pings bytes.Buffer
 	start := time.Now()
-	u, first, _, err := copySSE(&data, &pings, pr, 10*time.Millisecond)
+	u, first, _, _, err := copySSE(&data, &pings, pr, 10*time.Millisecond)
 	require.NoError(t, err)
 	require.Contains(t, pings.String(), ":")
 	require.NotContains(t, data.String(), sseComment)
@@ -142,7 +143,7 @@ func TestCopyAndScanSSECapsScanBuffer(t *testing.T) {
 
 	src := bytes.NewBuffer(bytes.Repeat([]byte("x"), 1000))
 	var dst bytes.Buffer
-	u, first, _, err := copySSE(&dst, nil, src, 0)
+	u, first, _, _, err := copySSE(&dst, nil, src, 0)
 	require.NoError(t, err)
 	require.True(t, u.empty())
 	require.True(t, first.IsZero())
@@ -310,7 +311,7 @@ func TestCopyAndScanSSEResponsesLargeCompleted(t *testing.T) {
 	payload := `{"type":"response.completed","response":{"model":"gpt-4o","output":[{"content":[{"text":"` + strings.Repeat("x", 64*1024) + `"}]}],"usage":{"input_tokens":9,"output_tokens":2}}}`
 	src := bytes.NewBufferString("event: response.completed\ndata: " + payload + "\n\n")
 	var dst bytes.Buffer
-	u, first, completedAt, err := copySSE(&dst, nil, src, 0)
+	u, first, completedAt, _, err := copySSE(&dst, nil, src, 0)
 	require.NoError(t, err)
 	require.True(t, first.IsZero())
 	require.False(t, completedAt.IsZero())
@@ -339,7 +340,7 @@ func TestCopyNDJSONSkipsNonTokenLines(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var dst bytes.Buffer
-			_, first, _, err := copyNDJSON(&dst, bytes.NewBufferString(tc.body))
+			_, first, _, _, err := copyNDJSON(&dst, bytes.NewBufferString(tc.body))
 			require.NoError(t, err)
 			require.True(t, first.IsZero())
 			require.Equal(t, tc.body, dst.String())
@@ -366,7 +367,7 @@ func TestCopySSEFirstTokenEvents(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var dst bytes.Buffer
-			_, first, _, err := copySSE(&dst, nil, bytes.NewBufferString(tc.body), 0)
+			_, first, _, _, err := copySSE(&dst, nil, bytes.NewBufferString(tc.body), 0)
 			require.NoError(t, err)
 			require.Equal(t, tc.want, !first.IsZero())
 		})
@@ -391,7 +392,7 @@ func TestCopyNDJSONFirstTokenLines(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var dst bytes.Buffer
-			_, first, _, err := copyNDJSON(&dst, bytes.NewBufferString(tc.body))
+			_, first, _, _, err := copyNDJSON(&dst, bytes.NewBufferString(tc.body))
 			require.NoError(t, err)
 			require.Equal(t, tc.want, !first.IsZero())
 		})
@@ -404,7 +405,7 @@ func TestCopyAndScanNDJSON(t *testing.T) {
 		"{\"model\":\"qwen3:8b\",\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true,\"prompt_eval_count\":26,\"eval_count\":7}\n"
 	src := bytes.NewBufferString(body)
 	var dst bytes.Buffer
-	u, first, completedAt, err := copyNDJSON(&dst, src)
+	u, first, completedAt, _, err := copyNDJSON(&dst, src)
 	require.NoError(t, err)
 	require.False(t, first.IsZero())
 	require.False(t, completedAt.IsZero())
@@ -412,4 +413,253 @@ func TestCopyAndScanNDJSON(t *testing.T) {
 	require.Equal(t, int64(7), u.Output)
 	require.Equal(t, "qwen3:8b", u.ResponseModel)
 	require.Equal(t, body, dst.String())
+}
+
+func TestIsSSEErrorLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want bool
+	}{
+		{name: "event error", line: "event: error", want: true},
+		{name: "event error no space", line: "event:error", want: true},
+		{name: "event error trailing space", line: "event: error ", want: true},
+		{name: "data error object", line: `data: {"type":"error","error":{"message":"boom"}}`, want: true},
+		{name: "data error string", line: `data: {"error":"boom"}`, want: true},
+		{name: "data error then done", line: `data: {"error":"boom","done":true}`, want: true},
+		{name: "data error null", line: `data: {"error":null}`, want: false},
+		{name: "data error empty string", line: `data: {"error":""}`, want: false},
+		{name: "data error empty object", line: `data: {"error":{}}`, want: false},
+		{name: "data error false", line: `data: {"error":false}`, want: false},
+		{name: "normal delta", line: `data: {"choices":[{"delta":{"content":"a"}}]}`, want: false},
+		{name: "normal chunk with null error", line: `data: {"choices":[{"delta":{"content":"a"}}],"error":null}`, want: false},
+		{name: "done", line: "data: [DONE]", want: false},
+		{name: "comment", line: ":", want: false},
+		{name: "event message_stop", line: "event: message_stop", want: false},
+		{name: "non-json data", line: "data: hello", want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, isSSEErrorLine([]byte(tc.line)))
+		})
+	}
+}
+
+func TestIsNDJSONErrorLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want bool
+	}{
+		{name: "ollama error", line: `{"error":"boom"}`, want: true},
+		{name: "error with done", line: `{"error":"boom","done":true}`, want: true},
+		{name: "normal chunk", line: `{"message":{"content":"a"},"done":false}`, want: false},
+		{name: "done chunk", line: `{"done":true,"eval_count":2}`, want: false},
+		{name: "null error", line: `{"error":null,"done":false}`, want: false},
+		{name: "empty error", line: `{"error":"","done":false}`, want: false},
+		{name: "non-json", line: `not-json`, want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, isNDJSONErrorLine([]byte(tc.line)))
+		})
+	}
+}
+
+// TestCopySSETracksStreamError covers the separate sawError signal: the copy
+// itself succeeds (and the later marker is still seen) but the stream reported
+// an error, so output speed must stay unmeasurable while TTFT survives.
+func TestCopySSETracksStreamError(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{
+			name: "normal stream",
+			body: "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n" +
+				"data: {\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":7}}\n\ndata: [DONE]\n\n",
+			want: false,
+		},
+		{
+			name: "error event then done",
+			body: "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n" +
+				"event: error\ndata: {\"type\":\"error\",\"error\":{\"message\":\"boom\"}}\n\n" +
+				"data: [DONE]\n\n",
+			want: true,
+		},
+		{
+			name: "inline error payload then done",
+			body: "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n" +
+				"data: {\"error\":{\"message\":\"boom\"}}\n\n" +
+				"data: [DONE]\n\n",
+			want: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var dst bytes.Buffer
+			_, firstToken, completedAt, sawError, err := copySSE(&dst, nil, bytes.NewBufferString(tc.body), 0)
+			require.NoError(t, err)
+			require.Equal(t, tc.body, dst.String())
+			require.False(t, firstToken.IsZero(), "TTFT stays measurable for output before the error")
+			require.False(t, completedAt.IsZero(), "the marker after the error is still observed")
+			require.Equal(t, tc.want, sawError)
+		})
+	}
+}
+
+func TestCopyNDJSONTracksStreamError(t *testing.T) {
+	first := "{\"message\":{\"role\":\"assistant\",\"content\":\"a\"},\"done\":false}\n"
+	done := "{\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true,\"prompt_eval_count\":2,\"eval_count\":7}\n"
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "normal stream", body: first + done, want: false},
+		{name: "error line then done", body: first + "{\"error\":\"boom\"}\n" + done, want: true},
+		{name: "error with done flag", body: first + "{\"error\":\"boom\",\"done\":true}\n" + done, want: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var dst bytes.Buffer
+			u, firstToken, completedAt, sawError, err := copyNDJSON(&dst, bytes.NewBufferString(tc.body))
+			require.NoError(t, err)
+			require.Equal(t, tc.body, dst.String())
+			require.False(t, firstToken.IsZero())
+			require.False(t, completedAt.IsZero())
+			require.Equal(t, tc.want, sawError)
+			require.Equal(t, int64(7), u.Output)
+		})
+	}
+}
+
+// TestCopySSETerminalMarkerForms covers the accepted completion-marker shapes
+// (and their false positives) end to end through the line pump: CRLF endings,
+// a `data:` field without the optional space, a bare data `type`, `event:`
+// lines, a final line with no trailing newline, and non-marker events.
+func TestCopySSETerminalMarkerForms(t *testing.T) {
+	first := "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n"
+	tests := []struct {
+		name       string
+		body       string
+		wantMarker bool
+		wantError  bool
+	}{
+		{name: "done", body: first + "data: [DONE]\n\n", wantMarker: true},
+		{name: "crlf endings", body: "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\r\n\r\ndata: [DONE]\r\n\r\n", wantMarker: true},
+		{name: "done without space", body: first + "data:[DONE]\n", wantMarker: true},
+		{name: "done at eof without newline", body: first + "data: [DONE]", wantMarker: true},
+		{name: "data type message_stop", body: first + "data: {\"type\":\"message_stop\"}\n\n", wantMarker: true},
+		{name: "data type response.completed", body: first + "data: {\"type\":\"response.completed\"}\n\n", wantMarker: true},
+		{name: "event message_stop", body: first + "event: message_stop\n\n", wantMarker: true},
+		{name: "event response.completed", body: first + "event: response.completed\n\n", wantMarker: true},
+		{
+			name:      "error event is not a marker",
+			body:      first + "event: error\ndata: {\"type\":\"error\",\"error\":{\"message\":\"boom\"}}\n\n",
+			wantError: true,
+		},
+		{name: "lifecycle event is not a marker", body: first + "data: {\"type\":\"message_delta\"}\n\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var dst bytes.Buffer
+			_, firstToken, completedAt, sawError, err := copySSE(&dst, nil, bytes.NewBufferString(tc.body), 0)
+			require.NoError(t, err)
+			require.Equal(t, tc.body, dst.String())
+			require.False(t, firstToken.IsZero())
+			require.Equal(t, tc.wantMarker, !completedAt.IsZero())
+			require.Equal(t, tc.wantError, sawError)
+		})
+	}
+}
+
+// recordingReader returns pre-set chunks and records when each Read starts, so
+// stream-level "first marker wins" assertions need no timing tolerances.
+type recordingReader struct {
+	chunks []string
+	delays []time.Duration
+	reads  []time.Time
+}
+
+func (r *recordingReader) Read(p []byte) (int, error) {
+	if len(r.chunks) == 0 {
+		return 0, io.EOF
+	}
+	if d := r.delays[0]; d > 0 {
+		time.Sleep(d)
+	}
+	r.reads = append(r.reads, time.Now())
+	n := copy(p, r.chunks[0])
+	r.chunks[0] = r.chunks[0][n:]
+	if len(r.chunks[0]) == 0 {
+		r.chunks = r.chunks[1:]
+		r.delays = r.delays[1:]
+	}
+	return n, nil
+}
+
+func TestCopySSEFirstTerminalMarkerWins(t *testing.T) {
+	src := &recordingReader{
+		chunks: []string{
+			"data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n",
+			"data: [DONE]\n\n",
+			"data: [DONE]\n\n",
+		},
+		delays: []time.Duration{0, 0, 20 * time.Millisecond},
+	}
+	var dst bytes.Buffer
+	_, _, completedAt, _, err := copySSE(&dst, nil, src, 0)
+	require.NoError(t, err)
+	require.Len(t, src.reads, 3)
+	require.False(t, completedAt.IsZero())
+	// The marker in chunk 2 is scanned before the pump asks for chunk 3, so
+	// completedAt must sit in [reads[1], reads[2]) and never move to marker 2.
+	require.False(t, completedAt.Before(src.reads[1]))
+	require.True(t, completedAt.Before(src.reads[2]))
+	require.Equal(t, 2, strings.Count(dst.String(), "[DONE]"))
+}
+
+func TestCopyNDJSONTerminalLineWithoutNewline(t *testing.T) {
+	body := "{\"message\":{\"role\":\"assistant\",\"content\":\"a\"},\"done\":false}\n" +
+		"{\"done\":true,\"prompt_eval_count\":2,\"eval_count\":5}" // no trailing newline
+	var dst bytes.Buffer
+	u, firstToken, completedAt, sawError, err := copyNDJSON(&dst, bytes.NewBufferString(body))
+	require.NoError(t, err)
+	require.Equal(t, body, dst.String())
+	require.False(t, firstToken.IsZero())
+	require.False(t, completedAt.IsZero())
+	require.False(t, sawError)
+	require.Equal(t, int64(5), u.Output)
+}
+
+// dataThenErrorReader delivers data and then fails, emulating an upstream that
+// sends a complete-looking stream before the connection breaks.
+type dataThenErrorReader struct {
+	data []byte
+	err  error
+}
+
+func (r *dataThenErrorReader) Read(p []byte) (int, error) {
+	if len(r.data) == 0 {
+		return 0, r.err
+	}
+	n := copy(p, r.data)
+	r.data = r.data[n:]
+	return n, nil
+}
+
+func TestCopySSEMarkerThenCopyError(t *testing.T) {
+	boom := errors.New("upstream reset")
+	body := "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}],\"usage\":{\"completion_tokens\":2}}\n\n" +
+		"data: [DONE]\n\n"
+	var dst bytes.Buffer
+	u, firstToken, completedAt, sawError, err := copySSE(&dst, nil, &dataThenErrorReader{data: []byte(body), err: boom}, 0)
+	require.ErrorIs(t, err, boom)
+	require.Equal(t, body, dst.String())
+	require.False(t, firstToken.IsZero())
+	require.False(t, completedAt.IsZero())
+	require.False(t, sawError)
+	require.Equal(t, int64(2), u.Output)
 }
