@@ -30,6 +30,8 @@ type callListRow struct {
 	InputTokens  int64
 	OutputTokens int64
 	CacheTokens  int64
+	ResponseMode string
+	TTFBMs       int64
 	FirstTokenMs int64
 	OutputSpeed  float64
 	HTTPStatus   int
@@ -104,8 +106,8 @@ SELECT DATE_FORMAT(created_at, ?) AS bucket,
        COALESCE(SUM(output_tokens), 0) AS output,
        COALESCE(SUM(cache_tokens), 0) AS cache,
        COALESCE(SUM(uncached_tokens), 0) AS uncached,
-       COALESCE(AVG(NULLIF(first_token_ms, 0)), 0) AS first_token_ms,
-       COALESCE(AVG(NULLIF(output_speed, 0)), 0) AS output_speed
+       COALESCE(AVG(CASE WHEN response_mode IN ('sse', 'ndjson') THEN NULLIF(first_token_ms, 0) END), 0) AS first_token_ms,
+       COALESCE(AVG(CASE WHEN response_mode IN ('sse', 'ndjson') THEN NULLIF(output_speed, 0) END), 0) AS output_speed
 FROM llm_calls
 WHERE 1=1`+extra+`
 GROUP BY bucket
@@ -153,7 +155,7 @@ func listCalls(db *gorm.DB, f adminFilter, offset, limit int) ([]callListRow, in
 		return nil, 0, err
 	}
 	var rows []callListRow
-	err := q.Select("id, created_at, model, provider, api_key_name, input_tokens, output_tokens, cache_tokens, first_token_ms, output_speed, http_status, error, (request_json IS NOT NULL OR response_json IS NOT NULL) AS has_detail").
+	err := q.Select("id, created_at, model, provider, api_key_name, input_tokens, output_tokens, cache_tokens, response_mode, ttfb_ms, first_token_ms, output_speed, http_status, error, (request_json IS NOT NULL OR response_json IS NOT NULL) AS has_detail").
 		Order("id DESC").Offset(offset).Limit(limit).Find(&rows).Error
 	return rows, total, err
 }

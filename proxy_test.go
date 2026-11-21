@@ -290,8 +290,48 @@ func TestProxyLogsCanceledAfter200(t *testing.T) {
 	require.Len(t, logger.calls, 1)
 	require.Equal(t, http.StatusOK, logger.calls[0].HTTPStatus)
 	require.Equal(t, errCanceled, logger.calls[0].Error)
-	// No usage event ever arrived, so speed stays unset.
+	require.Equal(t, responseModeSSE, logger.calls[0].ResponseMode)
+	require.Positive(t, logger.calls[0].TTFBMs)
+	require.Positive(t, logger.calls[0].FirstTokenMs)
+	// No usage event ever arrived and the stream was incomplete, so speed stays unset.
 	require.Equal(t, float64(0), logger.calls[0].OutputSpeed)
+}
+
+func TestProxyDoesNotLogSpeedForIncompleteStream(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Content-Length", "1024")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":8}}\n\n")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		if hj, ok := w.(http.Hijacker); ok {
+			if conn, _, err := hj.Hijack(); err == nil {
+				_ = conn.Close()
+			}
+		}
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(Provider{Name: "m", Model: "m", OpenAICompletions: ep(up.URL)}), logger, nil).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api.openai.com/v1/chat/completions", jsonBody(map[string]any{
+		"model":  "fast",
+		"stream": true,
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+
+	require.Len(t, logger.calls, 1)
+	got := logger.calls[0]
+	require.Equal(t, responseModeSSE, got.ResponseMode)
+	require.NotEmpty(t, got.Error)
+	require.Positive(t, got.TTFBMs)
+	require.Positive(t, got.FirstTokenMs)
+	require.Equal(t, int64(8), got.OutputTokens)
+	require.Zero(t, got.OutputSpeed)
 }
 
 func TestProxyLogsCanceledBeforeResponse(t *testing.T) {
@@ -340,6 +380,10 @@ func TestProxyLogsCanceledBeforeResponse(t *testing.T) {
 	require.Len(t, logger.calls, 1)
 	require.Equal(t, 0, logger.calls[0].HTTPStatus)
 	require.Equal(t, errCanceled, logger.calls[0].Error)
+	require.Equal(t, responseModeNone, logger.calls[0].ResponseMode)
+	require.Zero(t, logger.calls[0].TTFBMs)
+	require.Zero(t, logger.calls[0].FirstTokenMs)
+	require.Zero(t, logger.calls[0].OutputSpeed)
 }
 
 func TestCopyErrText(t *testing.T) {
@@ -537,6 +581,10 @@ func TestProxyCatastrophicStatusReturnsError(t *testing.T) {
 	require.Len(t, logger.calls, 2)
 	require.Equal(t, http.StatusServiceUnavailable, logger.calls[0].HTTPStatus)
 	require.Contains(t, logger.calls[0].Error, "503")
+	require.Equal(t, responseModeJSON, logger.calls[0].ResponseMode)
+	require.Positive(t, logger.calls[0].TTFBMs)
+	require.Zero(t, logger.calls[0].FirstTokenMs)
+	require.Zero(t, logger.calls[0].OutputSpeed)
 	require.Equal(t, http.StatusOK, logger.calls[1].HTTPStatus)
 }
 
@@ -603,12 +651,35 @@ func TestProxyLogsSuccess(t *testing.T) {
 	require.Equal(t, int64(2), got.OutputTokens)
 	require.Equal(t, int64(3), got.CacheTokens)
 	require.Equal(t, int64(2), got.UncachedTokens)
-	require.GreaterOrEqual(t, got.FirstTokenMs, int64(4))
-	require.Greater(t, got.OutputSpeed, float64(0))
+	require.Equal(t, responseModeJSON, got.ResponseMode)
+	require.GreaterOrEqual(t, got.TTFBMs, int64(4))
+	// Negative control: a fast non-streaming response must not synthesize TTFT
+	// or divide output tokens by a near-zero TTFB interval.
+	require.Zero(t, got.FirstTokenMs)
+	require.Zero(t, got.OutputSpeed)
 	require.Equal(t, http.StatusOK, got.HTTPStatus)
 	require.Empty(t, got.Error)
 	require.Contains(t, string(got.RequestJSON), `"model":"gpt-4o-mini"`)
 	require.Contains(t, string(got.ResponseJSON), `"ok"`)
+}
+
+func TestProxyNonStreamingSpeedIsNotMeasurable(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":64}}`)
+	}))
+	t.Cleanup(up.Close)
+
+	logger := &memoryCallLogger{}
+	h := NewServer(cfgFast(Provider{Name: "m", Model: "m", OpenAICompletions: ep(up.URL)}), logger, nil).Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api.openai.com/v1/chat/completions", jsonBody(map[string]any{"model": "fast"}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, authed(req))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, logger.calls, 1)
+	require.Zero(t, logger.calls[0].OutputSpeed)
+	require.Zero(t, logger.calls[0].FirstTokenMs)
 }
 
 func TestProxyLogsFailoverAttempts(t *testing.T) {
@@ -658,6 +729,10 @@ func TestProxyLogsDialFailure(t *testing.T) {
 	require.Len(t, logger.calls, 1)
 	require.Equal(t, 0, logger.calls[0].HTTPStatus)
 	require.NotEmpty(t, logger.calls[0].Error)
+	require.Equal(t, responseModeNone, logger.calls[0].ResponseMode)
+	require.Zero(t, logger.calls[0].TTFBMs)
+	require.Zero(t, logger.calls[0].FirstTokenMs)
+	require.Zero(t, logger.calls[0].OutputSpeed)
 	require.Contains(t, string(logger.calls[0].RequestJSON), `"model":"a"`)
 }
 
@@ -726,9 +801,114 @@ func TestProxyLogsStreamUsage(t *testing.T) {
 	require.Len(t, logger.calls, 1)
 	require.Equal(t, int64(4), logger.calls[0].InputTokens)
 	require.Equal(t, int64(1), logger.calls[0].OutputTokens)
+	require.Equal(t, responseModeSSE, logger.calls[0].ResponseMode)
+	require.GreaterOrEqual(t, logger.calls[0].TTFBMs, int64(4))
 	require.GreaterOrEqual(t, logger.calls[0].FirstTokenMs, int64(4))
 	require.Greater(t, logger.calls[0].OutputSpeed, float64(0))
+	require.Less(t, logger.calls[0].OutputSpeed, float64(1000))
 	require.Contains(t, rec.Body.String(), "[DONE]")
+}
+
+func TestProxyResponseModeAndUnmeasurableMetrics(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		status      int
+		body        string
+		stream      bool
+		wantMode    string
+		wantTTFB    bool
+		wantTTFT    bool
+	}{
+		{
+			name:        "stream request returns JSON error",
+			contentType: "application/json; charset=utf-8",
+			status:      http.StatusBadRequest,
+			body:        `{"error":{"message":"bad request"}}`,
+			stream:      true,
+			wantMode:    responseModeJSON,
+			wantTTFB:    true,
+		},
+		{
+			name:        "SSE without usage",
+			contentType: "text/event-stream",
+			body:        "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\ndata: [DONE]\n\n",
+			stream:      true,
+			wantMode:    responseModeSSE,
+			wantTTFB:    true,
+			wantTTFT:    true,
+		},
+		{
+			name:        "SSE HTTP error with usage",
+			contentType: "text/event-stream",
+			status:      http.StatusInternalServerError,
+			body:        "data: {\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":64}}\n\n",
+			stream:      true,
+			wantMode:    responseModeSSE,
+			wantTTFB:    true,
+			wantTTFT:    true,
+		},
+		{
+			name:        "SSE without data lines",
+			contentType: "text/event-stream",
+			body:        ": upstream comment\n\n",
+			stream:      true,
+			wantMode:    responseModeSSE,
+			wantTTFB:    true,
+		},
+		{
+			name:        "NDJSON without usage",
+			contentType: "application/x-ndjson",
+			body:        "{\"message\":{\"content\":\"a\"},\"done\":false}\n",
+			wantMode:    responseModeNDJSON,
+			wantTTFB:    true,
+			wantTTFT:    true,
+		},
+		{
+			name:     "stream fallback without content type",
+			body:     "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n",
+			stream:   true,
+			wantMode: responseModeSSE,
+			wantTTFB: true,
+			wantTTFT: true,
+		},
+		{
+			name:        "empty JSON response",
+			contentType: "application/json",
+			wantMode:    responseModeJSON,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.contentType != "" {
+					w.Header().Set("Content-Type", tc.contentType)
+				}
+				if tc.status != 0 {
+					w.WriteHeader(tc.status)
+				}
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			t.Cleanup(up.Close)
+
+			logger := &memoryCallLogger{}
+			h := NewServer(cfgFast(Provider{Name: "m", Model: "m", OpenAICompletions: ep(up.URL)}), logger, nil).Handler()
+			req := httptest.NewRequest(http.MethodPost, "/api.openai.com/v1/chat/completions", jsonBody(map[string]any{
+				"model":  "fast",
+				"stream": tc.stream,
+			}))
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, authed(req))
+
+			require.Equal(t, tc.body, rec.Body.String())
+			require.Len(t, logger.calls, 1)
+			got := logger.calls[0]
+			require.Equal(t, tc.wantMode, got.ResponseMode)
+			require.Equal(t, tc.wantTTFB, got.TTFBMs > 0)
+			require.Equal(t, tc.wantTTFT, got.FirstTokenMs > 0)
+			require.Zero(t, got.OutputSpeed)
+		})
+	}
 }
 
 func TestCapBuffer(t *testing.T) {
@@ -1229,6 +1409,10 @@ func TestProxyEmbeddingsRewritesModelAndLogsUsage(t *testing.T) {
 	require.Equal(t, int64(0), got.OutputTokens)
 	require.Equal(t, int64(2), got.UncachedTokens)
 	require.Equal(t, int64(0), got.CacheTokens)
+	require.Equal(t, responseModeJSON, got.ResponseMode)
+	require.Positive(t, got.TTFBMs)
+	require.Zero(t, got.FirstTokenMs)
+	require.Zero(t, got.OutputSpeed)
 	require.Contains(t, string(got.RequestJSON), `"model":"text-embedding-3-small"`)
 	require.Contains(t, string(got.ResponseJSON), `"prompt_tokens":2`)
 }
@@ -1404,7 +1588,14 @@ func TestProxyOllamaChatStream(t *testing.T) {
 		"{\"model\":\"qwen3:8b\",\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true,\"done_reason\":\"stop\",\"prompt_eval_count\":26,\"eval_count\":7}\n")
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		_, _ = w.Write(upstream)
+		time.Sleep(5 * time.Millisecond)
+		firstLine := bytes.IndexByte(upstream, '\n') + 1
+		_, _ = w.Write(upstream[:firstLine])
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		time.Sleep(5 * time.Millisecond)
+		_, _ = w.Write(upstream[firstLine:])
 	}))
 	t.Cleanup(up.Close)
 
@@ -1432,6 +1623,11 @@ func TestProxyOllamaChatStream(t *testing.T) {
 	got := logger.calls[0]
 	require.Equal(t, int64(26), got.InputTokens)
 	require.Equal(t, int64(7), got.OutputTokens)
+	require.Equal(t, responseModeNDJSON, got.ResponseMode)
+	require.GreaterOrEqual(t, got.TTFBMs, int64(4))
+	require.GreaterOrEqual(t, got.FirstTokenMs, int64(4))
+	require.Greater(t, got.OutputSpeed, float64(0))
+	require.Less(t, got.OutputSpeed, float64(5000))
 	// The transcript is stored as a JSON string, like SSE.
 	var transcript string
 	require.NoError(t, json.Unmarshal(got.ResponseJSON, &transcript))

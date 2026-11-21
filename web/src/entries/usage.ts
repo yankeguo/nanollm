@@ -109,8 +109,8 @@ if (holder) {
     });
   });
 
-  // 0 marks a bucket with no measurable calls (all failed/canceled); map it to
-  // null so the line shows a gap instead of dipping to zero.
+  // 0 marks a bucket with no measurable streaming calls (or only JSON/legacy
+  // rows); map it to null so the line shows a gap instead of dipping to zero.
   const gaps = (series: number[]) => series.map((v) => (v > 0 ? v : null));
 
   renderOrEmpty("ttftChart", "ttftEmpty", (el) => {
@@ -120,7 +120,7 @@ if (holder) {
         labels: data.labels,
         datasets: [
           {
-            label: "avg first token latency (ms)",
+            label: "avg streaming first token latency (ms)",
             data: gaps(data.first_token),
             borderColor: "#f0abfc",
             backgroundColor: "rgb(240 171 252 / 0.12)",
@@ -147,7 +147,7 @@ if (holder) {
         labels: data.labels,
         datasets: [
           {
-            label: "avg output speed (tok/s)",
+            label: "avg streaming output speed (tok/s)",
             data: gaps(data.output_speed),
             borderColor: "#fdba74",
             backgroundColor: "rgb(253 186 116 / 0.12)",

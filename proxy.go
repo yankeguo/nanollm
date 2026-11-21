@@ -19,6 +19,13 @@ import (
 
 var maxRequestBody int64 = 64 << 20
 
+const (
+	responseModeNone   = "none"
+	responseModeSSE    = "sse"
+	responseModeNDJSON = "ndjson"
+	responseModeJSON   = "json"
+)
+
 // Request bodies may arrive compressed (TypeSafe System One documents gzip and
 // zstd). nanollm has to decode the JSON to rewrite `model`, so it decodes one
 // compression layer and forwards the rewritten request uncompressed.
@@ -248,11 +255,12 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	if !ok {
 		err := fmt.Errorf("provider %q has no %s endpoint", provider.Name, p.Protocol)
 		rec := CallRecord{
-			Model:       meta.Model,
-			Provider:    provider.Name,
-			APIKeyName:  apiKeyNameFrom(r.Context()),
-			RequestJSON: meta.Body,
-			Error:       err.Error(),
+			Model:        meta.Model,
+			Provider:     provider.Name,
+			APIKeyName:   apiKeyNameFrom(r.Context()),
+			ResponseMode: responseModeNone,
+			RequestJSON:  meta.Body,
+			Error:        err.Error(),
 		}
 		p.logCall(rec)
 		return err
@@ -263,6 +271,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 		Provider:      provider.Name,
 		ProviderModel: providerModel,
 		APIKeyName:    apiKeyNameFrom(r.Context()),
+		ResponseMode:  responseModeNone,
 		RequestJSON:   meta.Body,
 	}
 	if rec.ProviderModel == "" {
@@ -311,9 +320,19 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	contentType := resp.Header.Get("Content-Type")
 	sse := responseIsSSE(meta.Stream, contentType)
 	ndjson := !sse && isNDJSON(contentType)
+	rec.ResponseMode = responseModeJSON
+	if sse {
+		rec.ResponseMode = responseModeSSE
+	} else if ndjson {
+		rec.ResponseMode = responseModeNDJSON
+	}
+	bodyReader := &firstReadReader{r: resp.Body}
 
 	if isCatastrophic(nil, resp.StatusCode) {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxStatusBlob))
+		body, _ := io.ReadAll(io.LimitReader(bodyReader, maxStatusBlob))
+		if !bodyReader.first.IsZero() {
+			rec.TTFBMs = max(1, bodyReader.first.Sub(sentAt).Milliseconds())
+		}
 		rec.ResponseJSON = encodeResponseBlob(body, sse)
 		rec.Error = "upstream status " + resp.Status
 		p.logCall(rec)
@@ -338,23 +357,25 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, meta *requestMet
 	if sse {
 		fw := newFlushWriter(w)
 		logw := newSSELogWriter(buf)
-		usage, firstToken, err = copySSE(io.MultiWriter(fw, logw), fw, resp.Body, keepalive)
+		usage, firstToken, err = copySSE(io.MultiWriter(fw, logw), fw, bodyReader, keepalive)
 		logw.Flush()
 	} else if ndjson {
 		// NDJSON is copied raw (no coalescing, no keepalive comments); the log
 		// blob is the transcript wrapped as a JSON string, like SSE.
 		fw := newFlushWriter(w)
-		usage, firstToken, err = copyNDJSON(io.MultiWriter(fw, buf), resp.Body)
+		usage, firstToken, err = copyNDJSON(io.MultiWriter(fw, buf), bodyReader)
 	} else {
-		fr := &firstReadReader{r: resp.Body}
-		_, err = io.Copy(io.MultiWriter(w, buf), fr)
-		firstToken = fr.first
+		_, err = io.Copy(io.MultiWriter(w, buf), bodyReader)
 		usage = parseUsageJSON(buf.Bytes())
 	}
-	if !firstToken.IsZero() {
-		rec.FirstTokenMs = firstToken.Sub(sentAt).Milliseconds()
-		if usage.Output > 0 {
-			rec.OutputSpeed = float64(usage.Output) / time.Since(firstToken).Seconds()
+	if !bodyReader.first.IsZero() {
+		rec.TTFBMs = max(1, bodyReader.first.Sub(sentAt).Milliseconds())
+	}
+	if (sse || ndjson) && !firstToken.IsZero() {
+		rec.FirstTokenMs = max(1, firstToken.Sub(sentAt).Milliseconds())
+		elapsed := time.Since(firstToken).Seconds()
+		if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 && usage.Output > 0 && elapsed > 0 {
+			rec.OutputSpeed = float64(usage.Output) / elapsed
 		}
 	}
 	rec.ResponseJSON = encodeResponseBlob(buf.Bytes(), sse || ndjson)
@@ -403,8 +424,8 @@ func (w flushWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// firstReadReader records when the first body byte arrives, used as the
-// time-to-first-token signal for non-streaming (JSON) responses.
+// firstReadReader records when the first upstream response body byte arrives.
+// It measures TTFB independently of the streaming first-token signal.
 type firstReadReader struct {
 	r     io.Reader
 	first time.Time

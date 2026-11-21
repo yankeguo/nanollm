@@ -227,8 +227,10 @@ Each provider attempt writes one row to `llm_calls`:
 
 - client model, provider name, upstream model, API key name
 - `input_tokens` / `output_tokens` / `cache_tokens` / `uncached_tokens` (0 when usage is missing)
-- `first_token_ms` (request sent → first token: the first SSE `data:` line, or the first response body byte for non-streaming; 0 when no token ever arrived)
-- `output_speed` (output tokens per second, measured from the first token to the end of the stream; 0 when usage or the first token is missing)
+- `response_mode`: the actual response-copy path, `sse`, `ndjson`, `json`, or `none` when no upstream HTTP response arrived. JSON errors returned to a streaming request are `json`, and embeddings are normally `json`. The existing fallback still treats a streaming response with a missing/non-JSON Content-Type as SSE. An empty value marks a legacy row written before this column existed.
+- `ttfb_ms` (request sent → first upstream response body byte, for every response mode; 0 when no body byte arrived)
+- `first_token_ms` (request sent → first SSE `data:` line or first non-empty NDJSON line; 0 for JSON responses and streams where no token/event line arrived). If a token arrives before a later copy error or cancellation, this latency remains a valid measurement.
+- `output_speed` (output tokens per second, measured from the first token to the end of a **completed** SSE/NDJSON stream; 0 for JSON responses, missing usage/output tokens or first token, and failed/canceled/incomplete streams). Values are not capped or truncated.
 - `http_status` (0 if no HTTP response, e.g. dial failure)
 - `error` (transport / rewrite / catastrophic status; `canceled` when the client hung up after the copy started; empty on a completed copy)
 - `request_json` / `response_json` (`MEDIUMBLOB`; SSE responses stored as a JSON string, with consecutive same-type text/argument deltas coalesced)
@@ -240,7 +242,9 @@ Periodically (every 50 inserts), blobs and `llm_call_files` rows older than `det
 
 Insert/prune errors are logged and do not change the client response.
 
-Browse the same data at `/usage` after signing in with `admin.username` / `admin.password`. Usage and Calls share a time window (quick ranges or a custom range with a timezone, defaulting to the browser's) and combinable filters for model, provider, API key, and outcome (`ok` / `canceled` / `no_response` / `error`, partitioning every recorded call). Usage is grouped by hour, day, or week, derived from the window span. Besides token and call charts, the page charts per-bucket average `first_token_ms` and `output_speed` (calls where the metric is unavailable, e.g. failures, are excluded from the averages).
+Browse the same data at `/usage` after signing in with `admin.username` / `admin.password`. Usage and Calls share a time window (quick ranges or a custom range with a timezone, defaulting to the browser's) and combinable filters for model, provider, API key, and outcome (`ok` / `canceled` / `no_response` / `error`, partitioning every recorded call). Usage is grouped by hour, day, or week, derived from the window span. Besides token and call charts, the page charts per-bucket average `first_token_ms` and `output_speed`. Those two averages include only non-zero samples whose `response_mode` is `sse` or `ndjson`; JSON responses, unmeasurable calls, and legacy rows are excluded. A bucket with no measurable samples remains a line gap. Calls and call details show `response_mode` and `ttfb_ms` alongside TTFT and output speed.
+
+**Historical metric boundary:** AutoMigrate adds `response_mode` and `ttfb_ms` without rewriting existing measurements. Existing rows have `response_mode = ''` (shown as `legacy`) and `ttfb_ms = 0`; their original `first_token_ms` and `output_speed` values remain available in call views for diagnosis. Because old rows cannot be reliably classified as streaming or non-streaming, nanollm does not heuristically backfill or clear them. Consequently, historical TTFT/output-speed chart segments contributed only by legacy rows disappear or change after upgrade, while token totals, call counts, filters, and call details are unaffected. New streaming rows populate both chart series under the tightened semantics.
 
 ## Docker / releases
 

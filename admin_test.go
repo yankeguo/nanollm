@@ -468,12 +468,16 @@ func TestAdminTemplatesRender(t *testing.T) {
 	require.Contains(t, body, "model=fast")
 	require.Contains(t, body, "input-active")
 	require.Contains(t, body, "Tokens by period")
+	require.Contains(t, body, "JSON and legacy rows are excluded")
 
 	cf := parseAdminFilter(url.Values{"model": []string{"fast"}}, now, "calls")
 	cdata := adminNavData("calls", cf)
 	cdata["Kind"] = "calls"
 	cdata["FilterAction"] = "/calls"
-	cdata["Rows"] = []callListRow{{ID: 7, Model: "fast", FirstTokenMs: 350, OutputSpeed: 42.3, HasDetail: true}}
+	cdata["Rows"] = []callListRow{
+		{ID: 7, Model: "fast", ResponseMode: responseModeSSE, TTFBMs: 200, FirstTokenMs: 350, OutputSpeed: 42.3, HasDetail: true},
+		{ID: 8, Model: "old"},
+	}
 	cdata["Total"] = int64(250)
 	cdata["Page"] = 2
 	cdata["TotalPages"] = 5
@@ -490,6 +494,9 @@ func TestAdminTemplatesRender(t *testing.T) {
 	require.Contains(t, cbody, `name="model"`)
 	require.Contains(t, cbody, "all")
 	require.Contains(t, cbody, `/calls/7?model=fast&amp;page=2`)
+	require.Contains(t, cbody, "<td>sse</td>")
+	require.Contains(t, cbody, "<td>legacy</td>")
+	require.Contains(t, cbody, "200ms")
 	require.Contains(t, cbody, "350ms")
 	require.Contains(t, cbody, "42.3 tok/s")
 	require.Equal(t, 2, strings.Count(cbody, `aria-label="Newer"`))
@@ -501,7 +508,7 @@ func TestAdminTemplatesRender(t *testing.T) {
 
 	sha := strings.Repeat("a", 64)
 	ddata := adminNavData("calls", cf)
-	ddata["Call"] = LLMCall{ID: 7, Model: "fast", HTTPStatus: 200, FirstTokenMs: 1200, OutputSpeed: 12.5}
+	ddata["Call"] = LLMCall{ID: 7, Model: "fast", HTTPStatus: 200, ResponseMode: responseModeSSE, TTFBMs: 900, FirstTokenMs: 1200, OutputSpeed: 12.5}
 	ddata["RequestPretty"] = `{"url":"<file:` + sha + `>"}`
 	ddata["ResponsePretty"] = ""
 	ddata["CallsURL"] = "/calls"
@@ -516,6 +523,9 @@ func TestAdminTemplatesRender(t *testing.T) {
 	dbody := buf.String()
 	require.Contains(t, dbody, `<img src="/files/`+sha+`"`)
 	require.Contains(t, dbody, "&lt;file:"+sha+"&gt;")
+	require.Contains(t, dbody, "Response mode")
+	require.Contains(t, dbody, ">sse</dd>")
+	require.Contains(t, dbody, "900ms")
 	require.Contains(t, dbody, "1.20s")
 	require.Contains(t, dbody, "12.5 tok/s")
 }
